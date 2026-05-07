@@ -1,0 +1,110 @@
+<html>
+<head>
+  <script>
+    class FixedGalaxyExplorer {
+      constructor() {
+        // Initialize pending thrust and rotation bridge vectors
+        this._pendingThrust = { x: 0, y: 0, z: 0 };
+        this._pendingRotation = { x: 0, y: 0, z: 0 };
+
+        // existing constructor code below...
+      }
+
+      updatePhysics(dt) {
+        // existing physics update code before thrust application...
+
+        // Apply thrust normally
+        // this.nav.thrust = ... (existing thrust application code)
+
+        // Bridge logic: if there's pending thrust or rotation from external input, override nav values
+        if (this._pendingThrust) {
+          this.nav.thrust.x = this._pendingThrust.x;
+          this.nav.thrust.y = this._pendingThrust.y;
+          this.nav.thrust.z = this._pendingThrust.z;
+          this._pendingThrust = null;
+          console.log('[Bridge] Applied pending thrust:', this.nav.thrust);
+        }
+        if (this._pendingRotation) {
+          this.nav.avel.x = this._pendingRotation.x;
+          this.nav.avel.y = this._pendingRotation.y;
+          this.nav.avel.z = this._pendingRotation.z;
+          this._pendingRotation = null;
+          console.log('[Bridge] Applied pending rotation:', this.nav.avel);
+        }
+
+        // existing physics update code after thrust application...
+      }
+
+      // other FixedGalaxyExplorer class methods...
+    }
+
+    // Bridge API methods to set thrust and rotation vectors from outside
+    window.setThrustVector = function (vector) {
+      if (window.galaxyExplorer) {
+        window.galaxyExplorer._pendingThrust = vector;
+        console.log('[Bridge] setThrustVector:', vector);
+      } else {
+        console.warn('[Bridge] setThrustVector called but galaxyExplorer instance not found.');
+      }
+    };
+
+    window.setRotationInput = function (vector) {
+      if (window.galaxyExplorer) {
+        window.galaxyExplorer._pendingRotation = vector;
+        console.log('[Bridge] setRotationInput:', vector);
+      } else {
+        console.warn('[Bridge] setRotationInput called but galaxyExplorer instance not found.');
+      }
+    };
+
+    // Overrides updateNavigation to immediately apply navData to camera and navigation state
+    window.updateNavigation = function (navData) {
+      if (!navData) {
+        console.error('[Bridge] updateNavigation called with missing navData.');
+        return;
+      }
+      if (!window.camera || !window.galaxyExplorer || !window.galaxyExplorer.nav) {
+        console.error('[Bridge] updateNavigation missing camera or galaxyExplorer/nav references.');
+        return;
+      }
+      try {
+        // Apply position
+        if (navData.position) {
+          window.camera.position.x = navData.position.x;
+          window.camera.position.y = navData.position.y;
+          window.camera.position.z = navData.position.z;
+        } else {
+          console.warn('[Bridge] updateNavigation navData.position missing.');
+        }
+        // Apply rotation
+        if (navData.rotation) {
+          window.camera.rotation.x = navData.rotation.x;
+          window.camera.rotation.y = navData.rotation.y;
+          window.camera.rotation.z = navData.rotation.z;
+        } else {
+          console.warn('[Bridge] updateNavigation navData.rotation missing.');
+        }
+        // Apply navigation data
+        if (navData.nav) {
+          window.galaxyExplorer.nav = navData.nav;
+        } else {
+          console.warn('[Bridge] updateNavigation navData.nav missing.');
+        }
+        console.log('[Bridge] updateNavigation applied navData:', navData);
+      } catch (e) {
+        console.error('[Bridge] updateNavigation error:', e);
+      }
+    };
+
+    // iOS joystick input handling: override local controls and move camera immediately
+    // Assume joystick input calls window.setThrustVector and setRotationInput accordingly
+    // This ensures local controls are overridden by bridge inputs for real-time camera movement
+
+  </script>
+</head>
+<body>
+  <!-- REMOVED the entire <div id="controls">...</div> and references -->
+
+  <!-- rest of the body content... -->
+</body>
+</html>
