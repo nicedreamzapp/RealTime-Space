@@ -11,10 +11,14 @@ class RendererCore {
             throw new Error("Canvas element not found");
         }
 
-        // Detect device capabilities - push quality for iPhone Pro Max
+        // Detect device capabilities
         this.isMobile = window.innerWidth < 768;
         this.isHighEnd = window.devicePixelRatio >= 3; // iPhone Pro/Pro Max
-        this.pixelRatio = Math.min(window.devicePixelRatio, this.isHighEnd ? 3 : 2);
+        // Cap at 2x: on a ~460ppi phone display 2x is already retina-sharp, while 3x
+        // pushes ~2.25x the pixels through the multi-pass cinematic pipeline for no
+        // visible gain — the single biggest framerate cost on Pro Max.
+        this.maxPixelRatio = 2;
+        this.pixelRatio = Math.min(window.devicePixelRatio, this.maxPixelRatio);
 
         this.initScene();
         this.initCamera();

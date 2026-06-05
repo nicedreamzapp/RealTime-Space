@@ -185,6 +185,8 @@ struct WorkingPortalWebView: UIViewRepresentable {
         
         let config = WKWebViewConfiguration()
         config.userContentController = userContentController
+        // Serve bundled web assets (HTML/JS/textures) same-origin so WebGL textures load.
+        config.setURLSchemeHandler(AppAssetSchemeHandler(), forURLScheme: AppAssetSchemeHandler.scheme)
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
 
@@ -224,26 +226,15 @@ struct WorkingPortalWebView: UIViewRepresentable {
     }
     
     private func loadHTML(_ webView: WKWebView, fileName: String) {
-        if let url = Bundle.main.url(forResource: fileName, withExtension: "html") {
-            print("📄 Loading Galaxy HTML file: \(fileName).html from bundle")
-            print("   URL: \(url.path)")
-            let root = Bundle.main.resourceURL ?? url.deletingLastPathComponent()
-            webView.loadFileURL(url, allowingReadAccessTo: root)
-            
-            // After initial load, inject a small readiness ping to check for the JS bridge namespace
-            let pingScript = "(function(){ return !!window.__SPACE_BRIDGE_READY__; })()"
-            webView.evaluateJavaScript(pingScript) { result, error in
-                if let error = error {
-                    print("⚠️ JS ping error: \(error.localizedDescription)")
-                } else if let ready = result as? Bool, ready {
-                    print("✅ JS console bridge ready")
-                } else {
-                    print("⚠️ JS console bridge not ready yet")
-                }
-            }
-        } else {
-            print("❌ ERROR: Could not find \(fileName).html in app bundle")
+        // Load through the appassets:// scheme so the page and all its assets (JS +
+        // textures) share one origin — required for WebGL textures to load on device.
+        let urlString = "\(AppAssetSchemeHandler.scheme)://app/\(fileName).html"
+        guard let url = URL(string: urlString) else {
+            print("❌ ERROR: Could not form asset URL \(urlString)")
+            return
         }
+        print("📄 Loading Galaxy HTML via \(urlString)")
+        webView.load(URLRequest(url: url))
     }
     
     func sendNavigationUpdate() {

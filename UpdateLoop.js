@@ -16,11 +16,13 @@ class UpdateLoop {
         this.frameCount = 0;
         this.totalTime = 0;
 
-        // FPS tracking with history - target 120Hz for ProMotion displays
+        // FPS tracking with history. Target a realistic 60fps — this is a heavy
+        // cinematic scene; demanding 120 made the auto-quality system panic every
+        // check and spam "quality reduced" without ever actually helping.
         this.fps = 60;
         this.fpsHistory = [];
         this.fpsHistorySize = 120;  // Track last 120 frames
-        this.targetFPS = 120;  // Target ProMotion 120Hz on supported devices
+        this.targetFPS = 60;
 
         // State
         this.isRunning = false;
@@ -37,8 +39,8 @@ class UpdateLoop {
             smoothness: 100  // Percentage of smooth frames
         };
 
-        // Frame timing for smooth animation (target 120fps on ProMotion)
-        this.frameBudget = 1000 / 120;  // ~8.33ms for 120fps
+        // Frame timing for smooth animation
+        this.frameBudget = 1000 / 60;  // ~16.6ms for 60fps
         this.lastFrameTimes = [];
         this.maxFrameTimeHistory = 10;
 
@@ -257,6 +259,12 @@ class UpdateLoop {
         if (this.frameCount % 10 === 0 && this.fpsHistory.length > 0) {
             const avgFrameTime = this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length;
             this.fps = Math.round(1000 / avgFrameTime);
+
+            // Periodic FPS telemetry (~every 2s) for performance measurement
+            if (this.frameCount % 120 === 0) {
+                const pr = this.rendererCore?.renderer?.getPixelRatio?.();
+                console.log(`📊 FPS: ${this.fps} | smoothness: ${this.performanceStats.smoothness}% | pixelRatio: ${pr ?? '?'}`);
+            }
 
             // Calculate smoothness
             const smoothFrames = this.fpsHistory.filter(ft => ft < this.frameBudget * 1.5).length;
