@@ -6,19 +6,74 @@ struct ContentView: View {
     
     @State private var joystickOffset = CGSize.zero
     @State private var isThrustButtonPressed = false
+    @State private var maxSpeed = UserDefaults.standard.object(forKey: "maxSpeed") as? Double ?? 120
     @State private var showPlanetPicker = false
     @State private var showOrbitLines = UserDefaults.standard.object(forKey: "showOrbitLines") as? Bool ?? true
     @State private var showLabels = UserDefaults.standard.object(forKey: "showLabels") as? Bool ?? true
     @State private var cinematicMode = UserDefaults.standard.object(forKey: "cinematicMode") as? Bool ?? false
     @State private var lutEnabled = UserDefaults.standard.object(forKey: "lutEnabled") as? Bool ?? false
     @State private var lutIntensity = UserDefaults.standard.object(forKey: "lutIntensity") as? Double ?? 0.5
-    @State private var spatialAudioEnabled = UserDefaults.standard.object(forKey: "spatialAudioEnabled") as? Bool ?? true
+    @State private var spatialAudioEnabled = UserDefaults.standard.object(forKey: "spatialAudioEnabled") as? Bool ?? false
     @State private var uiHidden = false
     @State private var showNavigateMenu = false
     @State private var isPaused = false
+    @State private var isWarping = false
+    @State private var showSplash = true
+    @State private var showCredits = false
 
     let joystickRadius: CGFloat = 60
-    
+
+    // True when native chrome should be hidden: Photo Mode (uiHidden) OR a Codex
+    // discovery card / Field Guide is open in the webview (navigationController.hideChrome,
+    // set from a "CHROME" bridge message). When hidden we also drop hit-testing so taps
+    // reach the card underneath instead of the invisible native controls.
+    private var chromeHidden: Bool { uiHidden || navigationController.hideChrome }
+
+    // Every place you can autopilot to, grouped. `fly` is the engine object name passed to
+    // flyToByName (which now reaches planets, moons, comets, nebulae and the black hole).
+    private var flyDestinations: [FlySection] {
+        [
+            FlySection(title: "The Star", items: [ FlyItem("☀️", "The Sun", "Sun") ]),
+            FlySection(title: "Planets", items: [
+                FlyItem("🌑", "Mercury", "Mercury"), FlyItem("🟡", "Venus", "Venus"),
+                FlyItem("🌍", "Earth", "Earth"), FlyItem("🔴", "Mars", "Mars"),
+                FlyItem("🟠", "Jupiter", "Jupiter"), FlyItem("🪐", "Saturn", "Saturn"),
+                FlyItem("🔵", "Uranus", "Uranus"), FlyItem("🔵", "Neptune", "Neptune") ]),
+            FlySection(title: "Moons", items: [
+                FlyItem("🌕", "The Moon", "Moon"), FlyItem("🌋", "Io", "Io"),
+                FlyItem("🧊", "Europa", "Europa"), FlyItem("🌑", "Ganymede", "Ganymede"),
+                FlyItem("⚪", "Callisto", "Callisto"), FlyItem("🟠", "Titan", "Titan"),
+                FlyItem("❄️", "Enceladus", "Enceladus") ]),
+            FlySection(title: "Stations", items: [ FlyItem("🛰️", "ISS · orbiting Earth", "Earth") ]),
+            FlySection(title: "Comets", items: [
+                FlyItem("☄️", "Halley", "Halley"), FlyItem("☄️", "Swift-Tuttle", "Swift-Tuttle"),
+                FlyItem("☄️", "Hale-Bopp", "Hale-Bopp") ]),
+            FlySection(title: "Deep Space", items: [
+                FlyItem("☁️", "Orion Nebula", "Orion Nebula"), FlyItem("☁️", "Carina Nebula", "Carina Nebula"),
+                FlyItem("🐴", "Horsehead Nebula", "Horsehead Nebula"),
+                FlyItem("🕳️", "Sagittarius A* · black hole", "Sagittarius A*") ]),
+            FlySection(title: "The Belt", items: [ FlyItem("🪨", "Main Asteroid Belt", "Main Asteroid Belt") ]),
+            FlySection(title: "Nearby Stars", items: [
+                FlyItem("⭐️", "Alpha Centauri", "Alpha Centauri"), FlyItem("🔴", "Proxima Centauri", "Proxima Centauri"),
+                FlyItem("💎", "Sirius", "Sirius"), FlyItem("🔷", "Vega", "Vega"),
+                FlyItem("🟥", "Betelgeuse", "Betelgeuse"), FlyItem("🔵", "Rigel", "Rigel"),
+                FlyItem("🟠", "Arcturus", "Arcturus"), FlyItem("✴️", "Polaris (North Star)", "Polaris") ]),
+            FlySection(title: "Exoplanets", items: [
+                FlyItem("🌎", "Proxima b", "Proxima b"), FlyItem("🪐", "TRAPPIST-1 e", "TRAPPIST-1 e"),
+                FlyItem("🔥", "51 Pegasi b", "51 Pegasi b"), FlyItem("💠", "55 Cancri e", "55 Cancri e"),
+                FlyItem("🌊", "Kepler-442b", "Kepler-442b") ]),
+            FlySection(title: "Galaxies", items: [
+                FlyItem("🌌", "Andromeda (M31)", "Andromeda (M31)"), FlyItem("☁️", "Large Magellanic Cloud", "Large Magellanic Cloud"),
+                FlyItem("🌀", "Whirlpool (M51)", "Whirlpool (M51)"), FlyItem("👒", "Sombrero (M104)", "Sombrero (M104)"),
+                FlyItem("💫", "Centaurus A", "Centaurus A") ]),
+            FlySection(title: "Nebulae & Clusters", items: [
+                FlyItem("🦅", "Eagle Nebula (Pillars)", "Eagle Nebula"), FlyItem("🦀", "Crab Nebula", "Crab Nebula"),
+                FlyItem("💍", "Ring Nebula", "Ring Nebula"), FlyItem("👁️", "Helix Nebula", "Helix Nebula"),
+                FlyItem("🌸", "Lagoon Nebula", "Lagoon Nebula"), FlyItem("✨", "Hercules Cluster (M13)", "Hercules Cluster (M13)"),
+                FlyItem("🔆", "Omega Centauri", "Omega Centauri") ])
+        ]
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -44,8 +99,8 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
-                        .background(.ultraThinMaterial.opacity(0.6))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.cyan.opacity(0.25), lineWidth: 0.5))
+                        .background(Color(red: 0.03, green: 0.06, blue: 0.11).opacity(0.9))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.cyan.opacity(0.35), lineWidth: 0.5))
                         .cornerRadius(8)
                         
                         Spacer()
@@ -62,34 +117,77 @@ struct ContentView: View {
                     
                     Spacer()
                 }
-                .opacity(uiHidden ? 0 : 1)
+                .opacity(chromeHidden ? 0 : 1)
+                .allowsHitTesting(!chromeHidden)
                 
-                // PAUSE BUTTON - top right above joystick/thrust controls
+                // (Removed the redundant bottom three-lines button — the "Fly To" sheet
+                //  is reachable from the ⋯ menu → "Fly To Anywhere…".)
+
                 VStack {
                     Spacer()
-                    HStack {
-                        Spacer()
-                        Button(action: {
-                            isPaused = true
-                            showPlanetPicker = true
-                            navigationController.pauseGame()
-                        }) {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                                .font(.system(size: 24, weight: .medium))
-                                .foregroundColor(.cyan.opacity(0.8))
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial.opacity(0.4))
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.cyan.opacity(0.2), lineWidth: 0.5))
+
+                    // SPEED control — drag to set how fast thrust flies you.
+                    HStack(spacing: 10) {
+                        Image(systemName: "tortoise.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.cyan.opacity(0.7))
+                        Slider(value: $maxSpeed, in: 15...250, step: 5)
+                            .tint(.cyan)
+                            .onChange(of: maxSpeed) { newValue in
+                                UserDefaults.standard.set(newValue, forKey: "maxSpeed")
+                                navigationController.evaluateJavaScript("window.galaxyExplorer?.setMaxSpeed?.(\(Int(newValue)))")
+                            }
+                        Image(systemName: "hare.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.cyan.opacity(0.7))
+                        Text("\(Int(maxSpeed))")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.cyan.opacity(0.85))
+                            .frame(width: 30, alignment: .trailing)
+
+                        // ULTRA WARP — hold to punch 100× toward whatever's ahead.
+                        // Plain view + direct press gesture (NOT a Button) for the same reason
+                        // as THRUST below: a Button wrapper's tap recognizer swallowed quick
+                        // presses so warp only engaged after a long hold.
+                        HStack(spacing: 3) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 12, weight: .heavy))
+                            Text("100×")
+                                .font(.system(size: 11, weight: .heavy, design: .monospaced))
                         }
-                        .padding([.trailing, .bottom], 18)
+                        .foregroundColor(isWarping ? .white : Color(red: 0.7, green: 0.5, blue: 1.0))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background((isWarping ? Color.purple : Color.purple.opacity(0.18)))
+                        .background(.ultraThinMaterial.opacity(0.3))
+                        .overlay(RoundedRectangle(cornerRadius: 9)
+                            .stroke(Color.purple.opacity(isWarping ? 0.9 : 0.5), lineWidth: 1))
+                        .cornerRadius(9)
+                        .shadow(color: isWarping ? .purple.opacity(0.7) : .clear, radius: 6)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { _ in
+                                    guard !isPaused else { return }
+                                    if !isWarping {
+                                        isWarping = true
+                                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                                        navigationController.evaluateJavaScript("window.galaxyExplorer && window.galaxyExplorer.setWarpDrive && window.galaxyExplorer.setWarpDrive(true)")
+                                        navigationController.thrustForward()
+                                        AudioManager.shared.playSFX(named: "warp")
+                                    }
+                                }
+                                .onEnded { _ in
+                                    isWarping = false
+                                    navigationController.evaluateJavaScript("window.galaxyExplorer && window.galaxyExplorer.setWarpDrive && window.galaxyExplorer.setWarpDrive(false)")
+                                    navigationController.stopThrust()
+                                }
+                        )
+                        .disabled(isPaused)
                     }
-                }
-                .ignoresSafeArea()
-                
-                VStack {
-                    Spacer()
-                    
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 6)
+
                     HStack(alignment: .bottom) {
                         // LEFT: JOYSTICK
                         ZStack {
@@ -126,8 +224,8 @@ struct ContentView: View {
                                                 navigationController.setRotationInput(Vector3D(x: 0, y: 0, z: 0))
                                             } else {
                                                 // Send normalized values (-1 to 1) - JS handles analog sensitivity
-                                                // Invert both axes for natural feel: left=left, up=up
-                                                navigationController.setRotationInput(Vector3D(x: ny, y: -nx, z: 0))
+                                                // x = pitch (up on stick = look up), y = yaw (right = look right)
+                                                navigationController.setRotationInput(Vector3D(x: -ny, y: -nx, z: 0))
                                             }
                                         }
                                         .onEnded { _ in
@@ -181,27 +279,32 @@ struct ContentView: View {
                         
                         Spacer()
                         
-                        // RIGHT: THRUST
-                        Button {} label: {
-                            VStack(spacing: 3) {
-                                Image(systemName: isThrustButtonPressed ? "flame.fill" : "arrow.up.circle")
-                                    .font(.system(size: 28, weight: .medium))
-                                Text("THRUST")
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .tracking(1)
-                            }
-                            .frame(width: 90, height: 90)
-                            .background((isThrustButtonPressed ? Color.orange : Color.cyan).opacity(0.12))
-                            .background(.ultraThinMaterial.opacity(0.4))
-                            .foregroundColor(isThrustButtonPressed ? .orange : .cyan)
-                            .overlay(RoundedRectangle(cornerRadius: 18).stroke((isThrustButtonPressed ? Color.orange : Color.cyan).opacity(0.3), lineWidth: 0.5))
-                            .cornerRadius(18)
+                        // RIGHT: THRUST — plain view + direct press gesture (NOT a Button).
+                        // A `Button {} label:` wrapper here fought the .simultaneousGesture:
+                        // the button's own tap recognizer swallowed quick taps, so thrust only
+                        // engaged after a long (~2s) hold. Attaching the DragGesture straight to
+                        // the view — with contentShape so the whole 90×90 frame is hittable —
+                        // makes touch-DOWN fire thrust instantly.
+                        VStack(spacing: 3) {
+                            Image(systemName: isThrustButtonPressed ? "flame.fill" : "arrow.up.circle")
+                                .font(.system(size: 28, weight: .medium))
+                            Text("THRUST")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .tracking(1)
                         }
-                        .simultaneousGesture(
+                        .frame(width: 90, height: 90)
+                        .background((isThrustButtonPressed ? Color.orange : Color.cyan).opacity(0.12))
+                        .background(.ultraThinMaterial.opacity(0.4))
+                        .foregroundColor(isThrustButtonPressed ? .orange : .cyan)
+                        .overlay(RoundedRectangle(cornerRadius: 18).stroke((isThrustButtonPressed ? Color.orange : Color.cyan).opacity(0.3), lineWidth: 0.5))
+                        .cornerRadius(18)
+                        .contentShape(Rectangle())
+                        .gesture(
                             DragGesture(minimumDistance: 0)
                                 .onChanged { _ in
                                     guard !isPaused else { return }
                                     if !isThrustButtonPressed {
+                                        print("👆 THRUST touch-down → thrustForward()")
                                         isThrustButtonPressed = true
                                         navigationController.thrustForward()
                                     }
@@ -219,7 +322,8 @@ struct ContentView: View {
                     .opacity(isPaused ? 0.5 : 1)
                     .disabled(isPaused)
                 }
-                .opacity(uiHidden ? 0 : 1)
+                .opacity(chromeHidden ? 0 : 1)
+                .allowsHitTesting(!chromeHidden)
                 
                 // Navigate button - toggles transparent panel
                 VStack {
@@ -242,7 +346,8 @@ struct ContentView: View {
                     }
                     Spacer()
                 }
-                .opacity(uiHidden ? 0 : 1)
+                .opacity(chromeHidden ? 0 : 1)
+                .allowsHitTesting(!chromeHidden)
 
                 // TRANSPARENT NAVIGATE PANEL
                 if showNavigateMenu {
@@ -250,49 +355,25 @@ struct ContentView: View {
                         Spacer()
                         ScrollView {
                             VStack(alignment: .leading, spacing: 12) {
-                                // FLY TO
-                                Text("FLY TO")
+                                // NAVIGATE — the full destination list lives in the Fly To sheet now,
+                                // so this is just the single entry point (no duplicate planet buttons).
+                                Text("NAVIGATE")
                                     .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.cyan.opacity(0.5))
+                                    .foregroundColor(.cyan.opacity(0.85))
                                     .tracking(1.5)
                                     .padding(.top, 8)
 
-                                navButton("Nearest Planet") {
-                                    navigationController.evaluateJavaScript("window.galaxyExplorer?.flyToNearestPlanet?.()")
-                                    AudioManager.shared.playSFX(named: "lock")
-                                }
-                                HStack(spacing: 6) {
-                                    navButton("Sun") {
-                                        navigationController.evaluateJavaScript("window.galaxyExplorer?.centerOnSun?.()")
-                                        AudioManager.shared.playSFX(named: "lock")
-                                    }
-                                    navButton("Earth") {
-                                        navigationController.flyToPlanet(named: "Earth")
-                                        AudioManager.shared.playSFX(named: "lock")
-                                    }
-                                }
-                                HStack(spacing: 6) {
-                                    navButton("Mars") {
-                                        navigationController.flyToPlanet(named: "Mars")
-                                        AudioManager.shared.playSFX(named: "lock")
-                                    }
-                                    navButton("Jupiter") {
-                                        navigationController.flyToPlanet(named: "Jupiter")
-                                        AudioManager.shared.playSFX(named: "lock")
-                                    }
-                                }
-                                HStack(spacing: 6) {
-                                    navButton("Saturn") {
-                                        navigationController.flyToPlanet(named: "Saturn")
-                                        AudioManager.shared.playSFX(named: "lock")
-                                    }
-                                    navButton("Neptune") {
-                                        navigationController.flyToPlanet(named: "Neptune")
-                                        AudioManager.shared.playSFX(named: "lock")
-                                    }
-                                }
-                                navButton("All Planets...") {
+                                navButton("🚀  Fly To Anywhere...") {
+                                    showNavigateMenu = false
                                     showPlanetPicker = true
+                                }
+                                navButton("❓  How to Play") {
+                                    showNavigateMenu = false
+                                    withAnimation(.easeInOut(duration: 0.3)) { showSplash = true }
+                                }
+                                navButton("ℹ️  Credits") {
+                                    showNavigateMenu = false
+                                    withAnimation(.easeInOut(duration: 0.3)) { showCredits = true }
                                 }
 
                                 Divider().background(Color.cyan.opacity(0.2))
@@ -300,7 +381,7 @@ struct ContentView: View {
                                 // CAPTURE
                                 Text("CAPTURE")
                                     .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.cyan.opacity(0.5))
+                                    .foregroundColor(.cyan.opacity(0.85))
                                     .tracking(1.5)
 
                                 navButton("📷 Photo Mode") {
@@ -317,7 +398,7 @@ struct ContentView: View {
                                 // DISPLAY
                                 Text("DISPLAY")
                                     .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.cyan.opacity(0.5))
+                                    .foregroundColor(.cyan.opacity(0.85))
                                     .tracking(1.5)
 
                                 toggleRow("Orbit Lines", isOn: $showOrbitLines)
@@ -360,27 +441,66 @@ struct ContentView: View {
                                 toggleRow("Spatial Audio", isOn: $spatialAudioEnabled)
                                     .onChange(of: spatialAudioEnabled) { _, newValue in
                                         UserDefaults.standard.set(newValue, forKey: "spatialAudioEnabled")
-                                        AudioManager.shared.setAmbientVolume(newValue ? 0.35 : 0.0)
+                                        AudioManager.shared.soundEnabled = newValue
+                                        if newValue {
+                                            AudioManager.shared.loadAmbient(named: "space_ambience")
+                                            AudioManager.shared.setAmbientVolume(0.35)
+                                        } else {
+                                            AudioManager.shared.setAmbientVolume(0.0)
+                                        }
                                     }
                             }
                             .padding(16)
                         }
-                        .frame(width: 200)
-                        .background(.ultraThinMaterial.opacity(0.6))
+                        .frame(width: 210)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(red: 0.03, green: 0.06, blue: 0.11).opacity(0.97))
+                        )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.cyan.opacity(0.15), lineWidth: 0.5)
+                                .stroke(Color.cyan.opacity(0.3), lineWidth: 0.5)
                         )
                         .cornerRadius(14)
+                        .shadow(color: .black.opacity(0.5), radius: 16, y: 6)
                         .padding(.top, 70)
                         .padding(.trailing, 12)
                         .padding(.bottom, 140)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
-                    .opacity(uiHidden ? 0 : 1)
+                    .opacity(chromeHidden ? 0 : 1)
+                .allowsHitTesting(!chromeHidden)
+                }
+
+                // Build/version stamp at the bottom so we can tell builds apart at a glance.
+                VStack {
+                    Spacer()
+                    Text(appBuildString())
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(.cyan.opacity(0.4))
+                        .padding(.bottom, 2)
+                }
+                .allowsHitTesting(false)
+                .opacity(chromeHidden ? 0 : 1)
+
+                // First-launch splash + How to Play (reopenable from the ⋯ menu).
+                if showSplash {
+                    SplashView(onBegin: { withAnimation(.easeInOut(duration: 0.4)) { showSplash = false } })
+                        .transition(.opacity)
+                        .zIndex(100)
+                }
+
+                // Credits / attributions (licensing) — opened from the ⋯ menu.
+                if showCredits {
+                    CreditsView(onClose: { withAnimation(.easeInOut(duration: 0.3)) { showCredits = false } })
+                        .transition(.opacity)
+                        .zIndex(101)
                 }
             }
             .onAppear {
+                // Send saved cruise speed to JS (best-effort; JS guards if not ready yet)
+                navigationController.evaluateJavaScript("window.galaxyExplorer?.setMaxSpeed?.(\(Int(maxSpeed)))")
+
                 // Send initial JS for orbit lines state
                 let orbitVisibility = showOrbitLines ? "true" : "false"
                 navigationController.evaluateJavaScript("window.galaxyExplorer && window.galaxyExplorer.setOrbitLinesVisible && window.galaxyExplorer.setOrbitLinesVisible(\(orbitVisibility))")
@@ -400,38 +520,59 @@ struct ContentView: View {
                 // Send initial JS for LUT intensity state
                 navigationController.evaluateJavaScript("window.galaxyExplorer && window.galaxyExplorer.setLUTIntensity && window.galaxyExplorer.setLUTIntensity(\(lutIntensity))")
 
-                // Set ambient volume depending on spatialAudioEnabled
-                let ambientVolume = spatialAudioEnabled ? 0.35 : 0.0
-                AudioManager.shared.setAmbientVolume(Float(ambientVolume))
-
-                // AUDIO: Initialize Audio Engine and preload sounds
+                // AUDIO: the continuous "space_ambience" loop was the ringing drone — it is
+                // OFF by default now and not even loaded unless the user opts into Spatial Audio.
+                AudioManager.shared.soundEnabled = spatialAudioEnabled
+                AudioManager.shared.setAmbientVolume(0.0)
                 AudioManager.shared.start()
                 AudioManager.shared.preloadCommonSFX()
-                AudioManager.shared.loadAmbient(named: "space_ambience")
+                if spatialAudioEnabled {
+                    AudioManager.shared.loadAmbient(named: "space_ambience")
+                    AudioManager.shared.setAmbientVolume(0.35)
+                }
             }
         }
         .sheet(isPresented: $showPlanetPicker, onDismiss: {
             isPaused = false
             navigationController.resumeGame()
         }) {
-            NavigationView {
-                List {
-                    ForEach(["Sun","Mercury","Venus","Earth","Mars","Jupiter","Saturn","Uranus","Neptune"], id: \.self) { planet in
-                        Button(planet) {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            navigationController.flyToPlanet(named: planet)
-                            AudioManager.shared.playSFX(named: "lock")
-                            showPlanetPicker = false
+            flyToSheet
+        }
+    }
+
+    // The "Fly To" destination picker — extracted from `body` so the type-checker
+    // doesn't choke on one giant expression.
+    @ViewBuilder
+    private var flyToSheet: some View {
+        NavigationView {
+            List {
+                ForEach(flyDestinations, id: \.title) { section in
+                    Section(section.title) {
+                        ForEach(section.items, id: \.label) { item in
+                            Button {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                navigationController.flyToPlanet(named: item.fly)
+                                AudioManager.shared.playSFX(named: "lock")
+                                showPlanetPicker = false
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Text(item.icon).font(.system(size: 20))
+                                    Text(item.label).foregroundColor(.cyan)
+                                    Spacer()
+                                    Image(systemName: "location.fill")
+                                        .font(.caption2).foregroundColor(.cyan.opacity(0.45))
+                                }
+                            }
                         }
                     }
                 }
-                .navigationTitle("Select Planet")
-                .navigationBarTitleDisplayMode(.inline)
-                .scrollContentBackground(.hidden)
-                .background(Color(red: 0.02, green: 0.04, blue: 0.08))
             }
-            .presentationBackground(.ultraThinMaterial)
+            .navigationTitle("Fly To")
+            .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden)
+            .background(Color(red: 0.02, green: 0.04, blue: 0.08))
         }
+        .presentationBackground(.ultraThinMaterial)
     }
 
     // MARK: - Transparent UI Helpers
@@ -447,8 +588,8 @@ struct ContentView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .frame(maxWidth: .infinity)
-                .background(Color.cyan.opacity(0.06))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.cyan.opacity(0.15), lineWidth: 0.5))
+                .background(Color.cyan.opacity(0.14))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.cyan.opacity(0.3), lineWidth: 0.5))
                 .cornerRadius(7)
         }
     }
@@ -465,6 +606,171 @@ struct ContentView: View {
                 .tint(.cyan)
         }
         .padding(.vertical, 1)
+    }
+}
+
+// Version + build stamp, read from the bundle. Shown on the splash and the main screen so
+// we can always tell which build is on the phone.
+func appBuildString() -> String {
+    let info = Bundle.main.infoDictionary
+    let v = info?["CFBundleShortVersionString"] as? String ?? "?"
+    let b = info?["CFBundleVersion"] as? String ?? "?"
+    return "v\(v)  ·  build \(b)"
+}
+
+struct FlyItem {
+    let icon: String
+    let label: String
+    let fly: String
+    init(_ icon: String, _ label: String, _ fly: String) { self.icon = icon; self.label = label; self.fly = fly }
+}
+
+struct FlySection {
+    let title: String
+    let items: [FlyItem]
+}
+
+// Launch splash + How-to-Play. Shown over the live scene on launch; "Begin Exploring"
+// fades it out. Reopenable from the ⋯ menu. Its own struct so the type-checker stays happy.
+struct SplashView: View {
+    let onBegin: () -> Void
+
+    private let steps: [(String, String)] = [
+        ("dpad.fill", "Drag the joystick to look around"),
+        ("flame.fill", "Hold THRUST to fly forward"),
+        ("dot.viewfinder", "SCAN nearby worlds for real NASA data"),
+        ("book.fill", "Fill your Field Guide — discover the solar system & beyond"),
+        ("paperplane.fill", "⋯ menu → Fly To Anywhere to jump instantly"),
+        ("antenna.radiowaves.left.and.right", "Tap 🛰️ for the live ISS & today's asteroids")
+    ]
+
+    var body: some View {
+        ZStack {
+            Image("SplashArt")
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea()
+            LinearGradient(colors: [.black.opacity(0.55), .black.opacity(0.15), .black.opacity(0.9)],
+                           startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                VStack(spacing: 6) {
+                    Text("RealTime Space")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.6), radius: 8)
+                    Text("Explore the real solar system")
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundColor(.cyan.opacity(0.9))
+                }
+                .padding(.top, 60)
+
+                Spacer()
+
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("HOW TO PLAY")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .tracking(2)
+                        .foregroundColor(.cyan.opacity(0.7))
+                    ForEach(steps, id: \.1) { step in
+                        HStack(spacing: 13) {
+                            Image(systemName: step.0)
+                                .font(.system(size: 16))
+                                .foregroundColor(.cyan)
+                                .frame(width: 26)
+                            Text(step.1)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.white.opacity(0.95))
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+                .padding(18)
+                .background(
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(Color(red: 0.03, green: 0.06, blue: 0.12).opacity(0.82))
+                        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.cyan.opacity(0.2), lineWidth: 0.5))
+                )
+                .padding(.horizontal, 22)
+
+                Button(action: onBegin) {
+                    Text("Begin Exploring")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(
+                            LinearGradient(colors: [.cyan, Color(red: 0.4, green: 0.8, blue: 1.0)],
+                                           startPoint: .leading, endPoint: .trailing),
+                            in: Capsule())
+                        .shadow(color: .cyan.opacity(0.4), radius: 12)
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 18)
+                .padding(.bottom, 10)
+
+                Text(appBuildString())
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.5))
+                    .padding(.bottom, 28)
+            }
+        }
+    }
+}
+
+// Credits / attribution screen — satisfies the CC-BY requirement for the bundled imagery
+// and the MIT notice for Three.js. Opened from the ⋯ menu.
+struct CreditsView: View {
+    let onClose: () -> Void
+
+    private func entry(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+            Text(detail).font(.system(size: 12)).foregroundColor(.cyan.opacity(0.75))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+    }
+
+    var body: some View {
+        ZStack {
+            Color(red: 0.01, green: 0.02, blue: 0.05).opacity(0.97).ignoresSafeArea()
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Credits").font(.system(size: 24, weight: .bold, design: .rounded)).foregroundColor(.white)
+                    Spacer()
+                    Button(action: onClose) {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 26)).foregroundColor(.cyan.opacity(0.7))
+                    }
+                }
+                .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 8)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("RealTime Space is a real-time solar-system explorer. It is built on freely-licensed astronomical imagery and open data, with gratitude to:")
+                            .font(.system(size: 13)).foregroundColor(.white.opacity(0.8))
+                            .padding(.bottom, 4)
+
+                        Text("IMAGERY").font(.system(size: 11, weight: .bold, design: .monospaced)).tracking(2).foregroundColor(.cyan.opacity(0.6))
+                        entry("NASA — Visible Earth", "Blue Marble, Black Marble city lights, MODIS clouds & elevation. Public domain.")
+                        entry("Solar System Scope", "Planet, Sun & 8K Milky Way textures, and Saturn's rings.\nsolarsystemscope.com · licensed CC-BY 4.0.")
+                        entry("threex.planets", "Planet sphere & bump maps (Mercury, Venus, Mars, Moon, Pluto, ice giants).")
+
+                        Text("LIVE DATA").font(.system(size: 11, weight: .bold, design: .monospaced)).tracking(2).foregroundColor(.cyan.opacity(0.6)).padding(.top, 6)
+                        entry("NASA NeoWs", "Near-Earth object (asteroid) feed. api.nasa.gov.")
+                        entry("Where the ISS at?", "Live International Space Station position. wheretheiss.at.")
+
+                        Text("SOFTWARE").font(.system(size: 11, weight: .bold, design: .monospaced)).tracking(2).foregroundColor(.cyan.opacity(0.6)).padding(.top, 6)
+                        entry("Three.js", "WebGL 3D engine by mrdoob & contributors. MIT License.")
+
+                        Text("Astronomical imagery is used for educational and entertainment purposes. NASA does not endorse this app.")
+                            .font(.system(size: 11)).foregroundColor(.white.opacity(0.45)).padding(.top, 10)
+                    }
+                    .padding(.horizontal, 22).padding(.bottom, 40)
+                }
+            }
+        }
     }
 }
 

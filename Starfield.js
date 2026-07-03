@@ -21,7 +21,7 @@ class Starfield {
 
             // Distribution
             seed: Math.random() * 1e9,
-            galaxies: 40,
+            galaxies: 12,
             milkyWayDensity: 1.5,
 
             // Color temperature range (Kelvin)
@@ -207,66 +207,12 @@ class Starfield {
 
         this.mesh = new THREE.Points(geo, mat);
 
-        // Add Milky Way glow band
-        this._createMilkyWayGlow();
+        // NOTE: the old procedural Milky Way glow band was removed — the real 8K
+        // Milky Way panorama (scene.background in RendererCore) replaces it.
 
-        // Add distant galaxies
-        this._createGalaxies();
-    }
-
-    _createMilkyWayGlow() {
-        // Create a subtle glow band for the Milky Way
-        const geometry = new THREE.PlaneGeometry(this.cfg.radius * 4, this.cfg.radius * 0.8);
-
-        const material = new THREE.ShaderMaterial({
-            uniforms: {
-                time: { value: 0 },
-                color1: { value: new THREE.Color(0x2a2035) },
-                color2: { value: new THREE.Color(0x3d3050) }
-            },
-            vertexShader: `
-                varying vec2 vUv;
-                void main() {
-                    vUv = uv;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform float time;
-                uniform vec3 color1;
-                uniform vec3 color2;
-                varying vec2 vUv;
-
-                float noise(vec2 p) {
-                    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
-                }
-
-                void main() {
-                    // Soft edges
-                    float edgeX = smoothstep(0.0, 0.15, vUv.x) * smoothstep(1.0, 0.85, vUv.x);
-                    float edgeY = smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.7, vUv.y);
-                    float edge = edgeX * edgeY;
-
-                    // Dusty texture
-                    float n = noise(vUv * 100.0) * 0.3;
-                    n += noise(vUv * 50.0) * 0.4;
-                    n += noise(vUv * 25.0) * 0.3;
-
-                    vec3 color = mix(color1, color2, n);
-                    float alpha = edge * 0.25 * (0.5 + n * 0.5);
-
-                    gl_FragColor = vec4(color, alpha);
-                }
-            `,
-            transparent: true,
-            side: THREE.DoubleSide,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-        });
-
-        this.milkyWay = new THREE.Mesh(geometry, material);
-        this.milkyWay.rotation.x = Math.PI / 2;
-        this.mesh.add(this.milkyWay);
+        // Distant galaxies are now rendered as real 3D star-clouds by codex/Galaxies.js —
+        // the old flat billboard sprites here looked like flat pictures, so they're disabled.
+        // this._createGalaxies();
     }
 
     _createGalaxies() {
@@ -287,7 +233,7 @@ class Starfield {
                 blending: THREE.AdditiveBlending,
                 transparent: true,
                 depthWrite: false,
-                opacity: 0.3 + this._rnd() * 0.4
+                opacity: 0.12 + this._rnd() * 0.18
             }));
 
             const theta = 2 * Math.PI * this._rnd();
@@ -470,15 +416,10 @@ class Starfield {
         this.mesh.material.uniforms.uTime.value += deltaTime;
         this.mesh.material.uniforms.uCamPos.value.copy(camPos);
 
-        // Update Milky Way
-        if (this.milkyWay && this.milkyWay.material.uniforms) {
-            this.milkyWay.material.uniforms.time.value += deltaTime;
-        }
-
         // Fade galaxies based on distance
         this._galaxyPool.forEach(g => {
             const d = g.sprite.position.distanceTo(camPos);
-            g.sprite.material.opacity = THREE.MathUtils.clamp(0.1 + (this.cfg.radius / d) * 0.4, 0.08, 0.5);
+            g.sprite.material.opacity = THREE.MathUtils.clamp(0.05 + (this.cfg.radius / d) * 0.2, 0.04, 0.3);
         });
     }
 

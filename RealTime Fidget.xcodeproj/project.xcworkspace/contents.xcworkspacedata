@@ -5,6 +5,6 @@
       location = "self:">
    </FileRef>
    <FileRef
-      location = "group:AudioManager.swift">
+      location = "group:SpaceExplorationOverlay.swift">
    </FileRef>
 </Workspace>

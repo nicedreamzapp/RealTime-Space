@@ -386,11 +386,12 @@ class Nebula {
             }
             laneGeo.computeVertexNormals();
 
-            // Dark absorbing material
+            // Dark absorbing material — kept faint; at full opacity these planes
+            // read as solid black blobs instead of dust
             const laneMat = new THREE.MeshBasicMaterial({
                 color: 0x050303,
                 transparent: true,
-                opacity: 0.4 + this._rnd() * 0.3,
+                opacity: 0.14 + this._rnd() * 0.12,
                 side: THREE.DoubleSide,
                 blending: THREE.NormalBlending,
                 depthWrite: false

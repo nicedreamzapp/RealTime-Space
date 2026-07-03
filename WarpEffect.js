@@ -29,8 +29,6 @@ class WarpEffect {
             this._createHyperspaceTunnel();
         }
 
-        // Energy distortion overlay
-        this._createDistortionOverlay();
 
         // Speed lines on edges
         this._createSpeedLines();
@@ -257,65 +255,6 @@ class WarpEffect {
         this.mesh.add(this.hyperspaceTunnel);
     }
 
-    _createDistortionOverlay() {
-        // Screen-space distortion effect
-        const geometry = new THREE.PlaneGeometry(2, 2);
-
-        this.distortionUniforms = {
-            time: { value: 0 },
-            intensity: { value: 0 },
-            resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
-        };
-
-        const material = new THREE.ShaderMaterial({
-            uniforms: this.distortionUniforms,
-            vertexShader: `
-                varying vec2 vUv;
-                void main() {
-                    vUv = uv;
-                    gl_Position = vec4(position.xy, 0.0, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform float time;
-                uniform float intensity;
-                uniform vec2 resolution;
-                varying vec2 vUv;
-
-                void main() {
-                    if (intensity < 0.01) discard;
-
-                    vec2 center = vUv - 0.5;
-                    float dist = length(center);
-
-                    // Radial blur effect
-                    float blur = smoothstep(0.2, 0.8, dist) * intensity;
-
-                    // Color aberration at edges
-                    float aberration = dist * intensity * 0.02;
-
-                    // Edge glow
-                    float edge = smoothstep(0.3, 0.7, dist) * intensity;
-                    vec3 edgeColor = vec3(0.3, 0.5, 1.0) * edge * 0.3;
-
-                    // Tunnel vision effect
-                    float vignette = 1.0 - smoothstep(0.2, 0.8, dist * intensity);
-
-                    gl_FragColor = vec4(edgeColor, edge * 0.3);
-                }
-            `,
-            transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthTest: false,
-            depthWrite: false
-        });
-
-        this.distortionOverlay = new THREE.Mesh(geometry, material);
-        this.distortionOverlay.frustumCulled = false;
-        this.distortionOverlay.renderOrder = 999;
-        // Note: This should be added to a separate overlay scene or camera
-    }
-
     _createSpeedLines() {
         // Radial speed lines from center
         const lineCount = 100;
@@ -422,10 +361,6 @@ class WarpEffect {
             this.tunnelUniforms.intensity.value = this.intensity;
         }
 
-        if (this.distortionUniforms) {
-            this.distortionUniforms.time.value = this.time;
-            this.distortionUniforms.intensity.value = this.intensity;
-        }
 
         if (this.speedLineUniforms) {
             this.speedLineUniforms.time.value = this.time;
@@ -480,9 +415,6 @@ class WarpEffect {
 
     // Resize handler
     onResize(width, height) {
-        if (this.distortionUniforms) {
-            this.distortionUniforms.resolution.value.set(width, height);
-        }
     }
 
     dispose() {

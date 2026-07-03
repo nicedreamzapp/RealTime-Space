@@ -17,7 +17,22 @@ class SpaceNavigationController: ObservableObject {
     @Published var autoAlignToTarget: Bool = false
     @Published var autoApproachTarget: Bool = false
     @Published var focusTargetId: String? = nil
-    
+
+    // When a Codex discovery card / Field Guide is open in the webview, the native flight
+    // controls are hidden so they don't float over the modal. Driven by a "CHROME" bridge msg.
+    @Published var hideChrome: Bool = false
+
+    // Live heading-up radar contacts, fed from the 3D engine (camera-relative bearings).
+    struct RadarContact: Identifiable, Equatable {
+        let id: String      // object name (unique enough here)
+        let name: String
+        let type: String
+        let rx: CGFloat     // -1 = left, +1 = right
+        let ry: CGFloat     // -1 = behind, +1 = ahead (top of radar)
+        let dist: Int       // world units
+    }
+    @Published var radarContacts: [RadarContact] = []
+
     var thrustVector = Vector3D(x: 0, y: 0, z: 0)
     
     // Build a JSON-safe navigation payload for the JS bridge

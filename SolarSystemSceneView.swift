@@ -6,30 +6,72 @@ struct SolarSystemSceneView: UIViewRepresentable {
 
     var cinematicMode: Bool = true
 
+    // MARK: - Dynamic Event Types
+    enum DynamicEventType {
+        case meteorShower
+        case eclipse
+        case comet
+    }
+
+    // MARK: - Dynamic Event Model
+    struct DynamicEvent {
+        var type: DynamicEventType
+        var active: Bool
+        var startTime: TimeInterval
+        var duration: TimeInterval
+        var node: SCNNode?
+    }
+
+    @State private var currentDynamicEvents: [DynamicEvent] = []
+
     class Coordinator: NSObject, SCNSceneRendererDelegate {
         weak var view: SCNView?
         weak var scene: SCNScene?
         weak var sunLightNode: SCNNode?
 
+        private var cloudAnimationTimers: [SCNNode: TimeInterval] = [:]
+        private var stormAnimationTimers: [SCNNode: TimeInterval] = [:]
+        private var auroraNodes: [SCNNode] = []
+        private var nebulaNodes: [SCNNode] = []
+        private var starfieldNode: SCNNode?
+
+        private var dynamicEvents: [DynamicEvent] = []
+
+        // Camera Smooth Fly-To control
+        private var cameraFlyToTarget: SCNNode?
+        private var cameraFlyStartTime: TimeInterval?
+        private var cameraFlyDuration: TimeInterval = 5.0
+        private weak var cameraNode: SCNNode?
+
         init(view: SCNView?, scene: SCNScene?, sunLightNode: SCNNode?) {
             self.view = view
             self.scene = scene
             self.sunLightNode = sunLightNode
+            super.init()
+            setupInitialDynamicEvents()
+        }
+
+        // MARK: - Setup initial dynamic events (stub for future expansion)
+        private func setupInitialDynamicEvents() {
+            // Example stub: Add a meteor shower event starting in 3 seconds lasting 15 seconds
+            let now = CACurrentMediaTime()
+            dynamicEvents.append(DynamicEvent(type: .meteorShower, active: false, startTime: now + 3.0, duration: 15.0, node: nil))
         }
 
         func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
             guard let scene = scene else { return }
+
             // Compute sun direction in world space (from planet center outward)
             let sunDirWorld: SCNVector3 = {
                 if let sun = sunLightNode {
-                    let dir = SCNVector3( sun.worldPosition.x, sun.worldPosition.y, sun.worldPosition.z ).normalized()
+                    let dir = SCNVector3(sun.worldPosition.x, sun.worldPosition.y, sun.worldPosition.z).normalized()
                     return dir
                 } else {
                     return SCNVector3(1, 0.1, 0).normalized()
                 }
             }()
 
-            // Update all atmosphere outer materials
+            // Update atmosphere sunDir uniform
             scene.rootNode.enumerateChildNodes { node, _ in
                 if node.name == "Atmosphere" {
                     node.enumerateChildNodes { child, _ in
@@ -39,6 +81,229 @@ struct SolarSystemSceneView: UIViewRepresentable {
                     }
                 }
             }
+
+            // Animate clouds for applicable planets
+            animateClouds(atTime: time)
+
+            // Animate auroras
+            animateAuroras(atTime: time)
+
+            // Animate storms on gas giants
+            animateStorms(atTime: time)
+
+            // Animate nebulae (rotation and emission pulse)
+            animateNebulae(atTime: time)
+
+            // Animate starfield (slow rotation)
+            animateStarfield(atTime: time)
+
+            // Process dynamic events (meteor showers, eclipses, comets)
+            updateDynamicEvents(atTime: time)
+
+            // Update camera fly-to smooth transitions
+            updateCameraFlyTo(atTime: time)
+        }
+
+        // MARK: - Cloud Animation
+
+        private func animateClouds(atTime time: TimeInterval) {
+            // Find all cloud nodes by name "Clouds"
+            scene?.rootNode.enumerateChildNodes { node, _ in
+                if node.name == "Clouds" {
+                    // Animate texture offset or rotation around Y axis
+                    let speed: Float = 0.01
+                    node.eulerAngles.y += speed * Float(1.0/60.0)
+                }
+            }
+        }
+
+        // MARK: - Aurora Animation
+
+        private func animateAuroras(atTime time: TimeInterval) {
+            // Pulsate aurora opacity & hue shift
+            for auroraNode in auroraNodes {
+                guard let mat = auroraNode.geometry?.firstMaterial else { continue }
+                let pulse = 0.5 + 0.5 * sin(Float(time) * 2.0)
+                mat.emission.intensity = CGFloat(0.8 + 0.3 * pulse)
+                if let baseColor = mat.emission.contents as? UIColor {
+                    let hueShift = CGFloat(0.05 * sin(Float(time) * 3.0))
+                    var hue: CGFloat = 0, sat: CGFloat = 0, bri: CGFloat = 0, alpha: CGFloat = 0
+                    baseColor.getHue(&hue, saturation: &sat, brightness: &bri, alpha: &alpha)
+                    let newHue = (hue + hueShift).truncatingRemainder(dividingBy: 1.0)
+                    mat.emission.contents = UIColor(hue: newHue, saturation: sat, brightness: bri, alpha: alpha)
+                }
+            }
+        }
+
+        // MARK: - Storm Animation on Gas Giants
+
+        private func animateStorms(atTime time: TimeInterval) {
+            // Animate Great Red Spot on Jupiter by rotating it slowly around sphere surface
+            scene?.rootNode.enumerateChildNodes { node, _ in
+                if node.name == "Jupiter" {
+                    if let spotNode = node.childNode(withName: "GreatRedSpot", recursively: false) {
+                        // Rotate the spot slowly
+                        spotNode.eulerAngles.y += Float(0.02 * (1.0/60.0))
+                    }
+                }
+            }
+        }
+
+        // MARK: - Nebula Animation
+
+        private func animateNebulae(atTime time: TimeInterval) {
+            for nebulaNode in nebulaNodes {
+                // Slowly rotate nebula
+                let rotationSpeed: Float = 0.005
+                let frameDelta: Float = 1.0 / 60.0
+                nebulaNode.eulerAngles.y += rotationSpeed * frameDelta
+
+                // Pulse emission intensity subtly
+                if let mat = nebulaNode.geometry?.firstMaterial {
+                    // Break up the expression to help the type-checker
+                    let timeF = Float(time)
+                    let frequency: Float = 1.5
+                    // Create a deterministic per-node phase from its hash
+                    let hashValue = nebulaNode.hash
+                    let seed = Float(abs(hashValue % 10)) * 0.31415927 // small per-node phase offset
+                    let phase = timeF * frequency + seed
+                    let s = sin(phase)
+                    let base: Float = 0.8
+                    let amp: Float = 0.2
+                    let pulse = base + amp * s
+                    mat.emission.intensity = CGFloat(pulse)
+                }
+            }
+        }
+
+        // MARK: - Starfield Animation
+
+        private func animateStarfield(atTime time: TimeInterval) {
+            starfieldNode?.eulerAngles.y += Float(0.0007 * (1.0/60.0))
+        }
+
+        // MARK: - Dynamic Events Update
+
+        private func updateDynamicEvents(atTime time: TimeInterval) {
+            for i in 0..<dynamicEvents.count {
+                var event = dynamicEvents[i]
+                if !event.active && time >= event.startTime {
+                    event.active = true
+                    // Activate event node here (stub)
+                    if let scene = scene {
+                        switch event.type {
+                        case .meteorShower:
+                            event.node = createMeteorShowerNode()
+                            if let node = event.node {
+                                scene.rootNode.addChildNode(node)
+                            }
+                        case .eclipse:
+                            // Eclipse event stub
+                            break
+                        case .comet:
+                            // Comet event stub
+                            break
+                        }
+                    }
+                    dynamicEvents[i] = event
+                }
+                if event.active && time >= event.startTime + event.duration {
+                    // Deactivate and remove event node
+                    if let node = event.node {
+                        node.removeFromParentNode()
+                    }
+                    event.active = false
+                    event.node = nil
+                    dynamicEvents[i] = event
+                }
+            }
+        }
+
+        // MARK: - Meteor Shower Effect (Stub)
+
+        private func createMeteorShowerNode() -> SCNNode {
+            let meteorNode = SCNNode()
+            meteorNode.name = "MeteorShower"
+
+            // Create simple particle system for meteors
+            let meteorParticles = SCNParticleSystem()
+            meteorParticles.birthRate = 150
+            meteorParticles.particleLifeSpan = 3.0
+            meteorParticles.emissionDuration = 0
+            meteorParticles.emittingDirection = SCNVector3(-1, -1, 0)
+            meteorParticles.spreadingAngle = 15
+            meteorParticles.particleSize = 0.05
+            meteorParticles.particleColor = UIColor.white
+            meteorParticles.particleColorVariation = SCNVector4(0.2, 0.2, 0.2, 0)
+            meteorParticles.particleVelocity = 7.0
+            meteorParticles.particleVelocityVariation = 3.0
+            meteorParticles.acceleration = SCNVector3(0, -9.8, 0)
+            meteorParticles.particleImage = UIImage(systemName: "sparkle") ?? nil
+            meteorParticles.isAffectedByGravity = false
+            meteorParticles.blendMode = .additive
+
+            meteorNode.addParticleSystem(meteorParticles)
+            meteorNode.position = SCNVector3(40, 40, 0)
+            meteorNode.eulerAngles = SCNVector3(-Float.pi / 4, 0, 0)
+
+            return meteorNode
+        }
+
+        // MARK: - Camera Fly-To Control
+
+        func startCameraFlyTo(targetNode: SCNNode) {
+            cameraNode = view?.pointOfView
+            cameraFlyToTarget = targetNode
+            cameraFlyStartTime = CACurrentMediaTime()
+        }
+
+        private func updateCameraFlyTo(atTime time: TimeInterval) {
+            guard let cameraNode = cameraNode else { return }
+            guard let target = cameraFlyToTarget else { return }
+            guard let start = cameraFlyStartTime else { return }
+
+            let elapsed = time - start
+            if elapsed > cameraFlyDuration {
+                // Finish animation and set camera to final position and orientation
+                cameraNode.position = target.worldPosition
+                cameraNode.look(at: target.worldPosition)
+                cameraFlyToTarget = nil
+                cameraFlyStartTime = nil
+                return
+            }
+
+            // Interpolate position
+            let t = Float(elapsed / cameraFlyDuration)
+            let startPos = cameraNode.position
+            let endPos = SCNVector3(target.worldPosition.x, target.worldPosition.y + 2.0, target.worldPosition.z + 6.0)
+
+            let lerpPos = SCNVector3(
+                startPos.x + (endPos.x - startPos.x) * t,
+                startPos.y + (endPos.y - startPos.y) * t,
+                startPos.z + (endPos.z - startPos.z) * t
+            )
+            cameraNode.position = lerpPos
+
+            // Interpolate look-at - just look directly at target position for simplicity
+            cameraNode.look(at: target.worldPosition)
+        }
+
+        // MARK: - Register aurora nodes for animation
+
+        func registerAuroraNode(_ node: SCNNode) {
+            auroraNodes.append(node)
+        }
+
+        // MARK: - Register nebula nodes for animation
+
+        func registerNebulaNode(_ node: SCNNode) {
+            nebulaNodes.append(node)
+        }
+
+        // MARK: - Register starfield node for animation
+
+        func registerStarfieldNode(_ node: SCNNode) {
+            starfieldNode = node
         }
     }
 
@@ -71,13 +336,13 @@ struct SolarSystemSceneView: UIViewRepresentable {
         createSun(scene: scene)
 
         // Create planets with PBR materials and atmospheres
-        createPlanets(scene: scene)
+        createPlanets(scene: scene, coordinator: context.coordinator)
 
         // Create realistic starfield
-        createStarfield(scene: scene)
+        createStarfield(scene: scene, coordinator: context.coordinator)
 
         // Create nebula background
-        createNebula(scene: scene)
+        createNebula(scene: scene, coordinator: context.coordinator)
 
         // Setup advanced lighting
         setupLighting(scene: scene)
@@ -89,7 +354,7 @@ struct SolarSystemSceneView: UIViewRepresentable {
         }
         scnView.delegate = context.coordinator
 
-        // Apply post-processing (bloom, tone mapping)
+        // Apply post-processing (bloom, tone mapping, vignette, motion blur overlay)
         applyPostProcessing(scnView: scnView)
 
         if cinematicMode {
@@ -105,7 +370,7 @@ struct SolarSystemSceneView: UIViewRepresentable {
 
     func updateUIView(_ uiView: SCNView, context: Context) {}
 
-    // MARK: - Camera Setup with HDR
+    // MARK: - Camera Setup with HDR and fly-to stub
     private func setupCamera(scene: SCNScene, scnView: SCNView) {
         let camera = SCNCamera()
         camera.zNear = 0.1
@@ -273,50 +538,155 @@ struct SolarSystemSceneView: UIViewRepresentable {
         return particles
     }
 
-    // MARK: - Planets with PBR Materials
-    private func createPlanets(scene: SCNScene) {
-        let planetData: [(name: String, radius: Float, distance: Float,
-                          color: UIColor, hasAtmosphere: Bool, atmosphereColor: UIColor,
-                          metalness: Float, roughness: Float, hasRings: Bool,
-                          orbitSpeed: Double, rotationSpeed: Double)] = [
-            ("Mercury", 0.25, 5.0, UIColor(red: 0.6, green: 0.5, blue: 0.5, alpha: 1),
-             false, .clear, 0.1, 0.9, false, 8.0, 1.5),
-            ("Venus", 0.35, 7.0, UIColor(red: 0.9, green: 0.8, blue: 0.6, alpha: 1),
-             true, UIColor(red: 1.0, green: 0.9, blue: 0.7, alpha: 0.3), 0.0, 0.7, false, 12.0, 4.0),
-            ("Earth", 0.38, 9.5, UIColor(red: 0.2, green: 0.5, blue: 0.8, alpha: 1),
-             true, UIColor(red: 0.6, green: 0.8, blue: 1.0, alpha: 0.25), 0.0, 0.5, false, 15.0, 1.0),
-            ("Mars", 0.30, 12.0, UIColor(red: 0.8, green: 0.4, blue: 0.2, alpha: 1),
-             true, UIColor(red: 1.0, green: 0.8, blue: 0.6, alpha: 0.1), 0.2, 0.8, false, 20.0, 1.1),
-            ("Jupiter", 0.80, 18.0, UIColor(red: 0.8, green: 0.7, blue: 0.6, alpha: 1),
-             true, UIColor(red: 0.9, green: 0.8, blue: 0.7, alpha: 0.15), 0.0, 0.6, false, 35.0, 0.4),
-            ("Saturn", 0.70, 25.0, UIColor(red: 0.9, green: 0.85, blue: 0.7, alpha: 1),
-             true, UIColor(red: 1.0, green: 0.95, blue: 0.8, alpha: 0.1), 0.0, 0.5, true, 50.0, 0.45),
-            ("Uranus", 0.50, 32.0, UIColor(red: 0.6, green: 0.85, blue: 0.9, alpha: 1),
-             true, UIColor(red: 0.7, green: 0.9, blue: 1.0, alpha: 0.15), 0.0, 0.4, true, 70.0, 0.7),
-            ("Neptune", 0.48, 38.0, UIColor(red: 0.3, green: 0.5, blue: 0.9, alpha: 1),
-             true, UIColor(red: 0.4, green: 0.6, blue: 1.0, alpha: 0.2), 0.0, 0.4, false, 90.0, 0.65)
-        ]
+    // MARK: - Planets with PBR Materials and NASA/ESA textures + animations
+    private func createPlanets(scene: SCNScene, coordinator: Coordinator) {
+        // Break out tuples into separate variables for compiler sanity
+        let mercury = (
+            name: "Mercury",
+            radius: Float(0.25),
+            distance: Float(5.0),
+            color: UIColor(red: 0.6, green: 0.5, blue: 0.5, alpha: 1),
+            hasAtmosphere: false,
+            atmosphereColor: UIColor.clear,
+            metalness: Float(0.1),
+            roughness: Float(0.9),
+            hasRings: false,
+            orbitSpeed: Double(8.0),
+            rotationSpeed: Double(1.5)
+        )
+        let venus = (
+            name: "Venus",
+            radius: Float(0.35),
+            distance: Float(7.0),
+            color: UIColor(red: 0.9, green: 0.8, blue: 0.6, alpha: 1),
+            hasAtmosphere: true,
+            atmosphereColor: UIColor(red: 1.0, green: 0.9, blue: 0.7, alpha: 0.3),
+            metalness: Float(0.0),
+            roughness: Float(0.7),
+            hasRings: false,
+            orbitSpeed: Double(12.0),
+            rotationSpeed: Double(4.0)
+        )
+        let earth = (
+            name: "Earth",
+            radius: Float(0.38),
+            distance: Float(9.5),
+            color: UIColor(red: 0.2, green: 0.5, blue: 0.8, alpha: 1),
+            hasAtmosphere: true,
+            atmosphereColor: UIColor(red: 0.6, green: 0.8, blue: 1.0, alpha: 0.25),
+            metalness: Float(0.0),
+            roughness: Float(0.5),
+            hasRings: false,
+            orbitSpeed: Double(15.0),
+            rotationSpeed: Double(1.0)
+        )
+        let mars = (
+            name: "Mars",
+            radius: Float(0.30),
+            distance: Float(12.0),
+            color: UIColor(red: 0.8, green: 0.4, blue: 0.2, alpha: 1),
+            hasAtmosphere: true,
+            atmosphereColor: UIColor(red: 1.0, green: 0.8, blue: 0.6, alpha: 0.1),
+            metalness: Float(0.2),
+            roughness: Float(0.8),
+            hasRings: false,
+            orbitSpeed: Double(20.0),
+            rotationSpeed: Double(1.1)
+        )
+        let jupiter = (
+            name: "Jupiter",
+            radius: Float(0.80),
+            distance: Float(18.0),
+            color: UIColor(red: 0.8, green: 0.7, blue: 0.6, alpha: 1),
+            hasAtmosphere: true,
+            atmosphereColor: UIColor(red: 0.9, green: 0.8, blue: 0.7, alpha: 0.15),
+            metalness: Float(0.0),
+            roughness: Float(0.6),
+            hasRings: false,
+            orbitSpeed: Double(35.0),
+            rotationSpeed: Double(0.4)
+        )
+        let saturn = (
+            name: "Saturn",
+            radius: Float(0.70),
+            distance: Float(25.0),
+            color: UIColor(red: 0.9, green: 0.85, blue: 0.7, alpha: 1),
+            hasAtmosphere: true,
+            atmosphereColor: UIColor(red: 1.0, green: 0.95, blue: 0.8, alpha: 0.1),
+            metalness: Float(0.0),
+            roughness: Float(0.5),
+            hasRings: true,
+            orbitSpeed: Double(50.0),
+            rotationSpeed: Double(0.45)
+        )
+        let uranus = (
+            name: "Uranus",
+            radius: Float(0.50),
+            distance: Float(32.0),
+            color: UIColor(red: 0.6, green: 0.85, blue: 0.9, alpha: 1),
+            hasAtmosphere: true,
+            atmosphereColor: UIColor(red: 0.7, green: 0.9, blue: 1.0, alpha: 0.15),
+            metalness: Float(0.0),
+            roughness: Float(0.4),
+            hasRings: true,
+            orbitSpeed: Double(70.0),
+            rotationSpeed: Double(0.7)
+        )
+        let neptune = (
+            name: "Neptune",
+            radius: Float(0.48),
+            distance: Float(38.0),
+            color: UIColor(red: 0.3, green: 0.5, blue: 0.9, alpha: 1),
+            hasAtmosphere: true,
+            atmosphereColor: UIColor(red: 0.4, green: 0.6, blue: 1.0, alpha: 0.2),
+            metalness: Float(0.0),
+            roughness: Float(0.4),
+            hasRings: false,
+            orbitSpeed: Double(90.0),
+            rotationSpeed: Double(0.65)
+        )
+
+        let planetData = [mercury, venus, earth, mars, jupiter, saturn, uranus, neptune]
 
         for planet in planetData {
+            let name = planet.name
+            let radius = planet.radius
+            let distance = planet.distance
+            let color = planet.color
+            let hasAtmosphere = planet.hasAtmosphere
+            let atmosphereColor = planet.atmosphereColor
+            let metalness = planet.metalness
+            let roughness = planet.roughness
+            let hasRings = planet.hasRings
+            let orbitSpeed = planet.orbitSpeed
+            let rotationSpeed = planet.rotationSpeed
+
             // Orbital container
             let orbitNode = SCNNode()
             orbitNode.position = SCNVector3(0, 0, 0)
-            orbitNode.name = "\(planet.name)Orbit"
+            orbitNode.name = "\(name)Orbit"
 
             // Create orbit ring visual
-            let orbitRing = createOrbitRing(radius: planet.distance)
+            let orbitRing = createOrbitRing(radius: distance)
             scene.rootNode.addChildNode(orbitRing)
 
             // Planet geometry with high detail
-            let planetGeometry = SCNSphere(radius: CGFloat(planet.radius))
+            let planetGeometry = SCNSphere(radius: CGFloat(radius))
             planetGeometry.segmentCount = 48
 
             // PBR Material
             let material = SCNMaterial()
             material.lightingModel = .physicallyBased
-            material.diffuse.contents = createPlanetTexture(baseColor: planet.color, name: planet.name)
-            material.metalness.contents = planet.metalness
-            material.roughness.contents = planet.roughness
+
+            // Use NASA/ESA high-res textures if available, else fallback to procedural
+            if let nasaTexture = loadNasaTexture(for: name) {
+                material.diffuse.contents = nasaTexture
+            } else {
+                material.diffuse.contents = createPlanetTexture(baseColor: color, name: name)
+            }
+
+            material.metalness.contents = metalness
+            material.roughness.contents = roughness
             material.normal.contents = createNormalMapTexture()
             material.normal.intensity = 0.3
             material.ambientOcclusion.contents = UIColor(white: 0.8, alpha: 1.0)
@@ -324,43 +694,63 @@ struct SolarSystemSceneView: UIViewRepresentable {
             planetGeometry.materials = [material]
 
             let planetNode = SCNNode(geometry: planetGeometry)
-            planetNode.name = planet.name
-            planetNode.position = SCNVector3(planet.distance, 0, 0)
+            planetNode.name = name
+            planetNode.position = SCNVector3(distance, 0, 0)
 
             // Ensure planet casts and receives shadows properly
             planetNode.castsShadow = false
             planetNode.categoryBitMask = 1
             planetNode.geometry?.firstMaterial?.writesToDepthBuffer = true
 
-            if cinematicMode && (planet.name == "Earth" || planet.name == "Saturn") {
+            if cinematicMode && (name == "Earth" || name == "Saturn") {
                 planetNode.geometry?.firstMaterial?.roughness.contents = 0.45
                 planetNode.geometry?.firstMaterial?.ambientOcclusion.intensity = 0.6
             }
 
+            // Add clouds layer for applicable planets with animation
+            if name == "Earth" || name == "Venus" || name == "Mars" {
+                let cloudsNode = createClouds(radius: CGFloat(radius * 1.015))
+                cloudsNode.name = "Clouds"
+                planetNode.addChildNode(cloudsNode)
+
+                // If Earth, add aurora effects too
+                if name == "Earth" {
+                    let auroraNode = createAurora(radius: CGFloat(radius * 1.025))
+                    planetNode.addChildNode(auroraNode)
+                    coordinator.registerAuroraNode(auroraNode)
+                }
+            }
+
             // Add atmosphere if applicable
-            if planet.hasAtmosphere {
+            if hasAtmosphere {
                 let atmosphere = createAtmosphere(
-                    radius: CGFloat(planet.radius),
-                    color: planet.atmosphereColor
+                    radius: CGFloat(radius),
+                    color: atmosphereColor
                 )
                 planetNode.addChildNode(atmosphere)
             }
 
             // Add rings for Saturn and Uranus
-            if planet.hasRings {
+            if hasRings {
                 let rings = createPlanetRings(
-                    innerRadius: CGFloat(planet.radius) * 1.3,
-                    outerRadius: CGFloat(planet.radius) * 2.5,
-                    planetName: planet.name
+                    innerRadius: CGFloat(radius) * 1.3,
+                    outerRadius: CGFloat(radius) * 2.5,
+                    planetName: name
                 )
                 planetNode.addChildNode(rings)
-                if planet.name == "Saturn" {
-                    addRingContactShadow(to: planetNode, inner: CGFloat(planet.radius) * 1.3, outer: CGFloat(planet.radius) * 2.5)
+                if name == "Saturn" {
+                    addRingContactShadow(to: planetNode, inner: CGFloat(radius) * 1.3, outer: CGFloat(radius) * 2.5)
                 }
             }
 
+            // Add gas giant storms (e.g. Great Red Spot)
+            if name == "Jupiter" {
+                let greatRedSpot = createGreatRedSpot(radius: CGFloat(radius))
+                planetNode.addChildNode(greatRedSpot)
+            }
+
             // Add moon for Earth
-            if planet.name == "Earth" {
+            if name == "Earth" {
                 let moon = createMoon()
                 planetNode.addChildNode(moon)
             }
@@ -370,16 +760,92 @@ struct SolarSystemSceneView: UIViewRepresentable {
 
             // Orbital animation
             let orbitAction = SCNAction.repeatForever(
-                SCNAction.rotateBy(x: 0, y: .pi * 2, z: 0, duration: planet.orbitSpeed)
+                SCNAction.rotateBy(x: 0, y: .pi * 2, z: 0, duration: orbitSpeed)
             )
             orbitNode.runAction(orbitAction)
 
             // Planet rotation
             let rotateAction = SCNAction.repeatForever(
-                SCNAction.rotateBy(x: 0, y: .pi * 2, z: 0, duration: planet.rotationSpeed)
+                SCNAction.rotateBy(x: 0, y: .pi * 2, z: 0, duration: rotationSpeed)
             )
             planetNode.runAction(rotateAction)
         }
+    }
+
+    // MARK: - Load NASA/ESA Texture if available (conditional)
+    private func loadNasaTexture(for planetName: String) -> UIImage? {
+        // Use bundled or downloaded higher-res NASA/ESA textures if available.
+        // For demonstration, check asset catalog by name convention "NASA_{PlanetName}"
+        let imageName = "NASA_\(planetName)"
+        return UIImage(named: imageName)
+    }
+
+    // MARK: - Clouds Layer
+    private func createClouds(radius: CGFloat) -> SCNNode {
+        let cloudsGeometry = SCNSphere(radius: radius)
+        cloudsGeometry.segmentCount = 48
+
+        let cloudsMaterial = SCNMaterial()
+        cloudsMaterial.lightingModel = .physicallyBased
+        cloudsMaterial.diffuse.contents = UIImage(named: "CloudsTexture") ?? UIColor(white: 1.0, alpha: 0.3) // placeholder cloud texture
+        cloudsMaterial.transparency = 0.4
+        cloudsMaterial.isDoubleSided = true
+        cloudsMaterial.writesToDepthBuffer = false
+        cloudsMaterial.blendMode = .alpha
+        cloudsGeometry.materials = [cloudsMaterial]
+
+        let cloudsNode = SCNNode(geometry: cloudsGeometry)
+        return cloudsNode
+    }
+
+    // MARK: - Aurora Effect
+    private func createAurora(radius: CGFloat) -> SCNNode {
+        let auroraGeometry = SCNSphere(radius: radius)
+        auroraGeometry.segmentCount = 64
+
+        let auroraMaterial = SCNMaterial()
+        auroraMaterial.lightingModel = .constant
+        auroraMaterial.diffuse.contents = UIColor.clear
+        auroraMaterial.emission.contents = UIColor.green.withAlphaComponent(0.3)
+        auroraMaterial.isDoubleSided = true
+        auroraMaterial.blendMode = .add
+        auroraMaterial.writesToDepthBuffer = false
+        auroraGeometry.materials = [auroraMaterial]
+
+        let auroraNode = SCNNode(geometry: auroraGeometry)
+        return auroraNode
+    }
+
+    // MARK: - Great Red Spot Storm on Jupiter
+    private func createGreatRedSpot(radius: CGFloat) -> SCNNode {
+        // Small flattened sphere on surface of Jupiter representing storm
+        let spotGeometry = SCNSphere(radius: radius * 0.18)
+        spotGeometry.segmentCount = 24
+
+        let spotMaterial = SCNMaterial()
+        spotMaterial.lightingModel = .physicallyBased
+        spotMaterial.diffuse.contents = UIColor(red: 0.85, green: 0.4, blue: 0.3, alpha: 0.8)
+        spotMaterial.emission.contents = UIColor(red: 0.9, green: 0.35, blue: 0.25, alpha: 0.4)
+        spotMaterial.isDoubleSided = false
+        spotMaterial.roughness.contents = 0.8
+        spotGeometry.materials = [spotMaterial]
+
+        let spotNode = SCNNode(geometry: spotGeometry)
+        spotNode.name = "GreatRedSpot"
+
+        // Position on giant planet surface (slightly tilted)
+        let latitude = CGFloat.pi / 3.8
+        let longitude = CGFloat.pi / 5.0
+        let radiusCG = radius
+        let x = radiusCG * sin(latitude) * cos(longitude)
+        let y = radiusCG * cos(latitude)
+        let z = radiusCG * sin(latitude) * sin(longitude)
+        spotNode.position = SCNVector3(Float(x), Float(y), Float(z))
+
+        // Align sphere normal outwards
+        spotNode.look(at: SCNVector3(0, 0, 0), up: spotNode.worldUp, localFront: spotNode.worldPosition)
+
+        return spotNode
     }
 
     private func addRingContactShadow(to planetNode: SCNNode, inner: CGFloat, outer: CGFloat) {
@@ -756,8 +1222,8 @@ struct SolarSystemSceneView: UIViewRepresentable {
         return ringNode
     }
 
-    // MARK: - Starfield
-    private func createStarfield(scene: SCNScene) {
+    // MARK: - Starfield with subtle animation support
+    private func createStarfield(scene: SCNScene, coordinator: Coordinator) {
         let starContainer = SCNNode()
         starContainer.name = "Starfield"
 
@@ -813,17 +1279,14 @@ struct SolarSystemSceneView: UIViewRepresentable {
             }
         }
 
-        // Subtle rotation for star parallax effect
-        let starRotation = SCNAction.repeatForever(
-            SCNAction.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 600)
-        )
-        starContainer.runAction(starRotation)
+        // Subtle rotation for star parallax effect (registered for animation)
+        coordinator.registerStarfieldNode(starContainer)
 
         scene.rootNode.addChildNode(starContainer)
     }
 
-    // MARK: - Nebula Background
-    private func createNebula(scene: SCNScene) {
+    // MARK: - Nebula Background with animation registration
+    private func createNebula(scene: SCNScene, coordinator: Coordinator) {
         // Create several nebula clouds
         let nebulaColors: [UIColor] = [
             UIColor(red: 0.4, green: 0.2, blue: 0.6, alpha: 0.15),  // Purple
@@ -854,6 +1317,7 @@ struct SolarSystemSceneView: UIViewRepresentable {
                 Float.random(in: 0...Float.pi)
             )
 
+            coordinator.registerNebulaNode(nebulaNode)
             scene.rootNode.addChildNode(nebulaNode)
         }
     }
@@ -957,15 +1421,24 @@ struct SolarSystemSceneView: UIViewRepresentable {
         scene.rootNode.addChildNode(rimNode)
     }
 
-    // MARK: - Post-Processing Effects
+    // MARK: - Post-Processing Effects (including motion blur overlay stub & soundscape hook)
     private func applyPostProcessing(scnView: SCNView) {
         // The HDR camera settings handle bloom and tone mapping
-        // Additional SCNTechnique could be added here for more effects
+        // Additional SCNTechnique could be added here for more effects such as SSAO, color grading, etc.
 
         // For vignette effect, we can add an overlay
         let vignetteView = createVignetteOverlay(frame: scnView.bounds)
         vignetteView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         scnView.addSubview(vignetteView)
+
+        // Add subtle motion blur overlay (stub)
+        let motionBlurView = createMotionBlurOverlay(frame: scnView.bounds)
+        motionBlurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        scnView.addSubview(motionBlurView)
+
+        // Soundscape hooks (stub)
+        // Future: integrate audio engine and dynamically adjust ambient space sounds here
+        // e.g., based on camera position, events, etc.
     }
 
     private func createVignetteOverlay(frame: CGRect) -> UIView {
@@ -987,6 +1460,14 @@ struct SolarSystemSceneView: UIViewRepresentable {
         gradient.endPoint = CGPoint(x: 1.0, y: 1.0)
 
         view.layer.addSublayer(gradient)
+        return view
+    }
+
+    private func createMotionBlurOverlay(frame: CGRect) -> UIView {
+        // Simple translucent dark layer to simulate slight blur buildup effect
+        let view = UIView(frame: frame)
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = UIColor(white: 0.0, alpha: 0.07)
         return view
     }
 }

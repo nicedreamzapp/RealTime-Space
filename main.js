@@ -14,7 +14,7 @@ window.addEventListener('unhandledrejection', function(event) {
 
 console.log("✅ main.js loaded - HUBBLE-QUALITY Edition");
 
-let rendererCore, lighting, navPhysics, orbitalMechanics, loop, starfield;
+let rendererCore, lighting, navPhysics, orbitalMechanics, loop, starfield, hygStarfield;
 let hud, radar;
 let asteroidBelt, comets, nebulae, ambientParticles;
 let objects = [];
@@ -22,6 +22,10 @@ let floatingDebris = [];
 
 // Exploration system
 let celestialCatalog, explorationTracker, navigationArrows;
+
+// Sound + missions
+let audioEngine = null;
+let missionSystem = null;
 
 // EPIC EFFECTS
 let blackHoles = [];
@@ -135,7 +139,17 @@ function initGalaxy() {
             if (typeof THREE.EffectComposer !== 'undefined') {
                 const { EffectComposer, RenderPass, UnrealBloomPass, ShaderPass } = THREE;
 
-                const composer = new EffectComposer(rendererCore.renderer);
+                // iOS WKWebView renders the composer BLACK when it uses half-float render
+                // targets (the old bug). Force a plain 8-bit UnsignedByte target, which every
+                // iOS WebGL context supports, so the pipeline actually produces pixels.
+                const _dbs = rendererCore.renderer.getDrawingBufferSize(new THREE.Vector2());
+                const _iosRT = new THREE.WebGLRenderTarget(_dbs.x, _dbs.y, {
+                    type: THREE.UnsignedByteType,
+                    format: THREE.RGBAFormat,
+                    minFilter: THREE.LinearFilter,
+                    magFilter: THREE.LinearFilter
+                });
+                const composer = new EffectComposer(rendererCore.renderer, _iosRT);
                 const renderPass = new RenderPass(rendererCore.scene, rendererCore.camera);
                 composer.addPass(renderPass);
 
@@ -149,6 +163,76 @@ function initGalaxy() {
                     );
                     composer.addPass(bloomPass);
                     rendererCore.bloomPass = bloomPass;
+
+                    // UnrealBloomPass allocates its OWN half-float targets internally, which
+                    // are the most likely thing to render black on iOS. Force them to 8-bit
+                    // and re-allocate at the current size. Wrapped defensively — if the
+                    // internals differ across THREE versions, the black-frame guard still
+                    // catches any failure.
+                    try {
+                        const byte = THREE.UnsignedByteType;
+                        const rts = [].concat(
+                            bloomPass.renderTargetsHorizontal || [],
+                            bloomPass.renderTargetsVertical || [],
+                            bloomPass.renderTargetBright ? [bloomPass.renderTargetBright] : []
+                        );
+                        rts.forEach(rt => { if (rt && rt.texture) rt.texture.type = byte; });
+                        bloomPass.setSize(window.innerWidth, window.innerHeight);
+                    } catch (e) { console.warn("bloom target coercion skipped:", e); }
+                }
+
+                // God rays: screen-space radial light shafts from the sun. Samples the
+                // frame along the ray toward the sun's screen position, so planets and
+                // rings crossing the sun carve real crepuscular shadows into the shafts.
+                if (ShaderPass) {
+                    const godRaysShader = {
+                        uniforms: {
+                            tDiffuse: { value: null },
+                            uLightPos: { value: new THREE.Vector2(0.5, 0.5) },
+                            uIntensity: { value: 0.0 },
+                            uDecay: { value: 0.94 },
+                            uDensity: { value: 0.9 },
+                            uWeight: { value: 0.065 }
+                        },
+                        vertexShader: `
+                            varying vec2 vUv;
+                            void main() {
+                                vUv = uv;
+                                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                            }
+                        `,
+                        fragmentShader: `
+                            uniform sampler2D tDiffuse;
+                            uniform vec2 uLightPos;
+                            uniform float uIntensity;
+                            uniform float uDecay;
+                            uniform float uDensity;
+                            uniform float uWeight;
+                            varying vec2 vUv;
+
+                            void main() {
+                                vec3 base = texture2D(tDiffuse, vUv).rgb;
+                                vec3 rays = vec3(0.0);
+                                if (uIntensity > 0.001) {
+                                    vec2 delta = (uLightPos - vUv) * uDensity / 32.0;
+                                    vec2 coord = vUv;
+                                    float illum = 1.0;
+                                    for (int i = 0; i < 32; i++) {
+                                        coord += delta;
+                                        vec3 s = texture2D(tDiffuse, coord).rgb;
+                                        float lum = dot(s, vec3(0.299, 0.587, 0.114));
+                                        s *= smoothstep(0.5, 1.1, lum); // only bright pixels shaft
+                                        rays += s * illum * uWeight;
+                                        illum *= uDecay;
+                                    }
+                                }
+                                gl_FragColor = vec4(base + rays * uIntensity, 1.0);
+                            }
+                        `
+                    };
+                    const godRaysPass = new ShaderPass(godRaysShader);
+                    composer.addPass(godRaysPass);
+                    rendererCore.godRaysPass = godRaysPass;
                 }
 
                 // Add LUT shader pass if LUT texture is loaded
@@ -269,8 +353,16 @@ function initGalaxy() {
                     lutPass.enabled = lutEnabled;
                 }
 
+                // Final linear→sRGB conversion. Composer render targets are linear in
+                // r150, so without this the whole frame displays too dark.
+                if (ShaderPass && THREE.GammaCorrectionShader) {
+                    composer.addPass(new ShaderPass(THREE.GammaCorrectionShader));
+                }
+
                 rendererCore.composer = composer;
                 rendererCore.useComposer = true;
+                // TEMP: force direct rendering (bypass composer) for black-screen isolation.
+                if (window.__FORCE_DIRECT__) rendererCore.useComposer = false;
 
                 // Restore LUT settings from localStorage
                 try {
@@ -298,7 +390,9 @@ function initGalaxy() {
         }
 
         lighting = new LightingSystem(rendererCore.scene);
-        lighting.setOverallIntensity(3.5);  // Brighter lighting for vibrant, lifelike visuals
+        // Low fill: in real space the night side of a planet is nearly black.
+        // The sun (point light) does the real work; ambient is just starlight.
+        lighting.setOverallIntensity(1.2);
         navPhysics = new NavigationPhysics(rendererCore.camera);
 
         // Set camera starting position - near Earth orbit for good view of inner solar system
@@ -361,6 +455,20 @@ function initGalaxy() {
         // Initialize exploration system
         initExplorationSystem();
         exposeFlyToAPI();
+
+        // Procedural soundscape (starts on first touch — autoplay policy)
+        if (typeof AudioEngine !== 'undefined') {
+            audioEngine = new AudioEngine();
+        }
+
+        // Missions / challenges
+        if (typeof Missions !== 'undefined') {
+            missionSystem = new Missions();
+            window.missionSystem = missionSystem;
+        }
+
+        // Time acceleration control (pill button + JS API)
+        createTimeControl();
 
         // Create update systems
         const systems = createUpdateSystems();
@@ -432,6 +540,28 @@ class RendererExposure {
 
 let rendererExposure = null;
 
+// One-time guard against the iOS "composer renders black" bug. Reads a wide central band
+// of the just-composed frame; if every sampled pixel is black, the post-processing pipeline
+// failed on this device and we must fall back to direct rendering. The scene always has a
+// Milky-Way background, so a WORKING frame is never all-black here — only the bug is.
+function composerFrameIsBlack(renderer) {
+    try {
+        const gl = renderer.getContext();
+        const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+        if (!w || !h) return false;
+        const rh = Math.min(h, 512);
+        const y0 = Math.floor((h - rh) / 2);
+        const buf = new Uint8Array(w * rh * 4);
+        gl.readPixels(0, y0, w, rh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        for (let i = 0; i < buf.length; i += 4) {
+            if (buf[i] > 10 || buf[i + 1] > 10 || buf[i + 2] > 10) return false; // real content
+        }
+        return true; // nothing but black → the bug
+    } catch (e) {
+        return false; // can't tell → assume OK, don't disable
+    }
+}
+
 function createUpdateSystems() {
     // Last comet audio play timestamp to avoid spamming audio
     let lastCometAudioTime = 0;
@@ -445,6 +575,10 @@ function createUpdateSystems() {
             update: (dt, rc) => {
                 if (starfield && rc?.camera) {
                     starfield.update(rc.camera.position, dt);
+                }
+                // Keep the real-sky shell centered on the camera so its stars stay at infinity.
+                if (hygStarfield && rc?.camera) {
+                    hygStarfield.update(rc.camera.position);
                 }
             }
         },
@@ -492,6 +626,101 @@ function createUpdateSystems() {
                     rendererExposure.update(dt);
                 }
             }
+        },
+        // God rays: track the sun's screen position, fade by view angle so the
+        // shafts only appear when the sun is actually in (or near) frame
+        {
+            name: "GodRays",
+            update: (dt, rc) => {
+                const pass = rendererCore?.godRaysPass;
+                if (!pass || !rc?.camera) return;
+
+                const sunNdc = new THREE.Vector3(0, 0, 0).project(rc.camera);
+                const onScreenX = sunNdc.x * 0.5 + 0.5;
+                const onScreenY = sunNdc.y * 0.5 + 0.5;
+                pass.uniforms.uLightPos.value.set(onScreenX, onScreenY);
+
+                const camDir = new THREE.Vector3(0, 0, -1).applyQuaternion(rc.camera.quaternion);
+                const toSun = rc.camera.position.clone().negate().normalize(); // sun at origin
+                const facing = Math.max(0, camDir.dot(toSun));
+
+                // Fade out as the sun leaves the frame, kill when behind camera
+                const offCenter = Math.hypot(onScreenX - 0.5, onScreenY - 0.5);
+                const screenFade = THREE.MathUtils.clamp(1.4 - offCenter, 0, 1);
+                const behind = sunNdc.z > 1 ? 0 : 1;
+
+                pass.uniforms.uIntensity.value = 0.6 * facing * facing * screenFade * behind;
+            }
+        },
+        // Procedural soundscape follows flight state and proximity to bodies
+        {
+            name: "Audio",
+            update: (dt, rc) => {
+                if (!audioEngine || !rc?.camera || !navPhysics) return;
+                const camPos = rc.camera.position;
+                let bhDist = Infinity;
+                blackHoles.forEach(bh => {
+                    bhDist = Math.min(bhDist, camPos.distanceTo(bh.mesh.position));
+                });
+                audioEngine.update(dt, {
+                    speed: navPhysics.getSpeed(),
+                    thrusting: navPhysics.isThrusting,
+                    boosting: navPhysics.isBoosting,
+                    sunDistance: camPos.length(),
+                    blackHoleDistance: bhDist
+                });
+            }
+        },
+        // Mission checks (4x per second is plenty)
+        {
+            name: "Missions",
+            update: (() => {
+                let frame = 0;
+                return (dt, rc) => {
+                    if (!missionSystem || !rc?.camera) return;
+                    if (++frame % 15 !== 0) return;
+                    const camPos = rc.camera.position;
+                    let bhDist = Infinity;
+                    blackHoles.forEach(bh => {
+                        bhDist = Math.min(bhDist, camPos.distanceTo(bh.mesh.position));
+                    });
+                    missionSystem.update({
+                        camPos: camPos,
+                        sunDistance: camPos.length(),
+                        blackHoleDistance: bhDist,
+                        planets: objects.filter(o => o.type === 'planet'),
+                        moons: objects.filter(o => o.type === 'moon'),
+                        comets: comets || [],
+                        saturn: objects.find(o => o.name === 'Saturn')
+                    });
+                };
+            })()
+        },
+        // Codex: arms the SCAN button when a catalogued body is in range
+        {
+            name: "Codex",
+            update: (dt) => { if (window.codex) window.codex.update(dt); }
+        },
+        // Planet detail LOD: swap in true high-res textures only when close, free them when
+        // far. Earth → 8K day+night; Jupiter/Saturn → real 4K photo. Hysteresis avoids thrash.
+        {
+            name: "PlanetLOD",
+            update: (() => {
+                let frame = 0;
+                const apply = (body, setter) => {
+                    if (!body || !body[setter]) return;
+                    const d = rendererCore.camera.position.distanceTo(body.mesh.position);
+                    const r = body.radius || 1;
+                    if (d < r * 7) body[setter](true);
+                    else if (d > r * 11) body[setter](false);
+                };
+                return (dt, rc) => {
+                    if (++frame % 20 !== 0 || !rc?.camera) return;
+                    apply(objects.find(o => o.name === 'Earth'), 'setEarthDetail');
+                    apply(objects.find(o => o.name === 'Jupiter'), 'setTexturedDetail');
+                    apply(objects.find(o => o.name === 'Saturn'), 'setTexturedDetail');
+                };
+            })()
         },
         {
             name: "UIUpdater",
@@ -568,10 +797,13 @@ function createUpdateSystems() {
 
                     ph.label.material.opacity = opacity;
 
-                    // Glow scaling based on planet size and scale by 1.0 to 1.2 oscillation
+                    if (!ph.glow) return;
+                    // Gentle pulse. The ring geometry is already sized to the planet's
+                    // radius — scaling by radius again blew the Sun's ring up to ~900
+                    // units and draped giant teal sheets across the whole sky.
                     const time = performance.now() * 0.001;
-                    const scaleFactor = ph.planet.radius * (1.0 + 0.2 * Math.sin(time * 3));
-                    ph.glow.scale.set(scaleFactor * 3, scaleFactor * 3, 1);
+                    const s = 1.0 + 0.06 * Math.sin(time * 3);
+                    ph.glow.scale.set(s, s, 1);
                 });
             }
         },
@@ -646,6 +878,21 @@ function createUpdateSystems() {
             update: (dt, rc) => {
                 if (rendererCore?.useComposer && rendererCore?.composer) {
                     rendererCore.composer.render();
+                    // iOS SAFETY NET: after a few warmup frames, verify the composer isn't
+                    // producing a black screen; if it is, permanently fall back to direct
+                    // rendering so bloom can never leave the user staring at black.
+                    if (!rendererCore._bloomChecked) {
+                        rendererCore._bloomWarm = (rendererCore._bloomWarm || 0) + 1;
+                        if (rendererCore._bloomWarm >= 6) {
+                            rendererCore._bloomChecked = true;
+                            if (composerFrameIsBlack(rendererCore.renderer)) {
+                                rendererCore.useComposer = false;
+                                console.warn("⚠️ Post-processing produced a BLACK frame on this device — auto-falling back to direct rendering (bloom off, no black screen).");
+                            } else {
+                                console.log("✅ Post-processing validated — cinematic bloom is ACTIVE.");
+                            }
+                        }
+                    }
                 }
                 // If no composer, rely on UpdateLoop default rendering
             }
@@ -657,6 +904,50 @@ function initHUD() {
     if (typeof HUD !== 'undefined') {
         hud = new HUD('hud-container');
     }
+}
+
+// ========== TIME ACCELERATION ==========
+const TIME_SCALES = [
+    { scale: 1,    label: 'TIME 1×' },
+    { scale: 10,   label: 'TIME 10×' },
+    { scale: 100,  label: 'TIME 100×' },
+    { scale: 1000, label: 'TIME 1000×' },
+    { scale: 0,    label: 'TIME ⏸' }
+];
+let timeScaleIndex = 0;
+let timePillEl = null;
+
+function createTimeControl() {
+    timePillEl = document.createElement('div');
+    timePillEl.id = 'time-pill';
+    timePillEl.textContent = TIME_SCALES[0].label;
+    timePillEl.style.cssText = `
+        position: absolute; top: 112px; left: 50%; transform: translateX(-50%); z-index: 120;
+        padding: 6px 13px; border-radius: 14px;
+        background: rgba(12, 16, 28, 0.55);
+        border: 1px solid rgba(140, 200, 255, 0.22);
+        backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        color: rgba(150, 220, 255, 0.85);
+        font-family: 'SF Mono', 'Menlo', monospace; font-size: 11px;
+        letter-spacing: 1.5px; user-select: none; -webkit-user-select: none;
+        cursor: pointer;
+    `;
+    timePillEl.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        cycleTimeScale();
+    });
+    document.body.appendChild(timePillEl);
+}
+
+function cycleTimeScale() {
+    timeScaleIndex = (timeScaleIndex + 1) % TIME_SCALES.length;
+    const entry = TIME_SCALES[timeScaleIndex];
+    if (orbitalMechanics) orbitalMechanics.setTimeScale(entry.scale);
+    if (timePillEl) timePillEl.textContent = entry.label;
+    if (hud && typeof hud.showInfo === 'function') {
+        hud.showInfo(entry.scale === 0 ? 'ORBITS PAUSED' : `ORBITAL TIME ${entry.scale}×`, 1200);
+    }
+    return entry.scale;
 }
 
 function initRadar() {
@@ -693,6 +984,7 @@ function initExplorationSystem() {
         }
 
         console.log(`📚 Catalog populated with ${celestialCatalog.objects.length} objects`);
+        window.celestialCatalog = celestialCatalog; // exposed for Codex / Field Guide
     }
 
     // Create exploration tracker
@@ -734,7 +1026,11 @@ function setupIOSBridge() {
     window.galaxyExplorer = window.galaxyExplorer || {};
 
     window.galaxyExplorer.receiveNavigationUpdate = function(data) {
-        if (!data || !navPhysics) return;
+        if (!data) return;
+        // If the engine isn't built yet, stash the latest state instead of dropping it —
+        // Swift only sends nav updates on CHANGE, so a thrust held during boot would
+        // otherwise be lost until the user released and pressed again.
+        if (!navPhysics) { window.__pendingNav = data; return; }
 
         if (data.rotation) {
             let rx, ry, rz;
@@ -847,6 +1143,27 @@ function setupIOSBridge() {
         }
     };
 
+    // ULTRA WARP: hold to multiply thrust/top-speed ~100x and fire the warp visuals.
+    // Forward thrust itself is driven by the normal thrust path (Swift calls
+    // thrustForward); this just supercharges the multiplier + effect while held.
+    window.galaxyExplorer.setWarpDrive = function(on) {
+        if (!navPhysics) return;
+        if (on) {
+            if (navPhysics._preWarpMult == null) navPhysics._preWarpMult = navPhysics.boostMultiplier;
+            navPhysics.boostMultiplier = 100;   // 100× ultra thrust
+            navPhysics.isBoosting = true;
+            window.galaxyExplorer.engageWarp(1.0);
+            console.log("⚡ ULTRA WARP ×100 engaged");
+        } else {
+            navPhysics.isBoosting = false;
+            if (navPhysics._preWarpMult != null) {
+                navPhysics.boostMultiplier = navPhysics._preWarpMult;
+                navPhysics._preWarpMult = null;
+            }
+            window.galaxyExplorer.disengageWarp();
+        }
+    };
+
     window.galaxyExplorer.getBlackHoleInfo = function() {
         return blackHoles.map(bh => ({
             name: bh.name,
@@ -873,6 +1190,23 @@ function setupIOSBridge() {
     };
 
     console.log("📱 iOS bridge initialized");
+
+    // Apply any input that arrived before the engine was ready (belt-and-suspenders with
+    // the READY handshake below).
+    if (window.__pendingNav) {
+        const pending = window.__pendingNav;
+        window.__pendingNav = null;
+        window.galaxyExplorer.receiveNavigationUpdate(pending);
+    }
+
+    // READY handshake: tell Swift the engine is live so it re-sends the CURRENT nav state.
+    // Swift pushes thrust/rotation on-change only, so anything the user did during the
+    // multi-second boot (e.g. holding the thruster) would be stuck until toggled again.
+    // This makes the controls responsive from the very first frame.
+    try {
+        window.webkit?.messageHandlers?.iosHandler?.postMessage({ type: 'READY' });
+        console.log("🤝 Sent READY handshake to native (requesting current nav state)");
+    } catch (e) {}
 
     // Send initial ambient audio setup to iOS
     try {
@@ -906,9 +1240,65 @@ function setupIOSBridge() {
         }
     }
 
-    // Hook into animation frame loop to send listener position
+    // ---- Heading-up radar feed --------------------------------------------
+    // Project nearby objects into the CAMERA'S local frame so the radar can show
+    // "what's ahead vs behind/left/right" relative to where you're actually looking.
+    // forward = -z, right = +x in camera space. We send plot-ready coords in [-1,1]
+    // with a sqrt falloff so near objects spread out and far ones compress to the rim.
+    let lastRadarPost = 0;
+    const radarPostInterval = 150; // ms
+    const RADAR_RANGE = 6000;      // world units shown edge-to-edge
+    const _radarTmp = new THREE.Vector3();
+    function postRadarState() {
+        if (!rendererCore?.camera || !Array.isArray(objects)) return;
+        const now = performance.now();
+        if (now - lastRadarPost < radarPostInterval) return;
+        lastRadarPost = now;
+
+        const cam = rendererCore.camera;
+        const camPos = cam.position;
+        const blips = [];
+        for (const obj of objects) {
+            if (!obj || !obj.name) continue;
+            let wx, wy, wz;
+            if (obj.mesh && obj.mesh.getWorldPosition) {
+                obj.mesh.getWorldPosition(_radarTmp);
+                wx = _radarTmp.x; wy = _radarTmp.y; wz = _radarTmp.z;
+            } else if (obj.position) {
+                wx = obj.position.x; wy = obj.position.y; wz = obj.position.z;
+            } else continue;
+
+            const ddx = wx - camPos.x, ddy = wy - camPos.y, ddz = wz - camPos.z;
+            const dist = Math.sqrt(ddx*ddx + ddy*ddy + ddz*ddz);
+            if (dist > RADAR_RANGE) continue;
+
+            // World point -> camera-local (forward = -z, right = +x).
+            const local = cam.worldToLocal(_radarTmp.set(wx, wy, wz));
+            const right = local.x;
+            const fwd = -local.z;
+            const mag = Math.hypot(right, fwd) || 0.0001;
+            const ang = Math.atan2(right, fwd);          // 0 = straight ahead
+            const r2 = Math.pow(Math.min(dist / RADAR_RANGE, 1), 0.6);
+            blips.push({
+                name: obj.name,
+                type: obj.type || 'object',
+                rx: Math.sin(ang) * r2,                  // +1 = right
+                ry: Math.cos(ang) * r2,                  // +1 = ahead (top)
+                dist: Math.round(dist)
+            });
+        }
+        blips.sort((a, b) => a.dist - b.dist);
+        try {
+            window.webkit?.messageHandlers?.iosHandler?.postMessage({
+                type: 'RADAR', blips: blips.slice(0, 12)
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    // Hook into animation frame loop to send listener position + radar feed
     function listenerPositionLoop() {
         postListenerPosition();
+        postRadarState();
         requestAnimationFrame(listenerPositionLoop);
     }
     listenerPositionLoop();
@@ -961,12 +1351,24 @@ function flyToObject(obj, distanceMultiplier = 3) {
 function flyToByName(name, distanceMultiplier = 3) {
     if (!name) return;
     const nameLower = name.toLowerCase();
-    const found = objects.find(obj => obj.name && obj.name.toLowerCase() === nameLower);
-    if (found) {
-        flyToObject(found, distanceMultiplier);
-    } else {
-        console.warn(`flyToByName: No object found with name "${name}"`);
+    // Search every flyable collection, not just planets/moons — comets, nebulae and the
+    // black hole live in their own arrays. This powers the Destinations menu.
+    const pools = [objects, comets, nebulae, blackHoles];
+    for (const pool of pools) {
+        if (!pool) continue;
+        const found = pool.find(o => o && o.name && o.name.toLowerCase() === nameLower);
+        if (found) { flyToObject(found, distanceMultiplier); return; }
     }
+    if (asteroidBelt && /asteroid|belt/.test(nameLower)) {
+        flyToObject({ mesh: asteroidBelt.mesh, radius: 50 }, distanceMultiplier);
+        return;
+    }
+    // Interstellar / exoplanet / galaxy layer registers its objects here (kept out of the
+    // catalog so it can't affect the Space Map, but still flyable).
+    const uni = window.__universe || [];
+    const star = uni.find(o => o && o.name && o.name.toLowerCase() === nameLower);
+    if (star && star.mesh) { flyToObject({ mesh: star.mesh, radius: star.radius || 20 }, distanceMultiplier); return; }
+    console.warn(`flyToByName: No object found with name "${name}"`);
 }
 
 function flyToNearestPlanet() {
@@ -1047,7 +1449,7 @@ function createMoon(moonData, parentPlanet) {
     moonMesh.position.set(moonData.distance, 0, 0);
     parentPlanet.mesh.add(moonMesh);
 
-    return {
+    const moon = {
         name: moonData.name,
         mesh: moonMesh,
         radius: moonData.radius,
@@ -1057,13 +1459,64 @@ function createMoon(moonData, parentPlanet) {
         orbitDistance: moonData.distance,
         orbitPeriod: moonData.period,
         angle: Math.random() * Math.PI * 2,
+        _shadowUniforms: {
+            uSunPos: { value: new THREE.Vector3() },
+            uSunRadius: { value: 15.0 },
+            uOccluders: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
+            uOccluderCount: { value: 0 }
+        },
+        _occluders: [],
+        setOccluders: function(list) { this._occluders = (list || []).slice(0, 4); },
         update: function(deltaTime) {
             this.angle += (deltaTime * 2 * Math.PI) / this.orbitPeriod;
             this.mesh.position.x = Math.cos(this.angle) * this.orbitDistance;
             this.mesh.position.z = Math.sin(this.angle) * this.orbitDistance;
             this.mesh.rotation.y += deltaTime * 0.5;
+
+            const su = this._shadowUniforms;
+            let n = 0;
+            const tmp = new THREE.Vector3();
+            for (let i = 0; i < this._occluders.length && n < 4; i++) {
+                const occ = this._occluders[i];
+                const m = occ.mesh || occ;
+                if (!m || !m.getWorldPosition) continue;
+                m.getWorldPosition(tmp);
+                su.uOccluders.value[n].set(tmp.x, tmp.y, tmp.z, occ.radius || 1);
+                n++;
+            }
+            su.uOccluderCount.value = n;
         }
     };
+
+    // Earth's shadow falling on the Moon = lunar eclipses
+    if (typeof Moons !== 'undefined') {
+        Moons._injectEclipseShadow(moonMat, moon._shadowUniforms);
+    }
+
+    return moon;
+}
+
+// J2000 mean longitude (degrees) and daily motion (degrees/day) per planet.
+// Lets each planet start at its real heliocentric direction for today's date —
+// the actual arrangement of the solar system right now.
+const PLANET_EPHEMERIS = {
+    Mercury: [252.25084, 4.09233445],
+    Venus:   [181.97973, 1.60213034],
+    Earth:   [100.46435, 0.98560910],
+    Mars:    [355.45332, 0.52402068],
+    Jupiter: [ 34.40438, 0.08308529],
+    Saturn:  [ 49.94432, 0.03344414],
+    Uranus:  [313.23218, 0.01172834],
+    Neptune: [304.88003, 0.00598103]
+};
+
+function currentMeanLongitude(name) {
+    const e = PLANET_EPHEMERIS[name];
+    if (!e) return Math.random() * Math.PI * 2;
+    const daysSinceJ2000 = Date.now() / 86400000 - 10957.5;
+    let deg = (e[0] + e[1] * daysSinceJ2000) % 360;
+    if (deg < 0) deg += 360;
+    return deg * Math.PI / 180;
 }
 
 // ========== SOLAR SYSTEM ==========
@@ -1082,6 +1535,13 @@ function createSolarSystem() {
     sun.mesh.position.set(0, 0, 0);
     rendererCore.scene.add(sun.mesh);
     objects.push(sun);
+
+    // THE missing piece: actually light the solar system from the sun.
+    // (addStarLight existed but was never called — every PBR planet was
+    // running on ambient fill only, with no day/night side at all.)
+    if (lighting && typeof lighting.addStarLight === 'function') {
+        lighting.addStarLight(sun);
+    }
 
     // Planet data (semi-realistic orbital distances scaled down)
     const planetData = [
@@ -1111,7 +1571,9 @@ function createSolarSystem() {
             orbitalData: {
                 semiMajorAxis: data.distance,
                 period: data.period,
-                eccentricity: 0.02
+                eccentricity: 0.02,
+                // Real ephemeris: start where the planet actually is today
+                meanAnomalyAtEpoch: currentMeanLongitude(data.name)
             }
         });
 
@@ -1122,11 +1584,48 @@ function createSolarSystem() {
         createOrbitLine(data.distance);
     });
 
-    // Add Earth's moon
+    // Add Earth's moon — and wire eclipse shadows both ways
     const earth = objects.find(o => o.name === "Earth");
     if (earth) {
         const moon = createMoon({ name: "Moon", radius: 0.4, color: 0xaaaaaa, distance: 5, period: 27 }, earth);
         objects.push(moon);
+        moon.setOccluders([{ mesh: earth.mesh, radius: earth.radius }]);   // lunar eclipses
+        if (earth.setOccluders) {
+            earth.setOccluders([{ mesh: moon.mesh, radius: moon.radius }]); // solar eclipse spot
+        }
+    }
+
+    // Galilean moons of Jupiter: volcanic Io, ice-cracked Europa, Ganymede, Callisto.
+    // Distances/periods compressed for the fidget scale but in real proportion.
+    const jupiter = objects.find(o => o.name === "Jupiter");
+    if (jupiter && typeof Moons !== 'undefined') {
+        const galilean = [
+            Moons.create({ name: "Io",       style: "io",       radius: 0.45, distance: 12.0, period: 18,  parent: jupiter, color: 0xd8c43a }),
+            Moons.create({ name: "Europa",   style: "europa",   radius: 0.40, distance: 15.5, period: 36,  parent: jupiter, color: 0xcfc5b5 }),
+            Moons.create({ name: "Ganymede", style: "ganymede", radius: 0.66, distance: 20.0, period: 72,  parent: jupiter, color: 0x968e80 }),
+            Moons.create({ name: "Callisto", style: "callisto", radius: 0.60, distance: 26.0, period: 168, parent: jupiter, color: 0x60544a })
+        ];
+        galilean.forEach(m => {
+            m.setOccluders([{ mesh: jupiter.mesh, radius: jupiter.radius }]); // moons darken in Jupiter's shadow
+            objects.push(m);
+        });
+        if (jupiter.setOccluders) {
+            // Galilean transit shadows — little black dots crossing Jupiter's clouds
+            jupiter.setOccluders(galilean.map(m => ({ mesh: m.mesh, radius: m.radius })));
+        }
+    }
+
+    // Saturn's headliners: hazy orange Titan + geysering Enceladus
+    const saturn = objects.find(o => o.name === "Saturn");
+    if (saturn && typeof Moons !== 'undefined') {
+        const saturnMoons = [
+            Moons.create({ name: "Titan",     style: "titan",     radius: 0.65, distance: 26.0, period: 110, parent: saturn, color: 0xe8a04a }),
+            Moons.create({ name: "Enceladus", style: "enceladus", radius: 0.25, distance: 18.5, period: 24,  parent: saturn, color: 0xf0f4f8 })
+        ];
+        saturnMoons.forEach(m => {
+            m.setOccluders([{ mesh: saturn.mesh, radius: saturn.radius }]);
+            objects.push(m);
+        });
     }
 
     console.log(`✅ Solar system created with ${objects.length} objects`);
@@ -1164,14 +1663,29 @@ function setOrbitLinesVisible(visible) {
 // ========== STARFIELD ==========
 function createStarfield() {
     console.log("🌟 Creating starfield...");
+    // Procedural field = faint deep-space "dust" for depth. Dimmed from brightness 2.0 so
+    // it no longer drowns out the real named stars layered on top of it.
     starfield = new Starfield({
         count: 150000,
         radius: 9000,
-        brightness: 2.0,
-        sizeBase: 0.8,
+        brightness: 1.15,
+        sizeBase: 0.6,
         twinkleAmplitude: 0.15
     });
     rendererCore.scene.add(starfield.getMesh());
+
+    // Real sky: ~8,700 true-position HYG stars → actual constellations (Orion, the Big
+    // Dipper, Cassiopeia) sit where they really are. Layered additively over the dust.
+    if (typeof HYGStarfield !== 'undefined' && window.HYG_STARS) {
+        hygStarfield = new HYGStarfield({ radius: 8500 });
+        const mesh = hygStarfield.getMesh();
+        if (mesh) {
+            rendererCore.scene.add(mesh);
+            console.log(`✨ Real HYG sky: ${hygStarfield.starCount} stars at true positions`);
+        }
+    } else {
+        console.warn("HYG real sky unavailable (HYGStarfield class or window.HYG_STARS not loaded)");
+    }
 }
 
 // ========== ASTEROID BELT ==========
@@ -1257,10 +1771,12 @@ nebulae = [];
 
 function createNebulae() {
     console.log("☁️ Creating nebulae...");
+    // Deep-sky distances: real nebulae span a degree or two of sky, not half the
+    // viewport. 4x farther keeps them as faint background watercolors.
     const nebulaConfigs = [
-        { name: "Orion Nebula", position: { x: 2000, y: 300, z: -1500 }, radius: 400, nebulaType: "emission" },
-        { name: "Carina Nebula", position: { x: -2500, y: -200, z: 1800 }, radius: 500, nebulaType: "emission" },
-        { name: "Horsehead Nebula", position: { x: 1500, y: 500, z: 2200 }, radius: 300, nebulaType: "dark" }
+        { name: "Orion Nebula", position: { x: 8000, y: 1200, z: -6000 }, radius: 400, nebulaType: "emission" },
+        { name: "Carina Nebula", position: { x: -10000, y: -800, z: 7200 }, radius: 500, nebulaType: "emission" },
+        { name: "Horsehead Nebula", position: { x: 6000, y: 2000, z: 8800 }, radius: 300, nebulaType: "dark" }
     ];
 
     nebulaConfigs.forEach(config => {
@@ -1314,8 +1830,8 @@ function createWarpEffect() {
 function createVolumetricNebulae() {
     console.log("🌌 Creating volumetric nebulae...");
     const volNebulaConfigs = [
-        { name: "Eagle Nebula", position: new THREE.Vector3(3000, 400, -2000), scale: 150, type: "emission", primaryColor: new THREE.Color(0.9, 0.3, 0.5) },
-        { name: "Lagoon Nebula", position: new THREE.Vector3(-2800, -300, 2500), scale: 200, type: "emission", primaryColor: new THREE.Color(0.8, 0.2, 0.4) }
+        { name: "Eagle Nebula", position: new THREE.Vector3(9500, 2500, -7500), scale: 150, type: "emission", primaryColor: new THREE.Color(0.9, 0.3, 0.5) },
+        { name: "Lagoon Nebula", position: new THREE.Vector3(-8400, -2000, 8200), scale: 200, type: "emission", primaryColor: new THREE.Color(0.8, 0.2, 0.4) }
     ];
 
     volNebulaConfigs.forEach(config => {
@@ -1352,7 +1868,11 @@ function createPlanetHighlights() {
             map: texture,
             transparent: true,
             opacity: 0.8,
-            depthTest: false
+            // Respect depth so a planet's label is HIDDEN behind a nearer planet. With
+            // depthTest off, a far planet's label (e.g. Jupiter, behind Mars) drew right
+            // over the nearer planet and read as if Mars were called "Jupiter".
+            depthTest: true,
+            depthWrite: false
         });
 
         const label = new THREE.Sprite(spriteMat);
@@ -1360,18 +1880,24 @@ function createPlanetHighlights() {
         label.position.set(0, obj.radius * 1.8, 0);
         obj.mesh.add(label);
 
-        // Create glow ring
-        const glowGeo = new THREE.RingGeometry(obj.radius * 1.2, obj.radius * 1.5, 32);
-        const glowMat = new THREE.MeshBasicMaterial({
-            color: 0x00ffff,
-            transparent: true,
-            opacity: 0.2,
-            side: THREE.DoubleSide,
-            blending: THREE.AdditiveBlending
-        });
-        const glow = new THREE.Mesh(glowGeo, glowMat);
-        glow.rotation.x = Math.PI / 2;
-        obj.mesh.add(glow);
+        // Create glow ring — kept extremely faint so it reads as a UI hint,
+        // not a video-game halo (realism goal: no glowing hoops in photos).
+        // The Sun gets no ring: its corona already marks it, and a star-sized
+        // ring is large enough to wash across the entire sky.
+        let glow = null;
+        if (obj.type !== "star") {
+            const glowGeo = new THREE.RingGeometry(obj.radius * 1.2, obj.radius * 1.5, 32);
+            const glowMat = new THREE.MeshBasicMaterial({
+                color: 0x66ccff,
+                transparent: true,
+                opacity: 0.05,
+                side: THREE.DoubleSide,
+                blending: THREE.AdditiveBlending
+            });
+            glow = new THREE.Mesh(glowGeo, glowMat);
+            glow.rotation.x = Math.PI / 2;
+            obj.mesh.add(glow);
+        }
 
         planetHighlights.push({
             planet: obj,
@@ -1385,6 +1911,7 @@ function setPlanetLabelsVisible(visible) {
     showPlanetLabels = visible;
     planetHighlights.forEach(ph => {
         ph.label.visible = visible;
+        if (ph.glow) ph.glow.visible = visible; // hide the hint rings too for clean photos
     });
     try {
         localStorage.setItem('planetLabelsVisible', visible ? 'true' : 'false');
@@ -1460,6 +1987,15 @@ function exposeFlyToAPI() {
     window.galaxyExplorer.flyToByName = flyToByName;
     window.galaxyExplorer.flyToNearestPlanet = flyToNearestPlanet;
 
+    // Live speed control from the SwiftUI SPEED slider.
+    window.galaxyExplorer.setMaxSpeed = function(v) {
+        if (!navPhysics) return;
+        const speed = Math.max(5, Math.min(400, Number(v) || 0));
+        navPhysics.maxSpeed = speed;
+        navPhysics.thrustPower = speed * 2.4; // snappier acceleration (was 1.6) so a held thrust reaches speed fast
+        console.log(`⚙️ Max speed set to ${speed}`);
+    };
+
     window.galaxyExplorer.centerOnEarth = function() {
         flyToByName('Earth', 3.5);
     };
@@ -1482,6 +2018,19 @@ function exposeFlyToAPI() {
 
     window.galaxyExplorer.setCinematicMode = setCinematicMode;
     window.galaxyExplorer.getCinematicMode = getCinematicMode;
+
+    // Time acceleration (also driveable from Swift)
+    window.galaxyExplorer.cycleTimeScale = cycleTimeScale;
+
+    // Procedural audio toggle
+    window.galaxyExplorer.setAudioEnabled = function(on) {
+        if (audioEngine) audioEngine.setEnabled(on);
+    };
+
+    // Mission progress for native UI
+    window.galaxyExplorer.getMissions = function() {
+        return missionSystem ? missionSystem.getMissions() : [];
+    };
 
     // LUT control methods
     window.galaxyExplorer.setLUTEnabled = function(on) {
@@ -1545,4 +2094,5 @@ if (document.readyState === "loading") {
         console.error("❌ Post-init error:", e);
     }
 }
+
 

@@ -51,7 +51,10 @@ final class AppAssetSchemeHandler: NSObject, WKURLSchemeHandler {
                         "Content-Type": Self.mimeType(forExtension: fileURL.pathExtension),
                         "Content-Length": String(data.count),
                         "Access-Control-Allow-Origin": "*",
-                        "Cache-Control": "max-age=31536000",
+                        // no-store: always serve the freshly bundled asset. The old
+                        // max-age=1yr made WKWebView cache JS/HTML and run STALE code
+                        // after every rebuild — the source of the intermittent behavior.
+                        "Cache-Control": "no-store, no-cache, must-revalidate",
                     ]
                 )!
                 self.deliver(urlSchemeTask, taskID: taskID, response: response, data: data)

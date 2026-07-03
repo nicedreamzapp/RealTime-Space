@@ -7,7 +7,12 @@ final class AudioManager: ObservableObject {
     let objectWillChange = ObservableObjectPublisher()
     
     static let shared = AudioManager()
-    
+
+    /// Master gate for ALL native audio (ambient + SFX). Defaults OFF — the high-pitched
+    /// fly-to "lock" / warp SFX were firing even with sound "off". Only the Spatial Audio
+    /// toggle turns this on.
+    var soundEnabled = false
+
     private let engine = AVAudioEngine()
     private let environment = AVAudioEnvironmentNode()
     private let ambientPlayer = AVAudioPlayerNode()
@@ -106,6 +111,7 @@ final class AudioManager: ObservableObject {
     /// Note: This implementation uses a single sfxPlayer node for simplicity.
     /// For multiple simultaneous spatialized SFX, consider using a pool of AVAudioPlayerNodes.
     public func playSFX(named name: String, at position: SIMD3<Float>, gain: Float = 1.0) {
+        guard soundEnabled else { return }
         DispatchQueue.main.async {
             // AVAudioPlayerNode conforms to AVAudio3DMixing; set position directly
             (self.sfxPlayer as AVAudio3DMixing).position = AVAudio3DPoint(x: position.x, y: position.y, z: position.z)
@@ -142,6 +148,7 @@ final class AudioManager: ObservableObject {
     
     /// Convenience method to play a sound effect without spatial position (plays at listener position).
     public func playSFX(named name: String) {
+        guard soundEnabled else { return }
         // Play at listener position
         playSFX(named: name, at: SIMD3<Float>(0, 0, 0), gain: 1.0)
     }

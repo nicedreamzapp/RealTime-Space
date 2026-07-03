@@ -26,21 +26,19 @@ class NavigationPhysics {
         this.angularVelocity = new THREE.Vector3(0, 0, 0);
         this.angularDamping = 2.5; // Slightly less damping for smoother stops
 
-        // Thrust settings - INSTANT AND POWERFUL
-        this.thrustPower = 400; // Very strong acceleration - feel it immediately
+        // Thrust settings - gentle by default; the in-app SPEED slider adjusts these live.
+        this.thrustPower = 180; // Softer acceleration (was 400)
         this.isThrusting = false;
         this.thrustRampUp = 0; // For smooth thrust engagement
 
-        // Physics settings - FAST TRAVEL
-        // Normal speed: 250 u/s = reach any inner planet in seconds
-        // Boost speed: 1500 u/s = cross entire solar system in seconds
-        this.linearDrag = 0.03; // Minimal drag = maintain speed easily
-        this.maxSpeed = 250; // Fast cruise speed
+        // Physics settings - calmer cruise so you can actually look around
+        this.linearDrag = 0.06; // A bit more drag
+        this.maxSpeed = 120; // Default cruise (slider can raise/lower this)
         this.brakePower = 150; // Strong brakes to stop quickly
 
         // Smoothing factors - responsive but smooth
         this.rotationSmoothing = 0.15; // Faster rotation response
-        this.velocitySmoothing = 0.99; // Very high momentum - keeps moving
+        this.velocitySmoothing = 0.95; // Eases to a stop when you release thrust (was 0.99)
 
         // Proximity settings
         this.proximityThreshold = 20;
@@ -114,7 +112,19 @@ class NavigationPhysics {
         this.isThrusting = isThrustActive;
 
         if (this.isThrusting !== wasThrusting) {
-            console.log("🚀 Thrust:", this.isThrusting ? "ENGAGED" : "DISENGAGED");
+            if (this.isThrusting) {
+                // Make thrust feel INSTANT and responsive. Two levers on engage:
+                // (1) full thrust from frame one — no ramp-in lag (was ramping from 0, which
+                //     made a press feel delayed); (2) a firm one-shot forward impulse so even
+                //     a quick tap produces an immediate, unmistakable nudge (~30% of top
+                //     speed). Holding then keeps accelerating on top. Tune IMPULSE_FRAC (tap
+                //     punch) and thrust scaling in main.js setMaxSpeed if it's too much/little.
+                const IMPULSE_FRAC = 0.30;
+                this.thrustRampUp = 1.0;
+                const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+                this.velocity.add(forward.multiplyScalar(this.maxSpeed * IMPULSE_FRAC));
+            }
+            console.log("🚀 Thrust:", this.isThrusting ? "ENGAGED" : "DISENGAGED", "| speed:", this.getSpeed().toFixed(1));
         }
     }
 

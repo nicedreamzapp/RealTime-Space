@@ -172,8 +172,13 @@ class UpdateLoop {
         }
 
         try {
-            // Always render - composer (if enabled) runs in updateSystems via ComposerRender system
-            // and will overwrite this frame. If no composer, this is the only render.
+            // When the composer is active it renders inside updateSystems (the
+            // ComposerRender system) — rendering again here would draw a plain,
+            // post-processing-free frame OVER the composer output and waste a full
+            // GPU pass. Only render directly when there is no composer.
+            if (this.rendererCore.useComposer && this.rendererCore.composer) {
+                return;
+            }
             this.rendererCore.renderer.render(
                 this.rendererCore.scene,
                 this.rendererCore.camera

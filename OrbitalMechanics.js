@@ -110,9 +110,11 @@ class OrbitalMechanics {
     updateRotation(obj, deltaTime) {
         if (!obj.rotationPeriod || !obj.mesh) return;
 
-        // Axial rotation
+        // Axial rotation. Cap the rotation contribution of time acceleration so
+        // planets don't become motion-blurred tops at 1000× orbital speed.
+        const rotationScale = Math.min(this.timeScale, 50);
         const rotationSpeed = (2 * Math.PI) / obj.rotationPeriod;
-        obj.mesh.rotation.y += rotationSpeed * deltaTime * this.timeScale;
+        obj.mesh.rotation.y += rotationSpeed * deltaTime * rotationScale;
 
         // Apply axial tilt if specified
         if (obj.axialTilt && !obj._tiltApplied) {
@@ -277,7 +279,7 @@ class OrbitalMechanics {
 
     // Set time scale
     setTimeScale(scale) {
-        this.timeScale = Math.max(0, Math.min(100, scale));
+        this.timeScale = Math.max(0, Math.min(10000, scale));
         console.log(`⏱️ Orbital time scale: ${this.timeScale}x`);
     }
 

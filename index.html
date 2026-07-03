@@ -161,29 +161,84 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
-    <script src="RendererCore.js"></script>
-    <script src="LightingSystem.js"></script>
-    <script src="NavigationPhysics.js"></script>
-    <script src="OrbitalMechanics.js"></script>
-    <script src="UpdateLoop.js"></script>
-    <script src="Starfield.js"></script>
-    <script src="Star.js"></script>
-    <script src="Planet.js"></script>
-    <script src="AsteroidBelt.js"></script>
-    <script src="Comet.js"></script>
-    <script src="Nebula.js"></script>
-    <script src="ParticleSystem.js"></script>
-    <script src="HUD.js"></script>
-    <script src="SphereRadar.js"></script>
-    <script src="PostProcessing.js"></script>
-    <script src="CelestialCatalog.js"></script>
-    <script src="ExplorationTracker.js"></script>
-    <script src="NavigationArrows.js"></script>
-    <!-- EPIC NEW EFFECTS -->
-    <script src="BlackHole.js"></script>
-    <script src="WarpEffect.js"></script>
-    <script src="VolumetricNebula.js"></script>
-    <script src="main.js"></script>
+    <!-- Three.js r150 + post-processing addons, pre-bundled into ONE self-contained
+         classic script. NO CDN, NO ES-module/importmap dependency, so the engine boots
+         offline and can't be killed by a flaky network. The bundle sets a complete
+         window.THREE (core + EffectComposer/RenderPass/ShaderPass/UnrealBloomPass/
+         GammaCorrectionShader). Regenerate with esbuild if the addon set changes. -->
+    <script src="textures/lib/three.bundle.js"></script>
+    <script>
+        // Post-processing (bloom/god-rays/LUT) is ON. It used to render black on iOS
+        // WKWebView, so the composer now uses an iOS-safe UnsignedByte render target AND a
+        // runtime black-frame guard that auto-falls-back to direct rendering if the very
+        // first composed frames come out black. So bloom can never leave a black screen —
+        // worst case it silently reverts to the old direct path. Set this to true to force
+        // the direct path manually (e.g. for debugging).
+        window.__FORCE_DIRECT__ = false;
+        // Boot guard: if the THREE bundle somehow failed to load, say so loudly instead
+        // of leaving a silent black screen (the old CDN failure mode).
+        if (!window.THREE || !window.THREE.EffectComposer) {
+            console.error('❌ THREE bundle failed to load — engine cannot start (window.THREE missing)');
+        }
+
+        const scripts = [
+            'RendererCore.js',
+            'LightingSystem.js',
+            'NavigationPhysics.js',
+            'OrbitalMechanics.js',
+            'UpdateLoop.js',
+            'Starfield.js',
+            'Star.js',
+            'Planet.js',
+            'Moons.js',
+            'AsteroidBelt.js',
+            'Comet.js',
+            'Nebula.js',
+            'ParticleSystem.js',
+            'HUD.js',
+            'SphereRadar.js',
+            'codex/SpaceData.js',
+            'CelestialCatalog.js',
+            'ExplorationTracker.js',
+            'codex/Codex.js',
+            'codex/LiveData.js',
+            'codex/ISS.js',
+            'codex/Constellations.js',
+            'codex/data/hyg_stars.js',
+            'codex/HYGStarfield.js',
+            'codex/Interstellar.js',
+            'codex/Exoplanets.js',
+            'codex/Galaxies.js',
+            'codex/Deepsky.js',
+            'NavigationArrows.js',
+            'AudioEngine.js',
+            'Missions.js',
+            'BlackHole.js',
+            'WarpEffect.js',
+            'VolumetricNebula.js',
+            'main.js'
+        ];
+        const APP_VERSION = '2026-06-20b'; // bump to bust browser cache after edits
+        // Query-string cache busting is for http dev serving only — file:// URLs
+        // inside the app bundle don't cache and may not tolerate query params.
+        const bust = location.protocol.startsWith('http') ? '?v=' + APP_VERSION : '';
+        // Classic script (not a module) so it runs without importmaps/CDN — wrap the
+        // sequential loader in an async IIFE since top-level await isn't allowed here.
+        (async () => {
+            for (const src of scripts) {
+                await new Promise((resolve) => {
+                    const s = document.createElement('script');
+                    s.src = src + bust;
+                    s.onload = resolve;
+                    s.onerror = () => {
+                        console.error('❌ Failed to load script:', src);
+                        resolve(); // keep loading the rest
+                    };
+                    document.body.appendChild(s);
+                });
+            }
+            console.log('✅ All engine scripts loaded; galaxyExplorer should be live');
+        })();
+    </script>
 </body>
 </html>

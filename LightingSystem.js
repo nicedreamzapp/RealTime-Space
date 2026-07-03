@@ -37,32 +37,29 @@ class LightingSystem {
         // Convert temperature to color
         const color = this._temperatureToColor(temp);
 
-        // Physical light - intensity falls off with distance squared
+        // Zero decay / unlimited range: a camera in space auto-exposes, so every
+        // planet reads as fully sunlit regardless of orbit distance. Physical
+        // falloff (decay 1.5–2) leaves the outer planets pitch black at this
+        // scene's scale; day/night contrast still comes from surface orientation.
         const light = new THREE.PointLight(
             color,
-            luminosity * 5.0,  // Stronger intensity for vibrant planet illumination
-            700,               // Wider reach for more visible lighting
-            1.5                // Decay (physical = 2, but 1.5 looks better in real-time)
+            luminosity * 0.26,
+            0,   // no distance cutoff
+            0    // no decay
         );
 
         light.position.copy(star.mesh.position);
 
-        // Enable shadows for main star
-        if (luminosity > 5) {
-            light.castShadow = true;
-            light.shadow.mapSize.width = 1024;
-            light.shadow.mapSize.height = 1024;
-            light.shadow.camera.near = 0.1;
-            light.shadow.camera.far = 500;
-            light.shadow.bias = -0.001;
-        }
+        // Shadow maps stay off: planet/moon/ring shadows are computed analytically
+        // in the planet shaders (sharper + far cheaper than cube shadow maps).
+        light.castShadow = false;
 
         this.scene.add(light);
         this.lights.push(light);
         this.starLights.set(star, light);
 
-        // Add volumetric light effect (god ray cone)
-        this._addVolumetricLight(star, color, luminosity);
+        // (The old geometric "volumetric light" planes are gone — the real
+        // screen-space god rays pass in main.js replaces them.)
 
         console.log(`⭐ Added physically-based light for star (${temp}K)`);
     }
@@ -123,7 +120,8 @@ class LightingSystem {
 
         this.starLights.forEach((light, star) => {
             const baseLuminosity = star.luminosity || 1.0;
-            light.intensity = baseLuminosity * 3.0 * multiplier;
+            // keeps the sun at ~2.6 with the default 1.2 multiplier (matches addStarLight)
+            light.intensity = baseLuminosity * 0.22 * multiplier;
         });
     }
 

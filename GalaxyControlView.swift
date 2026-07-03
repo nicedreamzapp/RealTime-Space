@@ -166,6 +166,11 @@ struct GalaxyControlView: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 12)
             }
+            // Hide the native flight controls while a Codex card / Field Guide is open,
+            // so nothing floats over the modal. Disable hit-testing too so taps go to the card.
+            .opacity(navigationController.hideChrome ? 0 : 1)
+            .allowsHitTesting(!navigationController.hideChrome)
+            .animation(.easeInOut(duration: 0.2), value: navigationController.hideChrome)
         }
         .onChange(of: isJoystickActive) { oldValue, newValue in
             if !newValue {

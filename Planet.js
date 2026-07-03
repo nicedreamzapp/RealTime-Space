@@ -2,6 +2,66 @@
 // Implements true NASA/ESA imaging quality with auroras, volcanic activity, ice caps,
 // realistic atmospheric scattering, and procedural terrain generation
 
+// Shared GLSL: soft eclipse shadows cast by spherical occluders (moons/planets) and
+// ring-plane shadows (Saturn's rings on the planet). The penumbra is approximated by
+// comparing the angular radii of the sun and occluder discs as seen from the fragment.
+const ECLIPSE_SHADOW_GLSL = `
+    uniform vec3 uSunPos;
+    uniform float uSunRadius;
+    uniform vec4 uOccluders[4];
+    uniform int uOccluderCount;
+
+    float occluderShadow(vec3 P, vec4 occ) {
+        vec3 toSun = uSunPos - P;
+        float dSun = length(toSun);
+        vec3 L = toSun / dSun;
+        vec3 toOcc = occ.xyz - P;
+        float dOcc = length(toOcc);
+        if (dOcc > dSun) return 1.0;        // occluder is farther than the sun
+        if (dOcc < occ.w * 1.05) return 1.0; // fragment is on/in the occluder itself
+        float aSun = asin(clamp(uSunRadius / dSun, 0.0, 1.0));
+        float aOcc = asin(clamp(occ.w / dOcc, 0.0, 1.0));
+        float sep  = acos(clamp(dot(L, toOcc / dOcc), -1.0, 1.0));
+        float f = clamp((aOcc + aSun - sep) / max(2.0 * aSun, 1e-4), 0.0, 1.0);
+        f = f * f * (3.0 - 2.0 * f);
+        return 1.0 - f;
+    }
+
+    float eclipseShadow(vec3 P) {
+        float s = 1.0;
+        for (int i = 0; i < 4; i++) {
+            if (i >= uOccluderCount) break;
+            s *= occluderShadow(P, uOccluders[i]);
+        }
+        return s;
+    }
+`;
+
+const RING_SHADOW_GLSL = `
+    uniform sampler2D uRingMap;
+    uniform vec3 uRingCenter;
+    uniform vec3 uRingNormal;
+    uniform vec2 uRingRadii; // x: inner, y: outer (world units)
+
+    float ringShadow(vec3 P) {
+        vec3 L = normalize(uSunPos - P);
+        float denom = dot(L, uRingNormal);
+        if (abs(denom) < 1e-4) return 1.0;
+        float t = dot(uRingCenter - P, uRingNormal) / denom;
+        if (t <= 0.0) return 1.0; // sun ray doesn't cross the ring plane
+        vec3 hit = P + L * t;
+        float r = length(hit - uRingCenter);
+        if (r < uRingRadii.x || r > uRingRadii.y) return 1.0;
+        float u = (r - uRingRadii.x) / (uRingRadii.y - uRingRadii.x);
+        float a = texture2D(uRingMap, vec2(u, 0.5)).a;
+        return 1.0 - a * 0.88;
+    }
+`;
+
+const _planetTmpVec = new THREE.Vector3();
+const _planetTmpQuat = new THREE.Quaternion();
+const _planetSunOrigin = new THREE.Vector3(0, 0, 0);
+
 class Planet {
     constructor(config = {}) {
         this.name = config.name || "Planet";
@@ -20,7 +80,7 @@ class Planet {
         this.seed = config.seed || Math.random() * 10000;
 
         // New advanced features
-        this.hasAurora = config.hasAurora || (this.hasAtmosphere && Math.random() > 0.5);
+        this.hasAurora = config.hasAurora || false; // opt-in only: the torus auroras read as green donuts on real planets
         this.hasVolcanicActivity = config.hasVolcanicActivity || (this.planetType === "rocky" && Math.random() > 0.7);
         this.hasIceCaps = config.hasIceCaps || (this.planetType === "rocky" && Math.random() > 0.4);
         this.hasCities = config.hasCities || false; // Night-side city lights
@@ -40,9 +100,51 @@ class Planet {
 
         this.time = 0;
         this.uniforms = {};
+
+        // Eclipse-shadow state: occluders are other bodies ({mesh, radius}) that can
+        // pass between this planet and the sun. Uniforms are shared by reference with
+        // every shader this planet owns (surface, Earth shader, rings).
+        this._occluders = [];
+        this._shadowUniforms = {
+            uSunPos: { value: new THREE.Vector3(0, 0, 0) },
+            uSunRadius: { value: 15.0 },
+            uOccluders: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
+            uOccluderCount: { value: 0 }
+        };
+
         this.createMesh();
 
         console.log(`🌍 Created HUBBLE-QUALITY planet: ${this.name} (${this.planetType})`);
+    }
+
+    // Bodies that can cast shadows onto this planet (e.g. its moons, or its parent).
+    setOccluders(list) {
+        this._occluders = (list || []).slice(0, 4);
+    }
+
+    // Wires soft eclipse shadows (and optionally ring shadows) into a built-in
+    // material (MeshStandardMaterial etc.) via onBeforeCompile injection.
+    _injectShadows(material, opts = {}) {
+        const shadowUniforms = this._shadowUniforms;
+        const ringUniforms = opts.ringUniforms || null;
+
+        material.onBeforeCompile = (shader) => {
+            Object.assign(shader.uniforms, shadowUniforms);
+            let head = ECLIPSE_SHADOW_GLSL;
+            let apply = 'float planetShadow = eclipseShadow(vEclipseWorldPos);\n';
+            if (ringUniforms) {
+                Object.assign(shader.uniforms, ringUniforms);
+                head += RING_SHADOW_GLSL;
+                apply += 'planetShadow *= ringShadow(vEclipseWorldPos);\n';
+            }
+            shader.vertexShader = shader.vertexShader
+                .replace('#include <common>', '#include <common>\nvarying vec3 vEclipseWorldPos;')
+                .replace('#include <fog_vertex>', '#include <fog_vertex>\nvEclipseWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+            shader.fragmentShader = shader.fragmentShader
+                .replace('#include <common>', '#include <common>\nvarying vec3 vEclipseWorldPos;\n' + head)
+                .replace('#include <output_fragment>', apply + 'outgoingLight *= mix(0.04, 1.0, planetShadow);\n#include <output_fragment>');
+        };
+        material.customProgramCacheKey = () => 'planet-shadow' + (ringUniforms ? '-ring' : '');
     }
 
     createMesh() {
@@ -497,12 +599,14 @@ class Planet {
             mercury: { color: 'textures/mercury/mercury_color.jpg',  bump: 'textures/mercury/mercury_bump.jpg',  bumpScale: 0.05, roughness: 0.95, metalness: 0.0 },
             venus:   { color: 'textures/venus/venus_color.jpg',      bump: 'textures/venus/venus_bump.jpg',      bumpScale: 0.04, roughness: 0.85, metalness: 0.0 },
             mars:    { color: 'textures/mars/mars_color_1k.jpg',     bump: 'textures/mars/mars_bump_1k.jpg',     bumpScale: 0.06, roughness: 0.92, metalness: 0.0 },
-            jupiter: { color: 'textures/jupiter/jupiter_color.jpg',  bump: null,                                  bumpScale: 0,    roughness: 0.6,  metalness: 0.0 },
-            saturn:  { color: 'textures/saturn/saturn_color.jpg',    bump: null,                                  bumpScale: 0,    roughness: 0.6,  metalness: 0.0,
-                       ringColor: 'textures/saturn/saturn_ring_color.jpg', ringPattern: 'textures/saturn/saturn_ring_pattern.gif' },
-            uranus:  { color: 'textures/uranus/uranus_color.jpg',    bump: null,                                  bumpScale: 0,    roughness: 0.5,  metalness: 0.0,
-                       ringColor: 'textures/uranus/uranus_ring_color.jpg', ringPattern: 'textures/uranus/uranus_ring_trans.gif' },
-            neptune: { color: 'textures/neptune/neptune_color.jpg',  bump: null,                                  bumpScale: 0,    roughness: 0.5,  metalness: 0.0 },
+            jupiter: { color: 'textures/jupiter/jupiter_4k.jpg',     bump: null,                                  bumpScale: 0,    roughness: 0.6,  metalness: 0.0 },
+            saturn:  { color: 'textures/saturn/saturn_4k.jpg',       bump: null,                                  bumpScale: 0,    roughness: 0.6,  metalness: 0.0,
+                       ringColor: 'textures/saturn/saturn_ring_alpha.png', ringPattern: null,
+                       ringInner: 1.24, ringOuter: 2.27, ringShadow: true },
+            uranus:  { color: 'textures/uranus/uranus_2k.jpg',       bump: null,                                  bumpScale: 0,    roughness: 0.5,  metalness: 0.0,
+                       ringColor: 'textures/uranus/uranus_ring_color.jpg', ringPattern: 'textures/uranus/uranus_ring_trans.gif',
+                       ringInner: 1.6, ringOuter: 2.0 },
+            neptune: { color: 'textures/neptune/neptune_2k.jpg',     bump: null,                                  bumpScale: 0,    roughness: 0.5,  metalness: 0.0 },
             moon:    { color: 'textures/moon/moon_color_1k.jpg',     bump: 'textures/moon/moon_bump_1k.jpg',     bumpScale: 0.06, roughness: 0.95, metalness: 0.0 },
             pluto:   { color: 'textures/pluto/pluto_color_1k.jpg',   bump: 'textures/pluto/pluto_bump_1k.jpg',   bumpScale: 0.04, roughness: 0.9,  metalness: 0.0 }
         };
@@ -543,21 +647,48 @@ class Planet {
 
         const material = new THREE.MeshStandardMaterial(matOptions);
 
+        // Eclipse shadows from moons/parents; Saturn additionally gets its rings'
+        // shadow band projected onto the cloud tops.
+        let ringShadowUniforms = null;
+        if (reg.ringShadow && reg.ringColor) {
+            const ringTex = new THREE.TextureLoader().load(reg.ringColor);
+            ringTex.anisotropy = 16;
+            ringShadowUniforms = {
+                uRingMap: { value: ringTex },
+                uRingCenter: { value: new THREE.Vector3() },
+                uRingNormal: { value: new THREE.Vector3(0, 1, 0) },
+                uRingRadii: { value: new THREE.Vector2(this.radius * (reg.ringInner || 1.4), this.radius * (reg.ringOuter || 2.5)) }
+            };
+            this._ringShadowUniforms = ringShadowUniforms;
+        }
+        this._injectShadows(material, { ringUniforms: ringShadowUniforms });
+
         this.surface = new THREE.Mesh(geometry, material);
         this.surface.castShadow = true;
         this.surface.receiveShadow = true;
         this.mesh.add(this.surface);
 
+        // Progressive detail (Jupiter/Saturn): swap the color map to a real 4K photo when
+        // close, dispose it when far — same anti-jetsam approach as Earth.
+        this._texMaterial = material;
+        this._texLowColor = colorMap;
+        this._texHiColor = null;
+        this._texDetail = 'low';
+        this._texHiLoading = false;
+
         // Override hasRings flag with the texture-based ring renderer
         if (reg.ringColor) {
-            this._createTexturedRings(reg.ringColor, reg.ringPattern);
+            this._createTexturedRings(reg);
             this.hasRings = false; // Suppress procedural rings later in createMesh
         }
     }
 
-    _createTexturedRings(ringColorPath, ringPatternPath) {
-        const innerRadius = this.radius * 1.4;
-        const outerRadius = this.radius * 2.5;
+    // Physically-lit ring system: sunlit face, translucent backlighting, and the
+    // planet's own shadow sweeping across the ring plane. Replaces the old unlit
+    // MeshBasicMaterial rings that looked pasted-on.
+    _createTexturedRings(reg) {
+        const innerRadius = this.radius * (reg.ringInner || 1.4);
+        const outerRadius = this.radius * (reg.ringOuter || 2.5);
         const ringGeo = new THREE.RingGeometry(innerRadius, outerRadius, 256, 8);
 
         // Remap UVs so the ring texture is sampled radially (1D gradient across the ring's width)
@@ -572,27 +703,109 @@ class Planet {
         uv.needsUpdate = true;
 
         const loader = new THREE.TextureLoader();
-        const ringColor = loader.load(ringColorPath);
+        const ringColor = loader.load(reg.ringColor);
         if (THREE.SRGBColorSpace !== undefined) ringColor.colorSpace = THREE.SRGBColorSpace;
         else if (THREE.sRGBEncoding !== undefined) ringColor.encoding = THREE.sRGBEncoding;
         ringColor.anisotropy = 16;
 
-        const ringMat = new THREE.MeshBasicMaterial({
-            map: ringColor,
+        const ringUniforms = {
+            uMap: { value: ringColor },
+            uAlphaMap: { value: null },
+            uUseAlphaMap: { value: 0.0 },
+            uSunPos: this._shadowUniforms.uSunPos,
+            uSunRadius: this._shadowUniforms.uSunRadius,
+            uPlanetCenter: { value: new THREE.Vector3() },
+            uPlanetRadius: { value: this.radius },
+            uOpacity: { value: 1.0 }
+        };
+
+        // Optional separate alpha pattern (Uranus uses a transparency gif; the new
+        // Saturn ring PNG carries its own alpha channel)
+        if (reg.ringPattern) {
+            const ringPattern = loader.load(reg.ringPattern);
+            ringUniforms.uAlphaMap.value = ringPattern;
+            ringUniforms.uUseAlphaMap.value = 1.0;
+        }
+
+        const ringMat = new THREE.ShaderMaterial({
+            uniforms: ringUniforms,
+            vertexShader: `
+                varying vec2 vUv;
+                varying vec3 vWorldPos;
+                varying vec3 vWorldNormal;
+                void main() {
+                    vUv = uv;
+                    vec4 wp = modelMatrix * vec4(position, 1.0);
+                    vWorldPos = wp.xyz;
+                    vWorldNormal = normalize(mat3(modelMatrix) * vec3(0.0, 0.0, 1.0));
+                    gl_Position = projectionMatrix * viewMatrix * wp;
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D uMap;
+                uniform sampler2D uAlphaMap;
+                uniform float uUseAlphaMap;
+                uniform vec3 uSunPos;
+                uniform float uSunRadius;
+                uniform vec3 uPlanetCenter;
+                uniform float uPlanetRadius;
+                uniform float uOpacity;
+                varying vec2 vUv;
+                varying vec3 vWorldPos;
+                varying vec3 vWorldNormal;
+
+                // Soft shadow of the planet's disc on the ring plane
+                float planetShadow(vec3 P) {
+                    vec3 toSun = uSunPos - P;
+                    float dSun = length(toSun);
+                    vec3 L = toSun / dSun;
+                    vec3 toOcc = uPlanetCenter - P;
+                    float dOcc = length(toOcc);
+                    if (dOcc > dSun) return 1.0;
+                    float aSun = asin(clamp(uSunRadius / dSun, 0.0, 1.0));
+                    float aOcc = asin(clamp(uPlanetRadius / dOcc, 0.0, 1.0));
+                    float sep  = acos(clamp(dot(L, toOcc / dOcc), -1.0, 1.0));
+                    float f = clamp((aOcc + aSun - sep) / max(2.0 * aSun, 1e-4), 0.0, 1.0);
+                    f = f * f * (3.0 - 2.0 * f);
+                    return 1.0 - f * 0.97;
+                }
+
+                void main() {
+                    vec4 c = texture2D(uMap, vUv);
+                    float alpha = c.a;
+                    if (uUseAlphaMap > 0.5) {
+                        alpha = texture2D(uAlphaMap, vUv).g;
+                    }
+                    if (alpha < 0.003) discard;
+
+                    vec3 N = normalize(vWorldNormal);
+                    vec3 toSun = uSunPos - vWorldPos;
+                    vec3 L = normalize(toSun);
+                    vec3 V = normalize(cameraPosition - vWorldPos);
+
+                    float ndl = dot(N, L);
+                    float lit = clamp(ndl, 0.0, 1.0) + clamp(-ndl, 0.0, 1.0); // |ndl|
+                    bool viewingLitFace = (dot(N, V) * ndl) > 0.0;
+
+                    // Lit face: full diffuse. Unlit face: dimmer, mostly light
+                    // filtering through the ring particles (translucency).
+                    float light = viewingLitFace ? (0.05 + lit * 1.05)
+                                                 : (0.05 + lit * 0.45);
+
+                    float sh = planetShadow(vWorldPos);
+                    vec3 color = c.rgb * light * sh;
+
+                    gl_FragColor = vec4(color, alpha * uOpacity);
+                }
+            `,
             transparent: true,
             side: THREE.DoubleSide,
-            depthWrite: false,
-            opacity: 0.95
+            depthWrite: false
         });
-
-        // Optional alpha pattern for ring gaps
-        if (ringPatternPath) {
-            const ringPattern = loader.load(ringPatternPath);
-            ringMat.alphaMap = ringPattern;
-        }
 
         this.rings = new THREE.Mesh(ringGeo, ringMat);
         this.rings.rotation.x = Math.PI / 2 + 0.4; // Tilted rings (Saturn)
+        this._ringLightUniforms = ringUniforms;
         this.mesh.add(this.rings);
     }
 
@@ -615,6 +828,13 @@ class Planet {
             (err) => console.warn('Earth nightmap load failed:', err)
         );
 
+        const elevMap = loader.load(
+            'textures/earth/earth_elevation_8k.png',
+            () => console.log('⛰️ Earth elevation loaded (8K) — terrain relief active'),
+            undefined,
+            (err) => console.warn('Earth elevation load failed:', err)
+        );
+
         if (THREE.SRGBColorSpace !== undefined) {
             dayMap.colorSpace = THREE.SRGBColorSpace;
             nightMap.colorSpace = THREE.SRGBColorSpace;
@@ -624,11 +844,20 @@ class Planet {
         }
         dayMap.anisotropy = 16;
         nightMap.anisotropy = 16;
+        elevMap.anisotropy = 16;
 
         this.uniforms.earth = {
             dayMap: { value: dayMap },
             nightMap: { value: nightMap },
-            sunDirection: { value: new THREE.Vector3(1, 0, 0) }
+            elevMap: { value: elevMap },
+            elevTexel: { value: new THREE.Vector2(1 / 8192, 1 / 4096) },
+            bumpStrength: { value: 14.0 },
+            sunDirection: { value: new THREE.Vector3(1, 0, 0) },
+            // shared eclipse-shadow uniforms (moon transits → solar eclipse spot)
+            uSunPos: this._shadowUniforms.uSunPos,
+            uSunRadius: this._shadowUniforms.uSunRadius,
+            uOccluders: this._shadowUniforms.uOccluders,
+            uOccluderCount: this._shadowUniforms.uOccluderCount
         };
 
         const material = new THREE.ShaderMaterial({
@@ -636,44 +865,71 @@ class Planet {
             vertexShader: `
                 varying vec2 vUv;
                 varying vec3 vNormalWorld;
+                varying vec3 vTangentWorld;
+                varying vec3 vBitangentWorld;
                 varying vec3 vWorldPosition;
                 void main() {
                     vUv = uv;
                     vec4 worldPos = modelMatrix * vec4(position, 1.0);
                     vWorldPosition = worldPos.xyz;
                     vNormalWorld = normalize(mat3(modelMatrix) * normal);
+                    // Sphere tangent frame: tangent points east (+lon), bitangent north
+                    vec3 objTangent = normalize(vec3(-position.z, 0.0, position.x));
+                    vTangentWorld = normalize(mat3(modelMatrix) * objTangent);
+                    vBitangentWorld = normalize(cross(vNormalWorld, vTangentWorld));
                     gl_Position = projectionMatrix * viewMatrix * worldPos;
                 }
             `,
             fragmentShader: `
                 uniform sampler2D dayMap;
                 uniform sampler2D nightMap;
+                uniform sampler2D elevMap;
+                uniform vec2 elevTexel;
+                uniform float bumpStrength;
                 uniform vec3 sunDirection;
                 varying vec2 vUv;
                 varying vec3 vNormalWorld;
+                varying vec3 vTangentWorld;
+                varying vec3 vBitangentWorld;
                 varying vec3 vWorldPosition;
+
+                ${ECLIPSE_SHADOW_GLSL}
 
                 void main() {
                     vec3 dayColor   = texture2D(dayMap, vUv).rgb;
                     vec3 nightColor = texture2D(nightMap, vUv).rgb;
 
-                    vec3 N = normalize(vNormalWorld);
+                    // Perturb the normal with the NASA elevation map so mountain
+                    // ranges throw relief shadows along the terminator
+                    float h  = texture2D(elevMap, vUv).r;
+                    float hU = texture2D(elevMap, vUv + vec2(elevTexel.x, 0.0)).r;
+                    float hV = texture2D(elevMap, vUv + vec2(0.0, elevTexel.y)).r;
+                    vec3 N = normalize(
+                        normalize(vNormalWorld)
+                        + vTangentWorld   * (h - hU) * bumpStrength
+                        + vBitangentWorld * (h - hV) * bumpStrength
+                    );
+
                     vec3 L = normalize(sunDirection);
                     float NdotL = dot(N, L);
+                    float NdotLgeo = dot(normalize(vNormalWorld), L);
 
                     // Smooth terminator over a thin band (real Earth band ~2-3 degrees)
-                    float dayMix = smoothstep(-0.15, 0.15, NdotL);
+                    float dayMix = smoothstep(-0.15, 0.15, NdotLgeo);
+
+                    // Moon shadow (solar eclipse spot crawling across the surface)
+                    float eclipse = eclipseShadow(vWorldPosition);
 
                     // Day side - lit hemisphere with a tiny ambient floor
-                    float diffuse = clamp(NdotL, 0.0, 1.0);
+                    float diffuse = clamp(NdotL, 0.0, 1.0) * eclipse;
                     vec3 dayLit = dayColor * (0.08 + 0.95 * diffuse);
 
                     // Night side city lights (only on dark hemisphere)
                     vec3 night = nightColor * 1.6 * (1.0 - dayMix);
 
                     // Sunset/sunrise rim glow at the terminator
-                    float terminator = exp(-pow(NdotL * 7.0, 2.0));
-                    vec3 sunsetGlow = vec3(1.0, 0.55, 0.22) * terminator * 0.20;
+                    float terminator = exp(-pow(NdotLgeo * 7.0, 2.0));
+                    vec3 sunsetGlow = vec3(1.0, 0.55, 0.22) * terminator * 0.20 * eclipse;
 
                     // Water specular - daymap blue channel highlights oceans
                     float blueLead = dayColor.b - max(dayColor.r, dayColor.g) * 0.75;
@@ -693,6 +949,91 @@ class Planet {
         this.surface.castShadow = true;
         this.surface.receiveShadow = false;
         this.mesh.add(this.surface);
+
+        // Progressive detail: keep the bundled low-res daymap as the safe default and
+        // only swap in the true 8K NASA Blue Marble when the camera is close, disposing
+        // it again when you leave — so the heavy texture is never resident at distance
+        // (this is what prevents the 8K-memory jetsam the project hit before).
+        this._earthLowDay = dayMap;
+        this._earthLowNight = nightMap;
+        this._earthHiDay = null;
+        this._earthHiNight = null;
+        this._earthDetail = 'low';
+        this._earthHiLoading = false;
+    }
+
+    // Swap Earth's day + night maps between bundled low-res and true 8K (NASA Blue Marble +
+    // Black Marble city lights). Safe to call every frame; only acts on transitions and never
+    // holds the heavy textures while far away — both are disposed when you leave.
+    setEarthDetail(high) {
+        if (!this.uniforms || !this.uniforms.earth) return;
+        this._earthWantsHigh = high;
+        const dayU = this.uniforms.earth.dayMap;
+        const nightU = this.uniforms.earth.nightMap;
+        const setSRGB = (tex) => {
+            if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+            else if (THREE.sRGBEncoding !== undefined) tex.encoding = THREE.sRGBEncoding;
+            tex.anisotropy = 16;
+        };
+        if (high) {
+            if (this._earthDetail === 'high' || this._earthHiLoading) return;
+            this._earthHiLoading = true;
+            const loader = new THREE.TextureLoader();
+            let pending = 2, bailed = false;
+            const done = () => { if (--pending === 0) { this._earthHiLoading = false;
+                if (!bailed) { this._earthDetail = 'high'; console.log('🌍 Earth → 8K day + night city lights (up close)'); } } };
+            const loadInto = (path, uniform, store) => loader.load(path, (tex) => {
+                // camera may have already left while loading — bail and dispose
+                if (!this._earthWantsHigh) { tex.dispose(); bailed = true; done(); return; }
+                setSRGB(tex); this[store] = tex; uniform.value = tex; done();
+            }, undefined, () => { bailed = true; done(); });
+            loadInto('textures/earth/earth_daymap_hi.jpg', dayU, '_earthHiDay');
+            loadInto('textures/earth/earth_nightmap_hi.jpg', nightU, '_earthHiNight');
+        } else {
+            if (this._earthDetail === 'low') return;
+            dayU.value = this._earthLowDay;
+            nightU.value = this._earthLowNight;
+            this._earthDetail = 'low';
+            if (this._earthHiDay) { this._earthHiDay.dispose(); this._earthHiDay = null; }
+            if (this._earthHiNight) { this._earthHiNight.dispose(); this._earthHiNight = null; }
+            console.log('🌍 Earth → low-res (far away, 8K freed)');
+        }
+    }
+
+    // Swap a textured planet's (Jupiter/Saturn) color map between bundled low-res and the
+    // real 4K photo. Same safe transition pattern as Earth — only acts on change, frees hi when far.
+    setTexturedDetail(high) {
+        if (!this._texMaterial) return;
+        const HI = {
+            jupiter: 'textures/jupiter/jupiter_hi.jpg',
+            saturn:  'textures/saturn/saturn_hi.jpg'
+        };
+        const hiPath = HI[this.texturePack];
+        if (!hiPath) return; // only the bodies we shipped a hi-res for
+        this._texWantsHigh = high;
+        if (high) {
+            if (this._texDetail === 'high' || this._texHiLoading) return;
+            this._texHiLoading = true;
+            new THREE.TextureLoader().load(hiPath, (tex) => {
+                if (!this._texWantsHigh) { tex.dispose(); this._texHiLoading = false; return; }
+                if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+                else if (THREE.sRGBEncoding !== undefined) tex.encoding = THREE.sRGBEncoding;
+                tex.anisotropy = 16;
+                this._texHiColor = tex;
+                this._texMaterial.map = tex;
+                this._texMaterial.needsUpdate = true;
+                this._texDetail = 'high';
+                this._texHiLoading = false;
+                console.log(`🪐 ${this.name} → 4K real texture (up close)`);
+            }, undefined, () => { this._texHiLoading = false; });
+        } else {
+            if (this._texDetail === 'low') return;
+            this._texMaterial.map = this._texLowColor;
+            this._texMaterial.needsUpdate = true;
+            this._texDetail = 'low';
+            if (this._texHiColor) { this._texHiColor.dispose(); this._texHiColor = null; }
+            console.log(`🪐 ${this.name} → low-res (far away, freed)`);
+        }
     }
 
     _createRockyPlanet(segments) {
@@ -712,6 +1053,7 @@ class Planet {
             metalness: 0.1,
             envMapIntensity: 0.4
         });
+        this._injectShadows(material);
 
         this.surface = new THREE.Mesh(geometry, material);
         this.surface.castShadow = true;
@@ -919,7 +1261,7 @@ class Planet {
         this.uniforms.atmosphere = {
             sunPosition: { value: new THREE.Vector3(100, 0, 0) },
             planetRadius: { value: this.radius },
-            atmosphereRadius: { value: this.radius * 1.15 },
+            atmosphereRadius: { value: this.radius * 1.22 },
             rayleighCoeff: { value: new THREE.Vector3(5.5, 13.0, 22.4) }, // Blue scattering
             mieCoeff: { value: 21.0 },
             mieG: { value: 0.76 }, // Mie phase asymmetry
@@ -927,7 +1269,7 @@ class Planet {
             atmosphereColor: { value: new THREE.Color(this.atmosphereColor) }
         };
 
-        const atmosphereGeometry = new THREE.SphereGeometry(this.radius * 1.15, 64, 64);
+        const atmosphereGeometry = new THREE.SphereGeometry(this.radius * 1.22, 64, 64);
         const atmosphereMaterial = new THREE.ShaderMaterial({
             uniforms: this.uniforms.atmosphere,
             vertexShader: `
@@ -973,7 +1315,8 @@ class Planet {
                     vec3 sunDir = normalize(sunPosition);
 
                     // Fresnel-like effect for atmosphere edge
-                    float fresnel = pow(1.0 - max(0.0, dot(viewDir, vNormal)), 3.0);
+                    // Wider, softer rim (lower power = the glow reaches further in from the edge).
+                    float fresnel = pow(1.0 - max(0.0, dot(viewDir, vNormal)), 2.3);
 
                     // Scattering calculation
                     float cosTheta = dot(viewDir, sunDir);
@@ -993,7 +1336,7 @@ class Planet {
                     float alpha = fresnel * 1.0 * density;
                     alpha = clamp(alpha, 0.0, 0.75);
 
-                    gl_FragColor = vec4(scatter + atmosphereColor * fresnel * 0.5, alpha);
+                    gl_FragColor = vec4(scatter + atmosphereColor * fresnel * 0.95, alpha);
                 }
             `,
             transparent: true,
@@ -1233,16 +1576,42 @@ class Planet {
             this.uniforms.gasGiant.time.value = this.time;
         }
 
-        // Update sun position for all shaders
-        const sunPos = sunPosition || new THREE.Vector3(
-            Math.cos(this.time * 0.1) * 100,
-            20,
-            Math.sin(this.time * 0.1) * 100
-        );
+        // Update sun position for all shaders. The update loop passes rendererCore
+        // as the second arg (not a position), so validate before using — the sun
+        // lives at the origin in this scene.
+        let sunPos = sunPosition;
+        if (!sunPos || typeof sunPos.x !== 'number' || !isFinite(sunPos.x)) {
+            sunPos = _planetSunOrigin;
+        }
 
         // Update atmosphere sun position
         if (this.uniforms.atmosphere) {
             this.uniforms.atmosphere.sunPosition.value.copy(sunPos);
+        }
+
+        // Refresh shared eclipse/ring shadow uniforms
+        if (this._shadowUniforms) {
+            this._shadowUniforms.uSunPos.value.set(sunPos.x, sunPos.y, sunPos.z);
+            let n = 0;
+            for (let i = 0; i < this._occluders.length && n < 4; i++) {
+                const occ = this._occluders[i];
+                const m = occ.mesh || occ;
+                if (!m || !m.getWorldPosition) continue;
+                m.getWorldPosition(_planetTmpVec);
+                this._shadowUniforms.uOccluders.value[n].set(
+                    _planetTmpVec.x, _planetTmpVec.y, _planetTmpVec.z, occ.radius || 1
+                );
+                n++;
+            }
+            this._shadowUniforms.uOccluderCount.value = n;
+        }
+        if (this._ringShadowUniforms && this.rings) {
+            this.mesh.getWorldPosition(this._ringShadowUniforms.uRingCenter.value);
+            this.rings.getWorldQuaternion(_planetTmpQuat);
+            this._ringShadowUniforms.uRingNormal.value.set(0, 0, 1).applyQuaternion(_planetTmpQuat);
+        }
+        if (this._ringLightUniforms) {
+            this.mesh.getWorldPosition(this._ringLightUniforms.uPlanetCenter.value);
         }
 
         // Update photoreal Earth sun direction (world-space direction from planet to sun).

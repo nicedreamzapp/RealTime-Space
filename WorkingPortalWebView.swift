@@ -196,7 +196,10 @@ struct WorkingPortalWebView: UIViewRepresentable {
         config.defaultWebpagePreferences = prefs
 
         let webView = WKWebView(frame: .zero, configuration: config)
-        webView.isOpaque = false
+        // Opaque black: the WebView is the bottom layer (controls float above it). With
+        // isOpaque=false, iOS can fail to composite the opaque WebGL canvas and show black
+        // even though the scene rendered. Opaque makes the canvas present reliably.
+        webView.isOpaque = true
         webView.backgroundColor = UIColor.black
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false

@@ -641,21 +641,39 @@ class Star {
         this.mesh.add(innerCorona);
         this.coronaLayers.push({ mesh: innerCorona, uniforms: innerCoronaUniforms });
 
-        // Outer corona layers with stronger glow
-        const coronaSizes = [2.0, 3.0, 4.5, 7.0, 10.0];
-        const coronaOpacities = [0.35, 0.22, 0.12, 0.06, 0.025];
+        // Outer glow: smooth radial-gradient sprites instead of nested solid
+        // spheres — sphere shells render as visible concentric circles ("onion
+        // rings"), a gradient falls off like a real photographed corona.
+        const makeGlowTexture = () => {
+            const c = document.createElement('canvas');
+            c.width = c.height = 256;
+            const g = c.getContext('2d');
+            const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+            grad.addColorStop(0.0, 'rgba(255,255,255,0.9)');
+            grad.addColorStop(0.08, 'rgba(255,250,240,0.55)');
+            grad.addColorStop(0.25, 'rgba(255,240,220,0.18)');
+            grad.addColorStop(0.55, 'rgba(255,230,200,0.05)');
+            grad.addColorStop(1.0, 'rgba(255,220,180,0)');
+            g.fillStyle = grad;
+            g.fillRect(0, 0, 256, 256);
+            return new THREE.CanvasTexture(c);
+        };
+        const glowTex = makeGlowTexture();
+        const coronaSizes = [5.0, 11.0];
+        const coronaOpacities = [0.55, 0.18];
 
         coronaSizes.forEach((size, i) => {
-            const geo = new THREE.SphereGeometry(this.radius * size, 32, 32);
-            const mat = new THREE.MeshBasicMaterial({
+            const mat = new THREE.SpriteMaterial({
+                map: glowTex,
                 color: this.actualColor,
                 transparent: true,
                 opacity: coronaOpacities[i] * Math.min(1, this.luminosity / 8),
-                side: THREE.BackSide,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false
             });
-            const corona = new THREE.Mesh(geo, mat);
+            const corona = new THREE.Sprite(mat);
+            corona.scale.setScalar(this.radius * size);
+            corona.userData.baseScale = this.radius * size;
             this.mesh.add(corona);
             this.coronaLayers.push({ mesh: corona });
         });
@@ -762,7 +780,7 @@ class Star {
 
     _createDiffractionSpikes() {
         // Hubble-style 4-point diffraction spikes
-        const spikeLength = this.radius * 12;
+        const spikeLength = this.radius * 7;
         const spikeGroup = new THREE.Group();
 
         for (let i = 0; i < 4; i++) {
@@ -789,13 +807,13 @@ class Star {
             const spikeMat = new THREE.MeshBasicMaterial({
                 map: spikeTexture,
                 transparent: true,
-                opacity: 0.8 * Math.min(1, this.luminosity / 10),
+                opacity: 0.28 * Math.min(1, this.luminosity / 10),
                 blending: THREE.AdditiveBlending,
                 side: THREE.DoubleSide,
                 depthWrite: false
             });
 
-            const spikeGeo = new THREE.PlaneGeometry(this.radius * 0.3, spikeLength);
+            const spikeGeo = new THREE.PlaneGeometry(this.radius * 0.09, spikeLength);
             const spike = new THREE.Mesh(spikeGeo, spikeMat);
             spike.rotation.z = angle;
             spike.position.z = 0.1;
@@ -909,7 +927,18 @@ class Star {
         return new THREE.Color(r, g, b);
     }
 
-    update(deltaTime) {
+    update(deltaTime, rendererCore) {
+        // Close-range solar weather: prominences, solar wind, and CMEs read as a
+        // glittery gold disc from across the system — only show them up close,
+        // where they actually look like the SDO footage they're modeled on.
+        if (rendererCore?.camera && this.mesh) {
+            const camDist = rendererCore.camera.position.distanceTo(this.mesh.position);
+            const close = camDist < this.radius * 6;
+            if (this.prominenceSystem) this.prominenceSystem.visible = close;
+            if (this.solarWindParticles) this.solarWindParticles.visible = close;
+            if (this.cmeSystem) this.cmeSystem.visible = close;
+        }
+
         this.time += deltaTime;
 
         // Rotate core with differential rotation (equator faster than poles)
@@ -933,9 +962,9 @@ class Star {
             if (layer.uniforms) {
                 layer.uniforms.time.value = this.time;
             }
-            // Subtle pulsing
+            // Subtle pulsing (sprites carry their size in scale, spheres in geometry)
             const pulse = 1 + Math.sin(this.time * (0.2 + i * 0.1)) * 0.02;
-            layer.mesh.scale.setScalar(pulse);
+            layer.mesh.scale.setScalar((layer.mesh.userData.baseScale || 1) * pulse);
         });
 
         // Update prominences
@@ -987,10 +1016,12 @@ class Star {
             this.solarWindParticles.material.uniforms.time.value = this.time;
         }
 
-        // Diffraction spikes always face camera (billboard-like)
+        // Diffraction spikes are a CAMERA artifact, so they must billboard —
+        // otherwise the flat planes read as gray bars from oblique angles
         if (this.diffractionSpikes) {
-            // Slight rotation for dynamic feel
-            this.diffractionSpikes.rotation.z += deltaTime * 0.005;
+            if (rendererCore?.camera) {
+                this.diffractionSpikes.quaternion.copy(rendererCore.camera.quaternion);
+            }
         }
 
         // Animate flare elements

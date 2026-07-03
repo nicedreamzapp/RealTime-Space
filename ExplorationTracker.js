@@ -516,6 +516,12 @@ class ExplorationTracker {
     }
 
     queueNotification(obj, type) {
+        // Discovery is now an intentional act: the Codex SCAN button reveals a real-data
+        // card when you choose to scan a body. The old passive auto-"DISCOVERED" toast
+        // fired just from flying nearby with only generic data, which felt fake. Suppress
+        // it so the deliberate scan is the single, real moment of discovery.
+        if (window.codex) return;
+
         // Add to queue (avoid duplicates)
         const exists = this.notificationQueue.some(n => n.obj.name === obj.name && n.type === type);
         if (!exists) {

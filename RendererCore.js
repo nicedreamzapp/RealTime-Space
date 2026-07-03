@@ -65,6 +65,9 @@ class RendererCore {
             powerPreference: "high-performance",
             stencil: true,  // Enable for post-processing effects
             depth: true,
+            preserveDrawingBuffer: true,  // iOS WKWebView: needed so the drawing buffer
+                                          // actually composites to screen (otherwise the
+                                          // frame renders but the layer shows black)
             logarithmicDepthBuffer: true  // Better depth precision for vast scales
         });
 
@@ -102,27 +105,36 @@ class RendererCore {
     }
 
     initEnvironmentMap() {
-        // Galaxy panorama → pre-filtered radiance map for image-based lighting.
-        // Gives Mercury/Venus/Mars/Jupiter/Saturn/etc. subtle reflections from nearby
-        // galaxy regions while keeping the deep-space background visually dark.
+        // Real 8K Milky Way panorama (Solar System Scope, CC BY 4.0) used two ways:
+        //  1. scene.background — the actual sky, replacing the old procedural band
+        //  2. PMREM-filtered radiance map for image-based lighting on every surface
         const loader = new THREE.TextureLoader();
         loader.load(
-            'textures/starfield/galaxy_starfield.png',
+            'textures/starfield/milky_way_8k.jpg',
             (texture) => {
                 texture.mapping = THREE.EquirectangularReflectionMapping;
                 if (THREE.SRGBColorSpace !== undefined) {
                     texture.colorSpace = THREE.SRGBColorSpace;
                 }
+                texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy?.() || 8);
+
+                this.scene.background = texture;
+                // Keep the sky a touch darker than the raw photo so the eye adapts
+                // to scene objects, not the backdrop (supported r152+; harmless before)
+                if ('backgroundIntensity' in this.scene) {
+                    this.scene.backgroundIntensity = 0.75;
+                }
+
                 const pmrem = new THREE.PMREMGenerator(this.renderer);
                 pmrem.compileEquirectangularShader();
                 const envMap = pmrem.fromEquirectangular(texture).texture;
                 this.scene.environment = envMap;
-                texture.dispose();
-                pmrem.dispose();
-                console.log("✨ Galaxy IBL environment map ready");
+                pmrem.dispose(); // texture stays alive — it IS the background
+
+                console.log("✨ Real Milky Way skybox + IBL ready (8K panorama)");
             },
             undefined,
-            (err) => console.warn("IBL load failed:", err)
+            (err) => console.warn("Milky Way skybox load failed:", err)
         );
     }
 
@@ -153,9 +165,12 @@ class RendererCore {
         
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
-        
+
         this.renderer.setSize(width, height);
-        
+        if (this.composer) {
+            this.composer.setSize(width, height);
+        }
+
         console.log(`📐 Resized to ${width}x${height}`);
     }
 
