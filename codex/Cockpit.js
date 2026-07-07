@@ -33,7 +33,7 @@
       // its vote — setVisible only affects the current session (⋯ toggle still
       // works while the app is open).
       this.on = true;
-      this.forceHidden = true;   // default view is VISOR (clean) — HELM enables the art
+      this.forceHidden = false;  // HELM default — the green-screen key made the cockpit exact
       window.addEventListener('resize', () => this._apply());
       this._apply();
     }

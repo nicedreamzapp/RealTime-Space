@@ -21,7 +21,7 @@ struct ContentView: View {
     @State private var isWarping = false
     @State private var showSplash = true
     @State private var showCredits = false
-    @State private var viewMode = "visor"   // visor (clean, default) | helm (cockpit art) | chase
+    @State private var viewMode = "helm"   // helm (cockpit, default) | visor (clean) | chase
 
     let joystickRadius: CGFloat = 60
 
