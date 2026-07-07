@@ -22,10 +22,10 @@
       // twin engines that idle blue and burn ORANGE under thrust — modeled on
       // Matt's Stargazer-07 concept art.
       const ship = new THREE.Group();
-      const chrome = new THREE.MeshStandardMaterial({ color: 0xaebbc8, metalness: 0.95, roughness: 0.15 });
-      chrome.envMapIntensity = 1.8;
-      const darkMetal = new THREE.MeshStandardMaterial({ color: 0x232c36, metalness: 0.85, roughness: 0.3 });
-      darkMetal.envMapIntensity = 1.2;
+      const chrome = new THREE.MeshStandardMaterial({ color: 0xdfe6ec, metalness: 0.82, roughness: 0.22 });
+      chrome.envMapIntensity = 3.0;
+      const darkMetal = new THREE.MeshStandardMaterial({ color: 0x5a6a7a, metalness: 0.8, roughness: 0.32 });
+      darkMetal.envMapIntensity = 2.0;
       const glassMat = new THREE.MeshStandardMaterial({ color: 0x0a1622, metalness: 0.9, roughness: 0.05 });
       glassMat.envMapIntensity = 2.2;
       const goldMat = new THREE.MeshStandardMaterial({ color: 0xc9a34a, metalness: 1.0, roughness: 0.25 });
@@ -115,6 +115,15 @@
       ship.visible = false;
       this.ship = ship;
       this.rig.add(ship);
+
+      // Personal fill lights riding with the ship — silver needs light to read
+      // silver against deep space. Distance-limited so the scene stays dark.
+      const key = new THREE.PointLight(0xffffff, 2.6, 60);
+      key.position.set(4, 8, 6);
+      this.rig.add(key);
+      const fill = new THREE.PointLight(0x9db8d8, 1.2, 50);
+      fill.position.set(-5, -3, 10);
+      this.rig.add(fill);
 
       this._off = new THREE.Vector3(0, 3.5, 14);
       this._tick = this._tick.bind(this);
