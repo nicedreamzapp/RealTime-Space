@@ -206,10 +206,14 @@
       window.chaseView = new ChaseView(window.THREE, rc, np);
       // register as the LAST engine system so the camera locks after physics
       try {
-        if (typeof loop !== 'undefined' && loop && loop.addSystem) {
-          loop.addSystem({ name: 'ChaseCamLock', update: () => window.chaseView.syncCamera() });
+        if (typeof loop !== 'undefined' && loop && loop.systems) {
+          const sys = { name: 'ChaseCamLock', update: () => window.chaseView.syncCamera() };
+          // MUST run before ComposerRender (rendering happens INSIDE the systems
+          // list) — appending put us after the draw and the ship trailed a frame.
+          const idx = loop.systems.findIndex(x => x && x.name === 'ComposerRender');
+          if (idx >= 0) loop.systems.splice(idx, 0, sys); else loop.systems.push(sys);
           window.chaseView._engineHooked = true;
-          console.log('🔒 chase cam locked into engine loop (post-physics)');
+          console.log('🔒 chase cam locked pre-render at index', idx);
         }
       } catch (e) {}
 
