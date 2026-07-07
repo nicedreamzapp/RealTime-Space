@@ -160,14 +160,21 @@
       this.active = false;
     }
 
+    // Runs INSIDE the engine's update loop, AFTER physics moves the rig — zero
+    // frames of lag, so the ship cannot shrink or pull away at ANY speed (the old
+    // separate requestAnimationFrame ran one frame behind: at 100x warp that one
+    // frame was hundreds of units and the ship vanished).
+    syncCamera() {
+      if (!this.active) return;
+      const cam = this.rc.camera;
+      const want = this._off.clone().applyQuaternion(this.rig.quaternion).add(this.rig.position);
+      cam.position.copy(want);
+      cam.quaternion.copy(this.rig.quaternion);
+    }
+
     _tick() {
       if (this.active) {
-        const cam = this.rc.camera;
-        // RIGID follow: position locked (no drift under thrust/warp — Matt: the
-        // ship must never pull away), only rotation eases for a soft feel.
-        const want = this._off.clone().applyQuaternion(this.rig.quaternion).add(this.rig.position);
-        cam.position.copy(want);
-        cam.quaternion.slerp(this.rig.quaternion, 0.22);
+        if (!this._engineHooked) this.syncCamera();   // rAF fallback only
         // engines: breathe with thrust, and burn ORANGE when firing (blue at idle)
         const thrusting = this.np.isThrusting || this.np.isBoosting;
         const target = thrusting ? (this.np.isBoosting ? 3.4 : 2.1) : 0.9;
@@ -197,6 +204,14 @@
     clearInterval(boot);
     try {
       window.chaseView = new ChaseView(window.THREE, rc, np);
+      // register as the LAST engine system so the camera locks after physics
+      try {
+        if (typeof loop !== 'undefined' && loop && loop.addSystem) {
+          loop.addSystem({ name: 'ChaseCamLock', update: () => window.chaseView.syncCamera() });
+          window.chaseView._engineHooked = true;
+          console.log('🔒 chase cam locked into engine loop (post-physics)');
+        }
+      } catch (e) {}
 
       const setMode = (mode) => {
         window.__viewMode = mode;
