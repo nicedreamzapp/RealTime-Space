@@ -120,10 +120,13 @@
       // silver against deep space. Distance-limited so the scene stays dark.
       const key = new THREE.PointLight(0xffffff, 2.6, 60);
       key.position.set(4, 8, 6);
+      key.visible = false;
       this.rig.add(key);
       const fill = new THREE.PointLight(0x9db8d8, 1.2, 50);
       fill.position.set(-5, -3, 10);
+      fill.visible = false;
       this.rig.add(fill);
+      this.lights = [key, fill];
 
       this._off = new THREE.Vector3(0, 3.5, 14);
       this._tick = this._tick.bind(this);
@@ -137,6 +140,7 @@
       this.rig.quaternion.copy(cam.quaternion);
       this.np.camera = this.rig;      // physics now flies the rig
       this.ship.visible = true;
+      (this.lights || []).forEach(l => l.visible = true);
       this.active = true;
     }
 
@@ -148,6 +152,7 @@
       cam.quaternion.copy(this.rig.quaternion);
       this.np.camera = cam;
       this.ship.visible = false;
+      (this.lights || []).forEach(l => l.visible = false);
       this.active = false;
     }
 
