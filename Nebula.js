@@ -581,8 +581,9 @@ class Nebula {
     }
 
     _createDustParticles() {
-        // Ambient dust particles throughout nebula
-        const particleCount = 5000;
+        // Ambient dust particles throughout nebula — 14k (was 5k): these clouds are
+        // flyable, and being inside one felt empty at the old density.
+        const particleCount = 14000;
         const positions = new Float32Array(particleCount * 3);
         const colors = new Float32Array(particleCount * 3);
         const sizes = new Float32Array(particleCount);

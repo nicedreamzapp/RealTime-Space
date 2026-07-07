@@ -59,11 +59,11 @@ function setCinematicMode(on) {
     // Adjust bloom pass - cinematic mode gets extra bloom punch
     if (rendererCore?.composer && rendererCore.bloomPass) {
         if (on) {
-            rendererCore.bloomPass.strength = 0.7;    // Rich cinematic glow
-            rendererCore.bloomPass.threshold = 0.65;   // More objects bloom in cinematic
+            rendererCore.bloomPass.strength = 0.5;    // Cinematic glow (still tamer than old default)
+            rendererCore.bloomPass.threshold = 0.8;
         } else {
-            rendererCore.bloomPass.strength = 0.55;
-            rendererCore.bloomPass.threshold = 0.72;
+            rendererCore.bloomPass.strength = 0.32;
+            rendererCore.bloomPass.threshold = 0.9;
         }
     }
 
@@ -108,7 +108,7 @@ function initGalaxy() {
             rendererCore.renderer.physicallyCorrectLights = true;
             // ACES Filmic tone mapping for vibrant, cinematic HDR colors
             rendererCore.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            rendererCore.renderer.toneMappingExposure = 1.3; // Brighter, punchier exposure
+            rendererCore.renderer.toneMappingExposure = 1.15; // crisper: deeper blacks, less white wash
             rendererCore.renderer.outputColorSpace = THREE.SRGBColorSpace;
             rendererCore.renderer.shadowMap.enabled = true;
             rendererCore.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -157,9 +157,10 @@ function initGalaxy() {
                 if (typeof UnrealBloomPass !== 'undefined') {
                     const bloomPass = new UnrealBloomPass(
                         new THREE.Vector2(window.innerWidth, window.innerHeight),
-                        0.55,  // Strength - visible glow on stars and bright objects
-                        0.6,   // Radius - soft, wide glow
-                        0.72   // Threshold - bloom on stars, nebulae, and bright surfaces
+                        0.32,  // Strength — cut from 0.55: bloom was white-washing the sun
+                               // disk and planet highlights into glare
+                        0.5,   // Radius
+                        0.9    // Threshold — only truly blown pixels bloom now
                     );
                     composer.addPass(bloomPass);
                     rendererCore.bloomPass = bloomPass;
@@ -221,7 +222,7 @@ function initGalaxy() {
                                         coord += delta;
                                         vec3 s = texture2D(tDiffuse, coord).rgb;
                                         float lum = dot(s, vec3(0.299, 0.587, 0.114));
-                                        s *= smoothstep(0.5, 1.1, lum); // only bright pixels shaft
+                                        s *= smoothstep(0.8, 1.25, lum); // only near-blown pixels (the sun core) shaft — star sprites/labels no longer smear into white rays
                                         rays += s * illum * uWeight;
                                         illum *= uDecay;
                                     }
@@ -436,12 +437,16 @@ function initGalaxy() {
         // Distant nebulae - Hubble-inspired
         createNebulae();
 
-        // Ambient space dust particles
-        createAmbientParticles();
+        // Ambient space "dust" — DISABLED. A 1,500-particle cloud that followed the camera
+        // made it feel like flying through fog (you're inside the solar system, not a dust
+        // storm) and added to the hazy, un-sharp look. Removed for clean, crisp space.
+        // createAmbientParticles();
 
         // EPIC EFFECTS - Black holes, warp, volumetric nebulae
         createBlackHoles();
-        createWarpEffect();
+        // createWarpEffect();  // DISABLED — "light-speed" star streaks on thrust/warp made
+        // no sense (stars materializing and flying past you); motion reads through real
+        // parallax of the starfield and planets instead. All warpEffect uses are guarded.
         createVolumetricNebulae();
 
         // Initialize orbital mechanics
@@ -649,7 +654,11 @@ function createUpdateSystems() {
                 const screenFade = THREE.MathUtils.clamp(1.4 - offCenter, 0, 1);
                 const behind = sunNdc.z > 1 ? 0 : 1;
 
-                pass.uniforms.uIntensity.value = 0.6 * facing * facing * screenFade * behind;
+                // 0.35 (was 0.6): full-strength shafts smeared labels/stars radially and
+                // washed the whole frame white whenever the sun was in view. The auto-lens
+                // solar filter (Star.js) dims the shafts further as it darkens.
+                const lens = 1 - 0.8 * (window.__sunFilter || 0);
+                pass.uniforms.uIntensity.value = 0.35 * facing * facing * screenFade * behind * lens;
             }
         },
         // Procedural soundscape follows flight state and proximity to bodies
@@ -745,19 +754,18 @@ function createUpdateSystems() {
             name: "WarpEffect",
             update: (dt, rc) => {
                 if (warpEffect && rc?.camera && navPhysics) {
-                    // Warp intensity based on speed - kicks in at higher speeds
+                    // Star-streak "traveling" cue, driven by real speed: subtle streaks the
+                    // moment you thrust, building as you go faster, full hyperspace on boost.
+                    // (Was threshold 30 u/s, so normal thrust showed nothing — felt static.)
                     const speed = navPhysics.getSpeed();
-                    const warpThreshold = 30; // Start showing warp lines at 30 u/s
-                    const maxWarpSpeed = 150; // Full warp effect at 150 u/s
+                    const warpThreshold = 8;    // streaks begin almost as soon as you move
+                    const maxWarpSpeed = 120;   // cruise-speed streak ceiling
 
-                    // Enable warp when moving fast
-                    if (navPhysics.isBoosting && speed > 20) {
-                        // Full warp during boost
-                        warpEffect.setIntensity(1.0);
+                    if (navPhysics.isBoosting) {
+                        warpEffect.setIntensity(1.0);           // full hyperspace on boost / 100× warp
                     } else if (speed > warpThreshold) {
-                        // Gradual warp based on speed
-                        const warpIntensity = Math.min(1.0, (speed - warpThreshold) / (maxWarpSpeed - warpThreshold));
-                        warpEffect.setIntensity(warpIntensity * 0.7);
+                        const t = Math.min(1.0, (speed - warpThreshold) / (maxWarpSpeed - warpThreshold));
+                        warpEffect.setIntensity(t * 0.6);       // visible "traveling" streaks while cruising
                     } else {
                         warpEffect.setIntensity(0);
                     }
@@ -922,7 +930,7 @@ function createTimeControl() {
     timePillEl.id = 'time-pill';
     timePillEl.textContent = TIME_SCALES[0].label;
     timePillEl.style.cssText = `
-        position: absolute; top: 112px; left: 50%; transform: translateX(-50%); z-index: 120;
+        position: absolute; top: max(18px, env(safe-area-inset-top)); left: max(18px, env(safe-area-inset-left)); z-index: 120;
         padding: 6px 13px; border-radius: 14px;
         background: rgba(12, 16, 28, 0.55);
         border: 1px solid rgba(140, 200, 255, 0.22);
@@ -1665,14 +1673,9 @@ function createStarfield() {
     console.log("🌟 Creating starfield...");
     // Procedural field = faint deep-space "dust" for depth. Dimmed from brightness 2.0 so
     // it no longer drowns out the real named stars layered on top of it.
-    starfield = new Starfield({
-        count: 150000,
-        radius: 9000,
-        brightness: 1.15,
-        sizeBase: 0.6,
-        twinkleAmplitude: 0.15
-    });
-    rendererCore.scene.add(starfield.getMesh());
+    // Procedural filler field REMOVED (was 22k random decorative dots — Matt: "what do
+    // they even represent?"). The sky is now ONLY the ~8,900 real HYG stars below, each
+    // at its true 3D position, so every visible star is a real object you can fly to.
 
     // Real sky: ~8,700 true-position HYG stars → actual constellations (Orion, the Big
     // Dipper, Cassiopeia) sit where they really are. Layered additively over the dust.
@@ -1703,7 +1706,7 @@ function createAsteroidBelt() {
 // ========== NEARBY DEBRIS ==========
 function createNearbyDebris() {
     console.log("🗿 Creating nearby debris...");
-    const debrisCount = 50;
+    const debrisCount = 8;   // was 50 — fewer bits drifting past so it's not a swarm
 
     for (let i = 0; i < debrisCount; i++) {
         const size = 0.02 + Math.random() * 0.08;
@@ -1848,22 +1851,23 @@ function createPlanetHighlights() {
     objects.forEach(obj => {
         if (obj.type !== "planet" && obj.type !== "star") return;
 
-        // Create label sprite
+        // Create label sprite — 3x canvas so planet names render CRISP, not fuzzy
         const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 64;
+        canvas.width = 768;
+        canvas.height = 192;
         const ctx = canvas.getContext('2d');
 
         ctx.fillStyle = 'rgba(0,0,0,0)';
-        ctx.fillRect(0, 0, 256, 64);
+        ctx.fillRect(0, 0, 768, 192);
 
-        ctx.font = 'bold 32px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.font = 'bold 96px -apple-system, BlinkMacSystemFont, sans-serif';
         ctx.fillStyle = 'white';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(obj.name, 128, 32);
+        ctx.fillText(obj.name, 384, 96);
 
         const texture = new THREE.CanvasTexture(canvas);
+        texture.anisotropy = 4;
         const spriteMat = new THREE.SpriteMaterial({
             map: texture,
             transparent: true,

@@ -358,9 +358,11 @@ class NavigationArrows {
                 edgeY = screenY;
             }
 
-            // Clamp to screen edges
+            // Clamp to screen edges — the bottom ~28% is the native control zone
+            // (joystick / speed / THRUST cluster), so the arrow may never enter it
+            // or it covers the buttons.
             edgeX = Math.max(padding, Math.min(window.innerWidth - 380, edgeX));
-            edgeY = Math.max(padding, Math.min(window.innerHeight - padding, edgeY));
+            edgeY = Math.max(padding, Math.min(window.innerHeight * 0.72 - padding, edgeY));
 
             // Position indicator
             this.indicator.style.display = 'flex';

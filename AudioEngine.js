@@ -53,7 +53,7 @@ class AudioEngine {
         const ctx = this.ctx;
 
         this.master = ctx.createGain();
-        this.master.gain.value = 0.45; // toned down — full 0.9 was too intense
+        this.master.gain.value = 0.32; // quieter, less intrusive background bed
         const limiter = ctx.createDynamicsCompressor();
         limiter.threshold.value = -12;
         limiter.ratio.value = 12;
@@ -78,7 +78,9 @@ class AudioEngine {
             sway.type = 'sine';
             sway.frequency.value = 0.018 + i * 0.013;          // very slow, different per voice
             const swayDepth = ctx.createGain();
-            swayDepth.gain.value = (3.0 + i * 3.0);             // ± Hz of drift (exaggerated)
+            swayDepth.gain.value = (0.5 + i * 0.4);             // ± Hz of drift — subtle now
+                                                                // (was 3–9 Hz: caused a
+                                                                // seasick, wobbly beating tone)
             sway.connect(swayDepth);
             swayDepth.connect(osc.frequency);
             sway.start();
@@ -106,7 +108,7 @@ class AudioEngine {
         ambFilter.type = 'lowpass';
         ambFilter.frequency.value = 180;
         const ambNoiseGain = ctx.createGain();
-        ambNoiseGain.gain.value = 0.25;
+        ambNoiseGain.gain.value = 0.14;   // less hissy noise bed
         ambNoise.connect(ambFilter);
         ambFilter.connect(ambNoiseGain);
         ambNoiseGain.connect(ambGain);

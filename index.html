@@ -210,6 +210,10 @@
             'codex/Exoplanets.js',
             'codex/Galaxies.js',
             'codex/Deepsky.js',
+            'codex/Cockpit.js',
+            'codex/StarProximity.js',
+            'codex/ChaseView.js',
+            'codex/MilkyWay.js',
             'NavigationArrows.js',
             'AudioEngine.js',
             'Missions.js',
@@ -218,7 +222,7 @@
             'VolumetricNebula.js',
             'main.js'
         ];
-        const APP_VERSION = '2026-06-20b'; // bump to bust browser cache after edits
+        const APP_VERSION = '2026-07-06a'; // bump to bust browser cache after edits
         // Query-string cache busting is for http dev serving only — file:// URLs
         // inside the app bundle don't cache and may not tolerate query params.
         const bust = location.protocol.startsWith('http') ? '?v=' + APP_VERSION : '';

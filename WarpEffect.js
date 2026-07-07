@@ -126,9 +126,10 @@ class WarpEffect {
                     color = mix(vec3(1.0), color, vIntensity);
 
                     // Glow effect
-                    float glow = 1.0 + vIntensity * 2.0;
+                    float glow = 1.3 + vIntensity * 2.0;
 
-                    gl_FragColor = vec4(color * glow, vIntensity * 0.8);
+                    // More opaque so the streaks read clearly as motion even at low speed.
+                    gl_FragColor = vec4(color * glow, min(1.0, 0.35 + vIntensity) * 0.9);
                 }
             `,
             transparent: true,

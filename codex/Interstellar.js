@@ -20,7 +20,20 @@
     ['Ross 154', 18.832, -23.84, 9.69, 'Red dwarf', 0xff8866],
     ['Epsilon Eridani', 3.548, -9.46, 10.50, 'Orange (K2)', 0xffcc88],
     ['61 Cygni', 21.068, 38.75, 11.40, 'Orange (K5)', 0xffc070],
-    ['Tau Ceti', 1.734, -15.94, 11.90, 'Sun-like (G8)', 0xfff0c0]
+    ['Tau Ceti', 1.734, -15.94, 11.90, 'Sun-like (G8)', 0xfff0c0],
+    // Second shell of REAL neighbors (all true J2000 positions & distances) so the
+    // space between the solar system and the constellations is populated by stars
+    // you can genuinely fly to and scan — not just decorative filler.
+    ['Lalande 21185', 11.056, 35.97, 8.31, 'Red dwarf', 0xff8060],
+    ['Ross 248', 23.699, 44.17, 10.30, 'Red dwarf', 0xff7a55],
+    ['Lacaille 9352', 23.098, -35.85, 10.74, 'Red dwarf', 0xff8866],
+    ['Ross 128', 11.796, 0.80, 11.01, 'Red dwarf', 0xff8060],
+    ['Struve 2398', 18.713, 59.62, 11.49, 'Red dwarf pair', 0xff7a55],
+    ['Groombridge 34', 0.306, 44.02, 11.62, 'Red dwarf pair', 0xff8060],
+    ['YZ Ceti', 1.209, -16.99, 12.11, 'Red dwarf', 0xff7550],
+    ["Luyten's Star", 7.457, 5.23, 12.35, 'Red dwarf', 0xff8866],
+    ["Teegarden's Star", 2.884, 16.88, 12.50, 'Red dwarf', 0xff6a45],
+    ["Kapteyn's Star", 5.195, -45.02, 12.83, 'Red subdwarf', 0xff9070]
   ];
 
   const STAR_COMP = [{ label: 'Hydrogen', pct: 73 }, { label: 'Helium', pct: 25 }, { label: 'Heavier elements', pct: 2 }];
@@ -34,7 +47,11 @@
     'Polaris': 'The current North Star — a yellow supergiant that sits almost exactly above Earth\'s north pole.',
     'Antares': 'The red heart of Scorpius, a supergiant so vast it would swallow Mars\' orbit if placed at the Sun.',
     'Arcturus': 'An ancient orange giant racing through the galaxy, the brightest star in the northern celestial hemisphere.',
-    'Procyon': 'One of our nearest neighbors and, with Sirius and Betelgeuse, a corner of the Winter Triangle.'
+    'Procyon': 'One of our nearest neighbors and, with Sirius and Betelgeuse, a corner of the Winter Triangle.',
+    "Teegarden's Star": 'A tiny, cool red dwarf hiding two of the most Earth-like planets ever found — both possibly warm enough for liquid water.',
+    'Ross 128': 'Home of Ross 128 b, a temperate Earth-sized planet around one of the quietest, calmest red dwarfs known.',
+    "Kapteyn's Star": 'A refugee from a devoured dwarf galaxy — it orbits the Milky Way backwards, against the flow of nearly every other star.',
+    'Lalande 21185': 'The brightest red dwarf in the northern sky, with at least two planets — and it\'s slowly drifting closer to us.'
   };
 
   // Compress real light-years to a reachable game radius. Solar system ends ~550 units;
@@ -73,20 +90,22 @@
       const pos = new THREE.Vector3(dx * r, dy * r, dz * r);
 
       // glowing star sprite (constant screen size so it reads at any range)
+      // Smaller + tinted: at 0.06 with a white core these read as fuzzy white balls.
+      // Now they're crisp colored points (Betelgeuse red, Rigel blue, ...).
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: this._glow, color: color, transparent: true,
+        map: this._glow, color: color, transparent: true, opacity: 0.9,
         blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false
       }));
-      glow.scale.setScalar(0.06);
+      glow.scale.setScalar(0.032);
       glow.position.copy(pos);
       this.group.add(glow);
 
-      // bright core
+      // bright core — tiny; just a sparkle so the point still reads at a glance
       const core = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: this._glow, color: 0xffffff, transparent: true,
+        map: this._glow, color: 0xffffff, transparent: true, opacity: 0.85,
         blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false
       }));
-      core.scale.setScalar(0.018);
+      core.scale.setScalar(0.008);
       core.position.copy(pos);
       this.group.add(core);
 
@@ -124,15 +143,18 @@
     }
 
     _labelTexture(THREE, name, sub) {
-      const c = document.createElement('canvas'); c.width = 320; c.height = 80;
+      // 3x canvas for CRISP text (sprite scale unchanged — only the texture sharpens)
+      const c = document.createElement('canvas'); c.width = 960; c.height = 240;
       const g = c.getContext('2d');
       g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.font = '600 26px -apple-system, sans-serif';
-      g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillText(name, 161, 27);
-      g.fillStyle = '#eaf2ff'; g.fillText(name, 160, 26);
-      g.font = '400 18px -apple-system, sans-serif';
-      g.fillStyle = 'rgba(150,200,255,0.85)'; g.fillText(sub, 160, 56);
-      return new THREE.CanvasTexture(c);
+      g.font = '600 78px -apple-system, sans-serif';
+      g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillText(name, 483, 81);
+      g.fillStyle = '#eaf2ff'; g.fillText(name, 480, 78);
+      g.font = '400 54px -apple-system, sans-serif';
+      g.fillStyle = 'rgba(150,200,255,0.85)'; g.fillText(sub, 480, 168);
+      const t = new THREE.CanvasTexture(c);
+      t.anisotropy = 4;
+      return t;
     }
   }
 

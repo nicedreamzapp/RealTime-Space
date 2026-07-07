@@ -65,8 +65,16 @@ class Starfield {
                 pos[i * 3 + 1] = y;
                 pos[i * 3 + 2] = z;
             } else {
-                // Regular spherical distribution
-                r = this.cfg.radius * Math.cbrt(this._rnd());
+                // Depth tiers instead of one far shell. 15% are "near" background suns
+                // (1.5k–4k units) that you genuinely approach and pass while cruising —
+                // real parallax from real geometry, not spawned streaks. The floor of
+                // 1.5k keeps them out of the solar system so they never read as dust
+                // floating between planets. The rest fill the deep sky for density.
+                if (this._rnd() < 0.15) {
+                    r = 1500 + this._rnd() * 2500;
+                } else {
+                    r = this.cfg.radius * (0.5 + 0.5 * Math.cbrt(this._rnd()));
+                }
                 pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
                 pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
                 pos[i * 3 + 2] = r * Math.cos(phi);
@@ -131,7 +139,9 @@ class Starfield {
                 uBrightness: { value: this.cfg.brightness },
                 uTime: { value: 0 },
                 uCamPos: { value: new THREE.Vector3() },
-                uParallaxFactor: { value: 0.0003 }
+                uParallaxFactor: { value: 0.0 }  // stars are effectively infinite — no
+                                                  // streaming as you fly (this is a solar
+                                                  // system, stars shouldn't whoosh past)
             },
             vertexShader: `
                 attribute vec3 color;

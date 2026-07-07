@@ -14,12 +14,14 @@ struct ContentView: View {
     @State private var lutEnabled = UserDefaults.standard.object(forKey: "lutEnabled") as? Bool ?? false
     @State private var lutIntensity = UserDefaults.standard.object(forKey: "lutIntensity") as? Double ?? 0.5
     @State private var spatialAudioEnabled = UserDefaults.standard.object(forKey: "spatialAudioEnabled") as? Bool ?? false
+    @State private var cockpitOn = UserDefaults.standard.object(forKey: "cockpitOn") as? Bool ?? true
     @State private var uiHidden = false
     @State private var showNavigateMenu = false
     @State private var isPaused = false
     @State private var isWarping = false
     @State private var showSplash = true
     @State private var showCredits = false
+    @State private var viewMode = "visor"   // visor (clean, default) | helm (cockpit art) | chase
 
     let joystickRadius: CGFloat = 60
 
@@ -27,7 +29,9 @@ struct ContentView: View {
     // discovery card / Field Guide is open in the webview (navigationController.hideChrome,
     // set from a "CHROME" bridge message). When hidden we also drop hit-testing so taps
     // reach the card underneath instead of the invisible native controls.
-    private var chromeHidden: Bool { uiHidden || navigationController.hideChrome }
+    // Splash/credits count as chrome-hidden too: in landscape especially, the splash art
+    // doesn't cover the whole screen and the THRUST/joystick controls bled through it.
+    private var chromeHidden: Bool { uiHidden || navigationController.hideChrome || showSplash || showCredits }
 
     // Every place you can autopilot to, grouped. `fly` is the engine object name passed to
     // flyToByName (which now reaches planets, moons, comets, nebulae and the black hole).
@@ -76,6 +80,8 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { geo in
+            // Landscape gets its own layout: smaller radar, gamepad-style bottom row.
+            let isLandscape = geo.size.width > geo.size.height
             ZStack {
                 // GALAXY VIEW - Using WebView for enhanced JavaScript visuals
                 WorkingPortalWebView(
@@ -84,37 +90,51 @@ struct ContentView: View {
                     galaxyManager: galaxyManager
                 )
                 .ignoresSafeArea()
-                
-                // TOP BAR
+
+                // TOP BAR — status badge, ⋯ menu button, radar. The ⋯ button lives IN this
+                // bar (trailing, before the radar) so it can't overlap the radar the way the
+                // old separately-pinned button did.
                 VStack {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("EXPLORER")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(.cyan)
-                                .tracking(1.5)
-                            Text(navigationController.isThrusting ? "THRUST: ACTIVE" : "THRUST: IDLE")
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                .foregroundColor(navigationController.isThrusting ? .orange : .gray.opacity(0.7))
+                    if isLandscape {
+                        // LANDSCAPE top bar, left→right: [TIME pill zone (web)] · radar ·
+                        // [codex icon row (web, centered)] ······ ⋯ menu at far right.
+                        // Radar no longer kisses the screen edge or the ⋯ bubble.
+                        // Matt's spec: radar sits BETWEEN the sound icon (right end of the
+                        // centered web icon row) and the ⋯ button, and rides a bit lower.
+                        HStack(alignment: .top) {
+                            Spacer()
+                            SimpleRadarView(
+                                galaxyManager: galaxyManager,
+                                navigationController: navigationController
+                            )
+                            .frame(width: 80, height: 80)
+                            .padding(.top, 24)
+                            Spacer().frame(width: 44)
+                            VStack(spacing: 8) {
+                                menuButton
+                                viewModeButton
+                            }
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(Color(red: 0.03, green: 0.06, blue: 0.11).opacity(0.9))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.cyan.opacity(0.35), lineWidth: 0.5))
-                        .cornerRadius(8)
-                        
-                        Spacer()
-                        
-                        // RADAR
-                        SimpleRadarView(
-                            galaxyManager: galaxyManager,
-                            navigationController: navigationController
-                        )
-                        .frame(width: 120, height: 120)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 6)
+                    } else {
+                        // PORTRAIT: radar top-right with the ⋯ tucked beneath it.
+                        HStack(alignment: .top) {
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 8) {
+                                SimpleRadarView(
+                                    galaxyManager: galaxyManager,
+                                    navigationController: navigationController
+                                )
+                                .frame(width: 120, height: 120)
+                                menuButton
+                                viewModeButton
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    
+
                     Spacer()
                 }
                 .opacity(chromeHidden ? 0 : 1)
@@ -123,228 +143,33 @@ struct ContentView: View {
                 // (Removed the redundant bottom three-lines button — the "Fly To" sheet
                 //  is reachable from the ⋯ menu → "Fly To Anywhere…".)
 
-                VStack {
+                // BOTTOM CONSOLE — the controls ARE the cockpit dash. Joystick + speed
+                // under the left thumb, warp/THRUST cluster under the right, all sitting
+                // on one dark dash panel that runs off the bottom of the screen.
+                VStack(spacing: 0) {
                     Spacer()
 
-                    // SPEED control — drag to set how fast thrust flies you.
-                    HStack(spacing: 10) {
-                        Image(systemName: "tortoise.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.cyan.opacity(0.7))
-                        Slider(value: $maxSpeed, in: 15...250, step: 5)
-                            .tint(.cyan)
-                            .onChange(of: maxSpeed) { newValue in
-                                UserDefaults.standard.set(newValue, forKey: "maxSpeed")
-                                navigationController.evaluateJavaScript("window.galaxyExplorer?.setMaxSpeed?.(\(Int(newValue)))")
-                            }
-                        Image(systemName: "hare.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.cyan.opacity(0.7))
-                        Text("\(Int(maxSpeed))")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundColor(.cyan.opacity(0.85))
-                            .frame(width: 30, alignment: .trailing)
-
-                        // ULTRA WARP — hold to punch 100× toward whatever's ahead.
-                        // Plain view + direct press gesture (NOT a Button) for the same reason
-                        // as THRUST below: a Button wrapper's tap recognizer swallowed quick
-                        // presses so warp only engaged after a long hold.
-                        HStack(spacing: 3) {
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 12, weight: .heavy))
-                            Text("100×")
-                                .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                        }
-                        .foregroundColor(isWarping ? .white : Color(red: 0.7, green: 0.5, blue: 1.0))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 6)
-                        .background((isWarping ? Color.purple : Color.purple.opacity(0.18)))
-                        .background(.ultraThinMaterial.opacity(0.3))
-                        .overlay(RoundedRectangle(cornerRadius: 9)
-                            .stroke(Color.purple.opacity(isWarping ? 0.9 : 0.5), lineWidth: 1))
-                        .cornerRadius(9)
-                        .shadow(color: isWarping ? .purple.opacity(0.7) : .clear, radius: 6)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { _ in
-                                    guard !isPaused else { return }
-                                    if !isWarping {
-                                        isWarping = true
-                                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                                        navigationController.evaluateJavaScript("window.galaxyExplorer && window.galaxyExplorer.setWarpDrive && window.galaxyExplorer.setWarpDrive(true)")
-                                        navigationController.thrustForward()
-                                        AudioManager.shared.playSFX(named: "warp")
-                                    }
-                                }
-                                .onEnded { _ in
-                                    isWarping = false
-                                    navigationController.evaluateJavaScript("window.galaxyExplorer && window.galaxyExplorer.setWarpDrive && window.galaxyExplorer.setWarpDrive(false)")
-                                    navigationController.stopThrust()
-                                }
-                        )
-                        .disabled(isPaused)
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 6)
-
+                    // No panel behind the controls (the dark "dash block" read as a big
+                    // blue slab) — small translucent controls float straight on the view.
                     HStack(alignment: .bottom) {
-                        // LEFT: JOYSTICK
-                        ZStack {
-                            Circle()
-                                .fill(.ultraThinMaterial.opacity(0.4))
-                                .frame(width: 120, height: 120)
-                                .overlay(Circle().stroke(Color.cyan.opacity(0.3), lineWidth: 0.5))
-
-                            Circle()
-                                .fill(Color.cyan.opacity(0.3))
-                                .frame(width: 38, height: 38)
-                                .overlay(Circle().stroke(Color.cyan.opacity(0.6), lineWidth: 0.5))
-                                .offset(joystickOffset)
-                                .gesture(
-                                    DragGesture(minimumDistance: 0)
-                                        .onChanged { value in
-                                            guard !isPaused else { return }
-                                            let distance = sqrt(value.translation.width * value.translation.width + value.translation.height * value.translation.height)
-                                            if distance <= joystickRadius {
-                                                joystickOffset = value.translation
-                                            } else {
-                                                let ratio = joystickRadius / distance
-                                                joystickOffset = CGSize(width: value.translation.width * ratio, height: value.translation.height * ratio)
-                                            }
-                                            // Normalize to -1 to 1 range for analog sensitivity
-                                            let nx = Float(joystickOffset.width / joystickRadius)
-                                            let ny = Float(joystickOffset.height / joystickRadius)
-
-                                            // Small deadzone
-                                            let deadzone: Float = 0.08
-                                            let magnitude = sqrt(nx * nx + ny * ny)
-
-                                            if magnitude < deadzone {
-                                                navigationController.setRotationInput(Vector3D(x: 0, y: 0, z: 0))
-                                            } else {
-                                                // Send normalized values (-1 to 1) - JS handles analog sensitivity
-                                                // x = pitch (up on stick = look up), y = yaw (right = look right)
-                                                navigationController.setRotationInput(Vector3D(x: -ny, y: -nx, z: 0))
-                                            }
-                                        }
-                                        .onEnded { _ in
-                                            guard !isPaused else { return }
-                                            joystickOffset = .zero
-                                            navigationController.setRotationInput(Vector3D(x: 0, y: 0, z: 0))
-                                        }
-                                )
-                        }
-                        .frame(width: 120, height: 120)
-                        
-                        Spacer()
-                        
-                        // CENTER: LOCK + STOP
-                        VStack(spacing: 12) {
-                            Button {
-                                guard !isPaused else { return }
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                // Fly directly to nearest planet - one tap navigation
-                                navigationController.evaluateJavaScript("window.galaxyExplorer?.flyToNearestPlanet?.()")
-                                AudioManager.shared.playSFX(named: "lock")
-                            } label: {
-                                Image(systemName: "location.fill")
-                                    .font(.system(size: 22, weight: .medium))
-                                    .frame(width: 56, height: 56)
-                                    .background(Color.green.opacity(0.12))
-                                    .background(.ultraThinMaterial.opacity(0.3))
-                                    .foregroundColor(.green)
-                                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.green.opacity(0.3), lineWidth: 0.5))
-                                    .cornerRadius(14)
+                        if isLandscape {
+                            joystickPad(diameter: 88)
+                            speedPill.frame(width: 190).padding(.bottom, 28).padding(.leading, 10)
+                            Spacer(minLength: 12)
+                            thrustCluster
+                        } else {
+                            VStack(alignment: .leading, spacing: 8) {
+                                speedPill.frame(width: 160)
+                                joystickPad(diameter: 84)
                             }
-                            .disabled(isPaused)
-
-                            Button {
-                                guard !isPaused else { return }
-                                navigationController.emergencyStop()
-                                joystickOffset = .zero
-                                isThrustButtonPressed = false
-                            } label: {
-                                Text("STOP")
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .frame(width: 56, height: 36)
-                                    .background(Color.red.opacity(0.1))
-                                    .background(.ultraThinMaterial.opacity(0.3))
-                                    .foregroundColor(.red.opacity(0.9))
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.red.opacity(0.3), lineWidth: 0.5))
-                                    .cornerRadius(8)
-                            }
-                            .disabled(isPaused)
+                            Spacer(minLength: 12)
+                            thrustCluster
                         }
-                        
-                        Spacer()
-                        
-                        // RIGHT: THRUST — plain view + direct press gesture (NOT a Button).
-                        // A `Button {} label:` wrapper here fought the .simultaneousGesture:
-                        // the button's own tap recognizer swallowed quick taps, so thrust only
-                        // engaged after a long (~2s) hold. Attaching the DragGesture straight to
-                        // the view — with contentShape so the whole 90×90 frame is hittable —
-                        // makes touch-DOWN fire thrust instantly.
-                        VStack(spacing: 3) {
-                            Image(systemName: isThrustButtonPressed ? "flame.fill" : "arrow.up.circle")
-                                .font(.system(size: 28, weight: .medium))
-                            Text("THRUST")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                .tracking(1)
-                        }
-                        .frame(width: 90, height: 90)
-                        .background((isThrustButtonPressed ? Color.orange : Color.cyan).opacity(0.12))
-                        .background(.ultraThinMaterial.opacity(0.4))
-                        .foregroundColor(isThrustButtonPressed ? .orange : .cyan)
-                        .overlay(RoundedRectangle(cornerRadius: 18).stroke((isThrustButtonPressed ? Color.orange : Color.cyan).opacity(0.3), lineWidth: 0.5))
-                        .cornerRadius(18)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { _ in
-                                    guard !isPaused else { return }
-                                    if !isThrustButtonPressed {
-                                        print("👆 THRUST touch-down → thrustForward()")
-                                        isThrustButtonPressed = true
-                                        navigationController.thrustForward()
-                                    }
-                                }
-                                .onEnded { _ in
-                                    guard !isPaused else { return }
-                                    isThrustButtonPressed = false
-                                    navigationController.stopThrust()
-                                }
-                        )
-                        .disabled(isPaused)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                    .padding(.horizontal, isLandscape ? 16 : 12)
+                    .padding(.bottom, isLandscape ? 6 : 8)
                     .opacity(isPaused ? 0.5 : 1)
                     .disabled(isPaused)
-                }
-                .opacity(chromeHidden ? 0 : 1)
-                .allowsHitTesting(!chromeHidden)
-                
-                // Navigate button - toggles transparent panel
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                showNavigateMenu.toggle()
-                            }
-                        } label: {
-                            Image(systemName: showNavigateMenu ? "xmark" : "ellipsis.circle")
-                                .font(.system(size: 20, weight: .medium))
-                                .foregroundColor(.cyan.opacity(0.8))
-                                .frame(width: 40, height: 40)
-                                .background(.ultraThinMaterial.opacity(0.4))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.cyan.opacity(0.2), lineWidth: 0.5))
-                                .cornerRadius(10)
-                        }
-                        .padding([.top, .trailing], 16)
-                    }
-                    Spacer()
                 }
                 .opacity(chromeHidden ? 0 : 1)
                 .allowsHitTesting(!chromeHidden)
@@ -401,6 +226,8 @@ struct ContentView: View {
                                     .foregroundColor(.cyan.opacity(0.85))
                                     .tracking(1.5)
 
+                                // (Cockpit toggle removed — the art cockpit is always on in
+                                //  landscape, managed entirely by the web layer.)
                                 toggleRow("Orbit Lines", isOn: $showOrbitLines)
                                     .onChange(of: showOrbitLines) { _, newValue in
                                         UserDefaults.standard.set(newValue, forKey: "showOrbitLines")
@@ -459,13 +286,13 @@ struct ContentView: View {
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.cyan.opacity(0.3), lineWidth: 0.5)
+                                .stroke(Color.cyan.opacity(0.55), lineWidth: 1)
                         )
                         .cornerRadius(14)
                         .shadow(color: .black.opacity(0.5), radius: 16, y: 6)
-                        .padding(.top, 70)
+                        .padding(.top, isLandscape ? 52 : 70)
                         .padding(.trailing, 12)
-                        .padding(.bottom, 140)
+                        .padding(.bottom, isLandscape ? 16 : 140)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                     .opacity(chromeHidden ? 0 : 1)
@@ -486,6 +313,9 @@ struct ContentView: View {
                 // First-launch splash + How to Play (reopenable from the ⋯ menu).
                 if showSplash {
                     SplashView(onBegin: { withAnimation(.easeInOut(duration: 0.4)) { showSplash = false } })
+                        .ignoresSafeArea()   // fill the REAL screen — in landscape the safe
+                                             // area stops short of the notch side and the
+                                             // live scene peeked out along the right edge
                         .transition(.opacity)
                         .zIndex(100)
                 }
@@ -500,6 +330,8 @@ struct ContentView: View {
             .onAppear {
                 // Send saved cruise speed to JS (best-effort; JS guards if not ready yet)
                 navigationController.evaluateJavaScript("window.galaxyExplorer?.setMaxSpeed?.(\(Int(maxSpeed)))")
+
+                // (Cockpit visibility is owned entirely by the web layer now.)
 
                 // Send initial JS for orbit lines state
                 let orbitVisibility = showOrbitLines ? "true" : "false"
@@ -575,6 +407,260 @@ struct ContentView: View {
         .presentationBackground(.ultraThinMaterial)
     }
 
+    // MARK: - Top bar pieces
+
+    // View switcher: HELM (in-cockpit art) → VISOR (clean glass) → CHASE (behind ship).
+    private var viewModeButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            let order = ["helm", "visor", "chase"]
+            let next = order[((order.firstIndex(of: viewMode) ?? 0) + 1) % order.count]
+            viewMode = next
+            navigationController.evaluateJavaScript("window.galaxyExplorer?.setViewMode?.('\(next)')")
+        } label: {
+            VStack(spacing: 1) {
+                Image(systemName: viewMode == "chase" ? "airplane" : (viewMode == "visor" ? "eye" : "person.crop.rectangle"))
+                    .font(.system(size: 15, weight: .medium))
+                Text(viewMode.uppercased())
+                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+            }
+            .foregroundColor(.cyan.opacity(0.85))
+            .frame(width: 44, height: 40)
+            .background(Color.black.opacity(0.55))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.cyan.opacity(0.5), lineWidth: 1))
+            .cornerRadius(10)
+        }
+    }
+
+    private var menuButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showNavigateMenu.toggle()
+            }
+        } label: {
+            Image(systemName: showNavigateMenu ? "xmark" : "ellipsis.circle")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundColor(.cyan.opacity(0.8))
+                .frame(width: 40, height: 40)
+                .background(Color.black.opacity(0.55))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.cyan.opacity(0.5), lineWidth: 1))
+                .cornerRadius(10)
+        }
+    }
+
+    // MARK: - Bottom control pieces
+
+    // SPEED control — drag to set how fast thrust flies you. Lives on the left, above
+    // the joystick, deliberately far from every action button so it can't misfire them.
+    private var speedPill: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "tortoise.fill")
+                .font(.system(size: 11))
+                .foregroundColor(.cyan.opacity(0.7))
+            Slider(value: $maxSpeed, in: 15...250, step: 5)
+                .tint(.cyan)
+                .onChange(of: maxSpeed) { newValue in
+                    UserDefaults.standard.set(newValue, forKey: "maxSpeed")
+                    navigationController.evaluateJavaScript("window.galaxyExplorer?.setMaxSpeed?.(\(Int(newValue)))")
+                }
+            Text("\(Int(maxSpeed))")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundColor(.cyan.opacity(0.85))
+                .frame(width: 28, alignment: .trailing)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.black.opacity(0.6))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(Color.cyan.opacity(0.5), lineWidth: 1))
+        .cornerRadius(11)
+    }
+
+    // ULTRA WARP — hold to punch 100× toward whatever's ahead. Sits directly above
+    // THRUST in the right-thumb cluster. Plain view + direct press gesture (NOT a
+    // Button): a Button wrapper's tap recognizer swallowed quick presses so warp
+    // only engaged after a long hold.
+    private var warpButton: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 12, weight: .heavy))
+            Text("100×")
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+        }
+        .foregroundColor(isWarping ? .white : Color(red: 0.7, green: 0.5, blue: 1.0))
+        .frame(width: 68, height: 28)
+        .background((isWarping ? Color.purple : Color.purple.opacity(0.18)))
+        .background(Color.black.opacity(0.55))
+        .overlay(RoundedRectangle(cornerRadius: 9)
+            .stroke(Color.purple.opacity(isWarping ? 0.9 : 0.5), lineWidth: 1))
+        .cornerRadius(9)
+        .shadow(color: isWarping ? .purple.opacity(0.7) : .clear, radius: 6)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard !isPaused else { return }
+                    if !isWarping {
+                        isWarping = true
+                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                        navigationController.evaluateJavaScript("window.galaxyExplorer && window.galaxyExplorer.setWarpDrive && window.galaxyExplorer.setWarpDrive(true)")
+                        navigationController.thrustForward()
+                        AudioManager.shared.playSFX(named: "warp")
+                    }
+                }
+                .onEnded { _ in
+                    isWarping = false
+                    navigationController.evaluateJavaScript("window.galaxyExplorer && window.galaxyExplorer.setWarpDrive && window.galaxyExplorer.setWarpDrive(false)")
+                    navigationController.stopThrust()
+                }
+        )
+        .disabled(isPaused)
+    }
+
+    // JOYSTICK — the WHOLE pad is touchable (gesture on the pad, not the knob): the
+    // stick jumps to wherever your thumb lands, so you never have to grab the little
+    // knob first. Position is measured from the pad center in local coordinates.
+    private func joystickPad(diameter: CGFloat) -> some View {
+        let radius = diameter / 2
+        return ZStack {
+            Circle()
+                .fill(Color.black.opacity(0.5))
+                .overlay(Circle().stroke(Color.cyan.opacity(0.55), lineWidth: 1))
+
+            Circle()
+                .fill(Color.cyan.opacity(0.3))
+                .frame(width: diameter * 0.32, height: diameter * 0.32)
+                .overlay(Circle().stroke(Color.cyan.opacity(0.6), lineWidth: 0.5))
+                .offset(joystickOffset)
+        }
+        .frame(width: diameter, height: diameter)
+        .contentShape(Circle())
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                .onChanged { value in
+                    guard !isPaused else { return }
+                    // Offset of the touch from the pad center
+                    let dx = value.location.x - radius
+                    let dy = value.location.y - radius
+                    let distance = sqrt(dx * dx + dy * dy)
+                    if distance <= radius {
+                        joystickOffset = CGSize(width: dx, height: dy)
+                    } else {
+                        let ratio = radius / distance
+                        joystickOffset = CGSize(width: dx * ratio, height: dy * ratio)
+                    }
+                    // Normalize to -1 to 1 range for analog sensitivity
+                    let nx = Float(joystickOffset.width / radius)
+                    let ny = Float(joystickOffset.height / radius)
+
+                    // Small deadzone
+                    let deadzone: Float = 0.08
+                    let magnitude = sqrt(nx * nx + ny * ny)
+
+                    if magnitude < deadzone {
+                        navigationController.setRotationInput(Vector3D(x: 0, y: 0, z: 0))
+                    } else {
+                        // Send normalized values (-1 to 1) - JS handles analog sensitivity
+                        // x = pitch (up on stick = look up), y = yaw (right = look right)
+                        navigationController.setRotationInput(Vector3D(x: -ny, y: -nx, z: 0))
+                    }
+                }
+                .onEnded { _ in
+                    guard !isPaused else { return }
+                    joystickOffset = .zero
+                    navigationController.setRotationInput(Vector3D(x: 0, y: 0, z: 0))
+                }
+        )
+    }
+
+    // LOCK + STOP stacked beside THRUST — one right-thumb cluster instead of the old
+    // layout that floated LOCK/STOP in the middle of the screen.
+    private var thrustCluster: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            VStack(spacing: 8) {
+                Button {
+                    guard !isPaused else { return }
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    // Fly directly to nearest planet - one tap navigation
+                    navigationController.evaluateJavaScript("window.galaxyExplorer?.flyToNearestPlanet?.()")
+                    AudioManager.shared.playSFX(named: "lock")
+                } label: {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: 15, weight: .medium))
+                        .frame(width: 40, height: 34)
+                        .background(Color.green.opacity(0.12))
+                        .background(Color.black.opacity(0.55))
+                        .foregroundColor(.green)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.55), lineWidth: 1))
+                        .cornerRadius(12)
+                }
+                .disabled(isPaused)
+
+                Button {
+                    guard !isPaused else { return }
+                    navigationController.emergencyStop()
+                    joystickOffset = .zero
+                    isThrustButtonPressed = false
+                } label: {
+                    Text("STOP")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .frame(width: 40, height: 26)
+                        .background(Color.red.opacity(0.1))
+                        .background(Color.black.opacity(0.55))
+                        .foregroundColor(.red.opacity(0.9))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.red.opacity(0.55), lineWidth: 1))
+                        .cornerRadius(8)
+                }
+                .disabled(isPaused)
+            }
+
+            VStack(spacing: 8) {
+                warpButton
+
+                thrustButton
+            }
+        }
+    }
+
+    private var thrustButton: some View {
+            // THRUST — plain view + direct press gesture (NOT a Button).
+            // A `Button {} label:` wrapper here fought the .simultaneousGesture:
+            // the button's own tap recognizer swallowed quick taps, so thrust only
+            // engaged after a long (~2s) hold. Attaching the DragGesture straight to
+            // the view — with contentShape so the whole frame is hittable —
+            // makes touch-DOWN fire thrust instantly.
+            VStack(spacing: 2) {
+                Image(systemName: isThrustButtonPressed ? "flame.fill" : "arrow.up.circle")
+                    .font(.system(size: 22, weight: .medium))
+                Text("THRUST")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .tracking(1)
+            }
+            .frame(width: 68, height: 68)
+            .background((isThrustButtonPressed ? Color.orange : Color.cyan).opacity(0.12))
+            .background(Color.black.opacity(0.55))
+            .foregroundColor(isThrustButtonPressed ? .orange : .cyan)
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke((isThrustButtonPressed ? Color.orange : Color.cyan).opacity(0.6), lineWidth: 1))
+            .cornerRadius(18)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        guard !isPaused else { return }
+                        if !isThrustButtonPressed {
+                            print("👆 THRUST touch-down → thrustForward()")
+                            isThrustButtonPressed = true
+                            navigationController.thrustForward()
+                        }
+                    }
+                    .onEnded { _ in
+                        guard !isPaused else { return }
+                        isThrustButtonPressed = false
+                        navigationController.stopThrust()
+                    }
+            )
+            .disabled(isPaused)
+    }
+
     // MARK: - Transparent UI Helpers
     @ViewBuilder
     private func navButton(_ title: String, action: @escaping () -> Void) -> some View {
@@ -589,7 +675,7 @@ struct ContentView: View {
                 .padding(.vertical, 7)
                 .frame(maxWidth: .infinity)
                 .background(Color.cyan.opacity(0.14))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.cyan.opacity(0.3), lineWidth: 0.5))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.cyan.opacity(0.55), lineWidth: 1))
                 .cornerRadius(7)
         }
     }
@@ -609,13 +695,25 @@ struct ContentView: View {
     }
 }
 
-// Version + build stamp, read from the bundle. Shown on the splash and the main screen so
-// we can always tell which build is on the phone.
+// Version + build stamp. The project's version (1.0) and build (10) settings don't
+// auto-increment, so they'd read the same forever — we append the actual BUILD TIME, taken
+// from the app bundle's Info.plist modification date (rewritten on every build), so every
+// build on the phone is uniquely identifiable at a glance.
 func appBuildString() -> String {
     let info = Bundle.main.infoDictionary
     let v = info?["CFBundleShortVersionString"] as? String ?? "?"
     let b = info?["CFBundleVersion"] as? String ?? "?"
-    return "v\(v)  ·  build \(b)"
+    var stamp = "v\(v)  ·  build \(b)"
+    // The app binary is re-linked/re-signed on EVERY build (Info.plist is not, so its date
+    // goes stale), making the executable's modification date a reliable build timestamp.
+    if let exe = Bundle.main.executableURL,
+       let attrs = try? FileManager.default.attributesOfItem(atPath: exe.path),
+       let built = attrs[.modificationDate] as? Date {
+        let df = DateFormatter()
+        df.dateFormat = "MMM d · h:mma"
+        stamp += "  ·  \(df.string(from: built))"
+    }
+    return stamp
 }
 
 struct FlyItem {
@@ -644,76 +742,120 @@ struct SplashView: View {
         ("antenna.radiowaves.left.and.right", "Tap 🛰️ for the live ISS & today's asteroids")
     ]
 
-    var body: some View {
-        ZStack {
-            Image("SplashArt")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
-            LinearGradient(colors: [.black.opacity(0.55), .black.opacity(0.15), .black.opacity(0.9)],
-                           startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea()
+    private var titleBlock: some View {
+        VStack(spacing: 6) {
+            Text("RealTime Space")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .shadow(color: .black.opacity(0.6), radius: 8)
+            Text("Explore the real solar system")
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundColor(.cyan.opacity(0.9))
+        }
+    }
 
-            VStack(spacing: 0) {
-                VStack(spacing: 6) {
-                    Text("RealTime Space")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.6), radius: 8)
-                    Text("Explore the real solar system")
-                        .font(.system(size: 15, weight: .medium, design: .rounded))
-                        .foregroundColor(.cyan.opacity(0.9))
+    private func howToCard(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: compact ? 10 : 14) {
+            Text("HOW TO PLAY")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .tracking(2)
+                .foregroundColor(.cyan.opacity(0.7))
+            ForEach(steps, id: \.1) { step in
+                HStack(spacing: 13) {
+                    Image(systemName: step.0)
+                        .font(.system(size: compact ? 14 : 16))
+                        .foregroundColor(.cyan)
+                        .frame(width: 26)
+                    Text(step.1)
+                        .font(.system(size: compact ? 13 : 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.95))
+                    Spacer(minLength: 0)
                 }
-                .padding(.top, 60)
+            }
+        }
+        .padding(compact ? 14 : 18)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color(red: 0.03, green: 0.06, blue: 0.12).opacity(0.82))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.cyan.opacity(0.5), lineWidth: 1))
+        )
+    }
 
-                Spacer()
+    private var beginButton: some View {
+        Button(action: onBegin) {
+            Text("Begin Exploring")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(
+                    LinearGradient(colors: [.cyan, Color(red: 0.4, green: 0.8, blue: 1.0)],
+                                   startPoint: .leading, endPoint: .trailing),
+                    in: Capsule())
+                .shadow(color: .cyan.opacity(0.4), radius: 12)
+        }
+    }
 
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("HOW TO PLAY")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .tracking(2)
-                        .foregroundColor(.cyan.opacity(0.7))
-                    ForEach(steps, id: \.1) { step in
-                        HStack(spacing: 13) {
-                            Image(systemName: step.0)
-                                .font(.system(size: 16))
-                                .foregroundColor(.cyan)
-                                .frame(width: 26)
-                            Text(step.1)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.white.opacity(0.95))
-                            Spacer(minLength: 0)
+    var body: some View {
+        GeometryReader { geo in
+            let isLandscape = geo.size.width > geo.size.height
+            ZStack {
+                // Opaque backing: nothing from the live scene may show through the art.
+                Color.black
+                Image("SplashArt")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
+                LinearGradient(colors: [.black.opacity(0.55), .black.opacity(0.15), .black.opacity(0.9)],
+                               startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+
+                if isLandscape {
+                    // Landscape: title + button on the left, How-to-Play card on the right —
+                    // the portrait stack doesn't fit a short screen.
+                    HStack(spacing: 24) {
+                        VStack(spacing: 0) {
+                            Spacer()
+                            titleBlock
+                            Spacer()
+                            beginButton
+                            Text(appBuildString())
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.5))
+                                .padding(.top, 10)
+                            Spacer().frame(height: 16)
                         }
+                        .frame(maxWidth: .infinity)
+
+                        ScrollView {
+                            howToCard(compact: true)
+                        }
+                        .frame(maxWidth: geo.size.width * 0.46)
+                        .padding(.vertical, 20)
+                    }
+                    .padding(.horizontal, 28)
+                } else {
+                    VStack(spacing: 0) {
+                        titleBlock
+                            .padding(.top, 60)
+
+                        Spacer()
+
+                        howToCard(compact: false)
+                            .padding(.horizontal, 22)
+
+                        beginButton
+                            .padding(.horizontal, 22)
+                            .padding(.top, 18)
+                            .padding(.bottom, 10)
+
+                        Text(appBuildString())
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.5))
+                            .padding(.bottom, 28)
                     }
                 }
-                .padding(18)
-                .background(
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(Color(red: 0.03, green: 0.06, blue: 0.12).opacity(0.82))
-                        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.cyan.opacity(0.2), lineWidth: 0.5))
-                )
-                .padding(.horizontal, 22)
-
-                Button(action: onBegin) {
-                    Text("Begin Exploring")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .background(
-                            LinearGradient(colors: [.cyan, Color(red: 0.4, green: 0.8, blue: 1.0)],
-                                           startPoint: .leading, endPoint: .trailing),
-                            in: Capsule())
-                        .shadow(color: .cyan.opacity(0.4), radius: 12)
-                }
-                .padding(.horizontal, 22)
-                .padding(.top, 18)
-                .padding(.bottom, 10)
-
-                Text(appBuildString())
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.5))
-                    .padding(.bottom, 28)
             }
         }
     }

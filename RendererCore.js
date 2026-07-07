@@ -36,8 +36,10 @@ class RendererCore {
         // Deep space with very subtle blue-purple richness (like JWST imagery)
         this.scene.background = new THREE.Color(0x010108);
 
-        // Very subtle fog for atmospheric depth
-        this.scene.fog = new THREE.FogExp2(0x020210, 0.0000012);
+        // Very subtle fog for atmospheric depth. MUST be pure black: the renderer
+        // gamma-lifts these values (0x020210 displayed ≈ 0x151546), and with no skybox
+        // any tint here paints the whole sky navy-blue.
+        this.scene.fog = new THREE.FogExp2(0x000000, 0.0000012);
 
         console.log("✅ Scene created with true deep space atmosphere");
     }
@@ -88,13 +90,14 @@ class RendererCore {
             this.renderer.outputEncoding = THREE.sRGBEncoding;
         }
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.4;  // Bright, vibrant HDR exposure
+        this.renderer.toneMappingExposure = 1.15;  // pulled down from 1.4 — deeper blacks, crisper contrast
 
         // Physically correct lighting (useLegacyLights replaces physicallyCorrectLights in r150+)
         this.renderer.useLegacyLights = false;
 
-        // True space black
-        this.renderer.setClearColor(0x000003, 1.0);
+        // True space black — 0x000003 was gamma-lifted to a visible navy (0x00001c)
+        // once the skybox stopped covering empty pixels.
+        this.renderer.setClearColor(0x000000, 1.0);
 
         // Enable color management
         if (THREE.ColorManagement) {
@@ -105,9 +108,8 @@ class RendererCore {
     }
 
     initEnvironmentMap() {
-        // Real 8K Milky Way panorama (Solar System Scope, CC BY 4.0) used two ways:
-        //  1. scene.background — the actual sky, replacing the old procedural band
-        //  2. PMREM-filtered radiance map for image-based lighting on every surface
+        // Real 8K Milky Way panorama (Solar System Scope, CC BY 4.0) — now used ONLY for
+        // PMREM image-based lighting. It is no longer the visible sky (see below).
         const loader = new THREE.TextureLoader();
         loader.load(
             'textures/starfield/milky_way_8k.jpg',
@@ -118,20 +120,22 @@ class RendererCore {
                 }
                 texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy?.() || 8);
 
-                this.scene.background = texture;
-                // Keep the sky a touch darker than the raw photo so the eye adapts
-                // to scene objects, not the backdrop (supported r152+; harmless before)
-                if ('backgroundIntensity' in this.scene) {
-                    this.scene.backgroundIntensity = 0.75;
-                }
+                // The panorama is NOT used as the visible sky anymore — its painted
+                // stars/clouds sat at infinity like a canvas and never got closer, which
+                // broke the "really in space" illusion. The sky is now true black + only
+                // real 3D stars (procedural depth-tiered field + HYG real positions).
+                // The photo still drives image-based lighting below, so planets keep
+                // their soft Milky Way ambience.
+                this.scene.background = null;
 
                 const pmrem = new THREE.PMREMGenerator(this.renderer);
                 pmrem.compileEquirectangularShader();
                 const envMap = pmrem.fromEquirectangular(texture).texture;
                 this.scene.environment = envMap;
-                pmrem.dispose(); // texture stays alive — it IS the background
+                pmrem.dispose();
+                texture.dispose(); // no longer the background — free the ~130MB 8K texture
 
-                console.log("✨ Real Milky Way skybox + IBL ready (8K panorama)");
+                console.log("✨ Milky Way IBL ready (panorama lights the scene, sky is real stars only)");
             },
             undefined,
             (err) => console.warn("Milky Way skybox load failed:", err)

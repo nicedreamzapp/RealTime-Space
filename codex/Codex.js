@@ -145,13 +145,21 @@
       if (this.scanning) return;
       if (armed) {
         const known = this.scanned.has(armed.name.toLowerCase());
+        this.scanBtn.style.display = '';
+        this.scanBtn.style.opacity = '1';
+        this.scanBtn.style.minWidth = '188px';
         this.scanBtn.classList.add('armed');
         this.scanBtn.classList.toggle('known', known);
         this.scanLabel.textContent = known ? 'RE-SCAN ' + armed.name.toUpperCase()
                                             : 'SCAN ' + armed.name.toUpperCase();
       } else {
+        // Idle: stay visible under the TIME pill (Matt kept losing it), but as a
+        // small dim "SCAN" chip — no shouty NO-TARGET banner.
+        this.scanBtn.style.display = '';
+        this.scanBtn.style.opacity = '0.35';
+        this.scanBtn.style.minWidth = '90px';
         this.scanBtn.classList.remove('armed', 'known');
-        this.scanLabel.textContent = 'NO TARGET IN RANGE';
+        this.scanLabel.textContent = 'SCAN';
       }
     }
 
@@ -645,10 +653,6 @@
       const wrap = document.createElement('div');
       wrap.className = 'cx-controls';
       wrap.innerHTML = `
-        <button class="cx-scan" id="cxScan">
-          <span class="cx-scan-fill" id="cxScanFill"></span>
-          <span class="cx-scan-label" id="cxScanLabel">NO TARGET IN RANGE</span>
-        </button>
         <div class="cx-btnrow">
           <button class="cx-map-btn cx-icon-btn" id="cxMapBtn" title="Space Map">🗺️</button>
           <button class="cx-live-btn cx-icon-btn" id="cxLiveBtn" title="Live — right now">🛰️</button>
@@ -659,15 +663,28 @@
         </div>`;
       document.body.appendChild(wrap);
 
+      // The SCAN pill lives directly on <body>, NOT inside .cx-controls: in landscape
+      // that container is centered with a translateX transform, and a CSS transform on
+      // an ancestor hijacks position:fixed descendants — the pill ended up rendering
+      // top-center ON TOP of the heading readout. On body, fixed means fixed: it stays
+      // under the TIME pill in both orientations.
+      const scanWrap = document.createElement('button');
+      scanWrap.className = 'cx-scan';
+      scanWrap.id = 'cxScan';
+      scanWrap.innerHTML = `
+          <span class="cx-scan-fill" id="cxScanFill"></span>
+          <span class="cx-scan-label" id="cxScanLabel">NO TARGET IN RANGE</span>`;
+      document.body.appendChild(scanWrap);
+
       const card = document.createElement('div'); card.className = 'cx-card'; document.body.appendChild(card);
       const guide = document.createElement('div'); guide.className = 'cx-guide'; document.body.appendChild(guide);
       const map = document.createElement('div'); map.className = 'cx-map'; document.body.appendChild(map);
       const dest = document.createElement('div'); dest.className = 'cx-dest'; document.body.appendChild(dest);
       this.destEl = dest;
 
-      this.scanBtn = wrap.querySelector('#cxScan');
-      this.scanFill = wrap.querySelector('#cxScanFill');
-      this.scanLabel = wrap.querySelector('#cxScanLabel');
+      this.scanBtn = scanWrap;
+      this.scanFill = scanWrap.querySelector('#cxScanFill');
+      this.scanLabel = scanWrap.querySelector('#cxScanLabel');
       this.guideBtn = wrap.querySelector('#cxGuideBtn');
       this.guideBadge = wrap.querySelector('#cxGuideBadge');
       this.mapBtn = wrap.querySelector('#cxMapBtn');
@@ -722,11 +739,27 @@
         box-shadow:0 12px 48px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.06);
       }
       /* ---- control cluster ---- */
-      .cx-controls{position:absolute;top:200px;right:12px;z-index:400;display:flex;flex-direction:column;align-items:flex-end;gap:10px;
+      /* Portrait: below the radar AND the native ⋯ button that now sits under it
+         (safe-area top + radar 120 + gap + button 40 ≈ 235pt → start at +240). */
+      .cx-controls{position:absolute;top:calc(env(safe-area-inset-top) + 240px);right:12px;z-index:400;display:flex;flex-direction:column;align-items:flex-end;gap:10px;
         font-family:-apple-system,'SF Pro Display',sans-serif;-webkit-user-select:none;transition:opacity .2s;}
+      /* Portrait: the icon dock hangs as a VERTICAL column down the right edge,
+         under the scan pill (Matt: buttons in a column on the right side). */
+      .cx-btnrow{display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
+      /* Landscape: the right edge belongs to the native THRUST cluster (and the Dynamic
+         Island sits on a side edge), so the scan pill + dock become one row, top-center. */
+      @media (orientation: landscape){
+        .cx-controls{top:max(10px, env(safe-area-inset-top));right:auto;left:50%;
+          transform:translateX(-50%);flex-direction:row;align-items:center;gap:8px;}
+        .cx-btnrow{flex-direction:row;align-items:center;}
+      }
       /* When a card or the Field Guide is open, get the scan/guide buttons out of the way. */
       body.cx-modal-open .cx-controls{opacity:0;pointer-events:none;}
-      .cx-scan{position:relative;overflow:hidden;min-width:188px;height:42px;border-radius:21px;cursor:pointer;
+      /* Scan pill lives under the TIME 1× pill (top-left), not with the icon dock —
+         fixed positioning pulls it out of the .cx-controls flex column. */
+      .cx-scan{position:fixed;top:calc(max(18px, env(safe-area-inset-top)) + 46px);
+        left:max(18px, env(safe-area-inset-left));z-index:410;
+        overflow:hidden;min-width:188px;height:42px;border-radius:21px;cursor:pointer;
         border:1px solid rgba(120,200,255,0.25);color:rgba(160,210,255,0.55);
         background:linear-gradient(135deg,rgba(10,22,40,0.7),rgba(6,12,24,0.85));
         backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
@@ -757,12 +790,15 @@
       @keyframes cxBadge{0%{transform:scale(1);}40%{transform:scale(1.5);}100%{transform:scale(1);}}
 
       /* ---- discovery card ---- */
-      .cx-card,.cx-guide,.cx-map,.cx-dest{position:absolute;inset:0;z-index:600;display:none;align-items:center;justify-content:center;
+      /* FIXED (not absolute): absolute centered these in the BODY, and after rotation
+         the body can keep portrait height — the card centered into the off-screen half
+         and looked "cut off and unscrollable". Fixed anchors to the real viewport. */
+      .cx-card,.cx-guide,.cx-map,.cx-dest{position:fixed;inset:0;z-index:600;display:none;align-items:center;justify-content:center;
         background:rgba(0,1,6,0.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
         font-family:-apple-system,'SF Pro Display',sans-serif;-webkit-user-select:none;}
       .cx-card.show,.cx-guide.show,.cx-map.show,.cx-dest.show{display:flex;animation:cxFade .3s;}
       @keyframes cxFade{from{opacity:0;}to{opacity:1;}}
-      .cx-card-inner{width:min(560px,92vw);max-height:88vh;overflow-y:auto;border-radius:22px;padding:22px 22px 26px;
+      .cx-card-inner{width:min(560px,92vw);max-height:88vh;max-height:calc(100dvh - 40px);overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:22px;padding:22px 22px 26px;
         color:#dff1ff;position:relative;animation:cxRise .35s cubic-bezier(.2,.9,.3,1.1);}
       @keyframes cxRise{from{transform:translateY(26px) scale(.97);opacity:0;}to{transform:none;opacity:1;}}
       .cx-newbadge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:2px;padding:4px 10px;border-radius:20px;
@@ -796,7 +832,7 @@
       .cx-discovered{font-size:11px;color:rgba(160,210,255,0.55);margin-top:10px;text-align:right;letter-spacing:.5px;}
 
       /* ---- field guide ---- */
-      .cx-guide-inner{width:min(620px,94vw);max-height:88vh;overflow-y:auto;border-radius:22px;padding:22px;color:#dff1ff;animation:cxRise .35s cubic-bezier(.2,.9,.3,1.1);}
+      .cx-guide-inner{width:min(620px,94vw);max-height:88vh;max-height:calc(100dvh - 40px);overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:22px;padding:22px;color:#dff1ff;animation:cxRise .35s cubic-bezier(.2,.9,.3,1.1);}
       .cx-guide-head{display:flex;align-items:center;margin-bottom:14px;}
       .cx-guide-title{font-size:22px;font-weight:700;letter-spacing:2px;}
       .cx-guide-sub{font-size:12px;color:rgba(160,210,255,0.7);margin-top:2px;}
@@ -812,10 +848,10 @@
       .cx-cell-name{font-size:10px;text-align:center;line-height:1.1;color:rgba(220,238,255,0.85);}
 
       /* ---- space map ---- */
-      .cx-map-inner{width:min(640px,95vw);max-height:92vh;border-radius:22px;padding:20px;color:#dff1ff;
+      .cx-map-inner{width:min(640px,95vw);max-height:92vh;max-height:calc(100dvh - 30px);overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:22px;padding:20px;color:#dff1ff;
         display:flex;flex-direction:column;animation:cxRise .35s cubic-bezier(.2,.9,.3,1.1);}
       .cx-map-stage{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;}
-      .cx-map-canvas{width:100%;height:auto;max-height:78vh;aspect-ratio:1;border-radius:16px;cursor:pointer;
+      .cx-map-canvas{width:100%;height:auto;max-height:78vh;max-height:calc(100dvh - 200px);aspect-ratio:1;border-radius:16px;cursor:pointer;
         background:radial-gradient(circle at 50% 50%,rgba(18,34,60,0.55),rgba(2,5,12,0.6));border:1px solid rgba(120,200,255,0.12);}
       .cx-map-tip{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);opacity:0;transition:opacity .2s;
         background:rgba(8,16,28,0.92);border:1px solid rgba(120,200,255,0.3);color:#9fe6ff;font-size:13px;font-weight:600;
@@ -823,7 +859,7 @@
       .cx-map-tip.show{opacity:1;}
 
       /* ---- destinations (fly to) ---- */
-      .cx-dest-inner{width:min(600px,94vw);max-height:90vh;display:flex;flex-direction:column;border-radius:22px;padding:20px;color:#dff1ff;animation:cxRise .35s cubic-bezier(.2,.9,.3,1.1);}
+      .cx-dest-inner{width:min(600px,94vw);max-height:90vh;max-height:calc(100dvh - 30px);display:flex;flex-direction:column;border-radius:22px;padding:20px;color:#dff1ff;animation:cxRise .35s cubic-bezier(.2,.9,.3,1.1);}
       .cx-dest-scroll{overflow-y:auto;flex:1;}
       .cx-dest-group-title{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:rgba(160,210,255,0.55);margin:14px 0 8px;}
       .cx-dest-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;}

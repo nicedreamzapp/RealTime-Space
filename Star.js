@@ -84,13 +84,12 @@ class Star {
             this._createSolarWind();
         }
 
-        // Visual effects: Diffraction spikes (Hubble/JWST style)
-        if (this.luminosity > 3) {
-            this._createDiffractionSpikes();
-        }
-
-        // Lens flare elements
-        this._createLensFlare();
+        // Camera-artifact effects DISABLED — the gray X cross (Hubble diffraction
+        // spikes) and the horizontal white band (anamorphic movie-lens streak) are
+        // things cameras see, not eyes. They made the sun view a mess of fake rays.
+        // this._createDiffractionSpikes();
+        // this._createLensFlare();
+        this.flareElements = [];   // update() iterates this — keep it defined
     }
 
     _createChromosphere() {
@@ -404,7 +403,10 @@ class Star {
             granulationScale: { value: 15.0 },
             limbDarkening: { value: 0.6 },
             sunMap: { value: sunMap },
-            useSunMap: { value: sunMap ? 1.0 : 0.0 }
+            useSunMap: { value: sunMap ? 1.0 : 0.0 },
+            // Auto-lens solar filter (0 = naked eye glare, 1 = full eclipse-glasses view).
+            // Driven per-frame from main.js when the camera faces the star.
+            uFilter: { value: 0.0 }
         };
 
         const material = new THREE.ShaderMaterial({
@@ -430,6 +432,7 @@ class Star {
                 uniform float limbDarkening;
                 uniform sampler2D sunMap;
                 uniform float useSunMap;
+                uniform float uFilter;
 
                 varying vec3 vNormal;
                 varying vec3 vPosition;
@@ -560,6 +563,41 @@ class Star {
                     // HDR boost for bright center
                     finalColor *= 1.0 + (1.0 - limb) * 0.5;
 
+                    // ---- AUTO-LENS SOLAR FILTER (SDO extreme-UV look) ----
+                    // Matched to Matt's NASA SDO/EIT references: a mostly DARK copper-
+                    // ember disk laced with glowing gold plasma filigree, blazing active
+                    // regions, dark sunspot pits, and a bright glowing rim. Not bright —
+                    // rich.
+                    if (uFilter > 0.001) {
+                        vec3 emberDark = vec3(0.16, 0.05, 0.01);
+                        vec3 copper    = vec3(0.55, 0.20, 0.03);
+                        vec3 gold      = vec3(1.00, 0.55, 0.10);
+                        vec3 hotWhite  = vec3(1.00, 0.88, 0.55);
+
+                        // plasma filigree: ridged noise reads as magnetic loops/curls
+                        float ridge = 1.0 - abs(fbm(pos * granulationScale * 0.55 + time * 0.04, 5));
+                        float curls = smoothstep(0.55, 0.95, ridge);
+                        vec3 disk = mix(emberDark, copper, smoothstep(0.2, 0.8, ridge));
+                        disk = mix(disk, gold, curls * 0.85);
+
+                        // flaring active regions blaze white-gold
+                        disk += hotWhite * activeRegion * 1.3;
+                        // sunspot pits go nearly black
+                        float umbra = smoothstep(0.55, 0.85, spotNoise);
+                        disk *= 1.0 - umbra * 0.85;
+                        // REAL photographed sun detail layered in
+                        if (useSunMap > 0.5) {
+                            vec3 photo = texture2D(sunMap, vUv).rgb;
+                            float photoLum = dot(photo, vec3(0.299, 0.587, 0.114));
+                            disk *= 0.45 + photoLum * 1.25;
+                        }
+                        // EUV signature: the LIMB GLOWS — bright gold rim, dark center
+                        float rim = pow(1.0 - limb, 2.2);
+                        disk += gold * rim * 1.6;
+
+                        finalColor = mix(finalColor, disk, uFilter);
+                    }
+
                     gl_FragColor = vec4(finalColor, 1.0);
                 }
             `
@@ -646,21 +684,30 @@ class Star {
         // rings"), a gradient falls off like a real photographed corona.
         const makeGlowTexture = () => {
             const c = document.createElement('canvas');
-            c.width = c.height = 256;
+            c.width = c.height = 512;
             const g = c.getContext('2d');
-            const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
-            grad.addColorStop(0.0, 'rgba(255,255,255,0.9)');
-            grad.addColorStop(0.08, 'rgba(255,250,240,0.55)');
-            grad.addColorStop(0.25, 'rgba(255,240,220,0.18)');
-            grad.addColorStop(0.55, 'rgba(255,230,200,0.05)');
-            grad.addColorStop(1.0, 'rgba(255,220,180,0)');
+            // Many stops along a smooth power-law falloff — a handful of stops on a
+            // big additive sprite posterizes into visible "onion ring" bands.
+            const grad = g.createRadialGradient(256, 256, 0, 256, 256, 256);
+            for (let i = 0; i <= 24; i++) {
+                const t = i / 24;
+                const a = 0.9 * Math.pow(1 - t, 3.2);
+                grad.addColorStop(t, `rgba(255,${Math.round(250 - 30 * t)},${Math.round(240 - 60 * t)},${a.toFixed(4)})`);
+            }
             g.fillStyle = grad;
-            g.fillRect(0, 0, 256, 256);
+            g.fillRect(0, 0, 512, 512);
+            // ±2-level noise dither breaks up the remaining 8-bit banding.
+            const img = g.getImageData(0, 0, 512, 512);
+            const d = img.data;
+            for (let p = 3; p < d.length; p += 4) {
+                if (d[p] > 0 && d[p] < 250) d[p] = Math.max(0, Math.min(255, d[p] + ((Math.random() * 5) | 0) - 2));
+            }
+            g.putImageData(img, 0, 0);
             return new THREE.CanvasTexture(c);
         };
         const glowTex = makeGlowTexture();
-        const coronaSizes = [5.0, 11.0];
-        const coronaOpacities = [0.55, 0.18];
+        const coronaSizes = [5.0, 9.0];
+        const coronaOpacities = [0.3, 0.06];   // tamed again — Matt: sun too bright
 
         coronaSizes.forEach((size, i) => {
             const mat = new THREE.SpriteMaterial({
@@ -937,6 +984,35 @@ class Star {
             if (this.prominenceSystem) this.prominenceSystem.visible = close;
             if (this.solarWindParticles) this.solarWindParticles.visible = close;
             if (this.cmeSystem) this.cmeSystem.visible = close;
+
+            // AUTO-LENS: when the camera looks AT the star, ramp in the solar filter
+            // (eclipse-glasses view) so the disk resolves — yellow photosphere, orange
+            // convection, dark sunspots — instead of a white blowout. Ramps by facing
+            // angle and apparent size; smoothed so it behaves like a camera adapting.
+            const cam = rendererCore.camera;
+            const toStar = this.mesh.position.clone().sub(cam.position).normalize();
+            const camDir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+            const facing = Math.max(0, camDir.dot(toStar));
+            const apparent = Math.min(1, (this.radius * 10) / Math.max(camDist, 0.001));
+            // FULL filter whenever the star is anywhere in your view — Matt wants zero
+            // glare and the real yellow/orange disk always readable.
+            const target = facing > 0.6 ? 1 : 0;
+            this._filter = (this._filter || 0) + (target - (this._filter || 0)) * Math.min(1, deltaTime * 3.5);
+            if (this.surfaceUniforms && this.surfaceUniforms.uFilter) {
+                this.surfaceUniforms.uFilter.value = this._filter;
+            }
+            // Glare sprites fade with the filter (that's what an auto-darkening lens does).
+            if (this.coronaLayers) {
+                this.coronaLayers.forEach(layer => {
+                    const m = layer.mesh && layer.mesh.material;
+                    if (m && m.isSpriteMaterial) {
+                        if (m.userData.baseOpacity === undefined) m.userData.baseOpacity = m.opacity;
+                        m.opacity = m.userData.baseOpacity * (1 - 0.96 * this._filter);
+                    }
+                });
+            }
+            // Let the god-rays pass read it too (shafts dim as the lens darkens).
+            window.__sunFilter = this._filter;
         }
 
         this.time += deltaTime;

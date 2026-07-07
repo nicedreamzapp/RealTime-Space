@@ -187,6 +187,14 @@ struct WorkingPortalWebView: UIViewRepresentable {
         config.userContentController = userContentController
         // Serve bundled web assets (HTML/JS/textures) same-origin so WebGL textures load.
         config.setURLSchemeHandler(AppAssetSchemeHandler(), forURLScheme: AppAssetSchemeHandler.scheme)
+
+        // PURGE stale HTTP cache: responses cached in the old max-age=1yr era keep
+        // being served across app updates (we watched a rebuilt JS file run week-old
+        // code). localStorage (Field Guide) is deliberately NOT touched.
+        WKWebsiteDataStore.default().removeData(
+            ofTypes: [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache],
+            modifiedSince: .distantPast
+        ) { }
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
 

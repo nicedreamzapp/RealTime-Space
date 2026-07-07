@@ -44,11 +44,15 @@
     { name: 'Taurus', stars: [ ['Aldebaran', 4.599, 16.51, 0.9, 65], ['Elnath', 5.438, 28.61, 1.7, 134] ], lines: [[0,1]] }
   ];
 
-  // Bright solo stars (real anchors, no figure).
+  // Bright solo stars (real anchors, no figure) — the famous naked-eye stars, each a real
+  // reachable destination at its true (compressed) distance.
   const SOLO = [
     ['Sirius', 6.752, -16.72, -1.5, 8.6], ['Vega', 18.616, 38.78, 0.0, 25], ['Arcturus', 14.261, 19.18, 0.0, 37],
     ['Capella', 5.278, 45.99, 0.1, 43], ['Procyon', 7.655, 5.22, 0.4, 11.5], ['Spica', 13.420, -11.16, 1.0, 250],
-    ['Altair', 19.846, 8.87, 0.8, 16.7], ['Fomalhaut', 22.961, -29.62, 1.2, 25], ['Polaris', 2.530, 89.26, 2.0, 433]
+    ['Altair', 19.846, 8.87, 0.8, 16.7], ['Fomalhaut', 22.961, -29.62, 1.2, 25], ['Polaris', 2.530, 89.26, 2.0, 433],
+    ['Antares', 16.490, -26.43, 1.1, 550], ['Pollux', 7.755, 28.03, 1.1, 34], ['Deneb', 20.690, 45.28, 1.25, 2615],
+    ['Regulus', 10.140, 11.97, 1.35, 79], ['Canopus', 6.399, -52.70, -0.6, 310], ['Achernar', 1.629, -57.24, 0.5, 139],
+    ['Castor', 7.577, 31.89, 1.6, 51], ['Adhara', 6.977, -28.97, 1.5, 430]
   ];
 
   // Real distance → game units (sqrt keeps the huge range playable while preserving the
@@ -85,8 +89,11 @@
 
     _star(THREE, s, p) {
       const [name, ra, dec, mag, ly] = s;
-      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this._glow, color: 0xeaf2ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false }));
-      glow.scale.setScalar(Math.max(0.018, 0.05 - mag * 0.006));
+      // Small faint marker only — the star ITSELF is the true-color HYG point at
+      // this same position (same distance scale), so a big white ball here was a
+      // fake-looking duplicate sitting on top of the real star.
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this._glow, color: 0xeaf2ff, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false }));
+      glow.scale.setScalar(Math.max(0.008, 0.016 - mag * 0.002));
       glow.position.copy(p);
       this.group.add(glow);
       // label for the brightest
@@ -127,10 +134,13 @@
       g.fillStyle = grd; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c);
     }
     _labelTex(THREE, name) {
-      const c = document.createElement('canvas'); c.width = 256; c.height = 64; const g = c.getContext('2d');
-      g.font = '600 28px -apple-system, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillText(name, 129, 33); g.fillStyle = '#dfeaff'; g.fillText(name, 128, 32);
-      return new THREE.CanvasTexture(c);
+      // 3x canvas for CRISP text (sprite scale unchanged)
+      const c = document.createElement('canvas'); c.width = 768; c.height = 192; const g = c.getContext('2d');
+      g.font = '600 84px -apple-system, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillText(name, 387, 99); g.fillStyle = '#dfeaff'; g.fillText(name, 384, 96);
+      const t = new THREE.CanvasTexture(c);
+      t.anisotropy = 4;
+      return t;
     }
   }
 

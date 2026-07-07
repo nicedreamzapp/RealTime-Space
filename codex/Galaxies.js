@@ -19,7 +19,20 @@
     ['Centaurus A', 13.425, -43.02, 13.0, 'elliptical', 1.2, 'A peculiar elliptical galaxy blasting jets from a giant black hole, wrapped in a dark dust lane.'],
     ['Pinwheel (M101)', 14.053, 54.35, 21.0, 'spiral', 1.2, 'A huge face-on spiral nearly twice the width of the Milky Way.'],
     ['Whirlpool (M51)', 13.498, 47.20, 23.0, 'spiral', 1.0, 'The classic spiral, caught mid-interaction with a smaller companion galaxy.'],
-    ['Sombrero (M104)', 12.667, -11.62, 29.0, 'elliptical', 1.0, 'An edge-on galaxy with a brilliant bulge and a dark dust lane like a hat brim.']
+    ['Sombrero (M104)', 12.667, -11.62, 29.0, 'elliptical', 1.0, 'An edge-on galaxy with a brilliant bulge and a dark dust lane like a hat brim.'],
+    // Second wave (2026-07-06): 12 more real galaxies, true positions & distances.
+    ['Cigar Galaxy (M82)', 9.930, 69.68, 12.0, 'irregular', 0.55, 'A starburst galaxy forming stars 10× faster than the Milky Way, shredded by its neighbor M81.'],
+    ['Virgo A (M87)', 12.514, 12.39, 53.0, 'elliptical', 0.6, 'A giant elliptical whose central black hole was the first ever photographed, in 2019.'],
+    ['Sculptor Galaxy', 0.793, -25.29, 11.4, 'spiral', 0.55, 'A dusty starburst spiral, one of the brightest galaxies beyond our Local Group.'],
+    ['Black Eye (M64)', 12.945, 21.68, 17.0, 'spiral', 0.45, 'Famous for the dark band of dust sweeping across its bright core — its gas rotates backwards.'],
+    ['Sunflower (M63)', 13.264, 42.03, 27.0, 'spiral', 0.45, 'A flocculent spiral whose patchy arms look like the seed head of a sunflower.'],
+    ['Phantom (M74)', 1.611, 15.78, 32.0, 'spiral', 0.5, 'A perfect face-on grand-design spiral — so faint it\'s nicknamed the Phantom.'],
+    ['M77', 2.711, -0.01, 47.0, 'spiral', 0.45, 'A Seyfert galaxy — its core blazes from gas falling into a supermassive black hole.'],
+    ['Croc\'s Eye (M94)', 12.849, 41.12, 16.0, 'spiral', 0.45, 'Ringed by a halo of furious star formation — a starburst ring around a serene core.'],
+    ['M106', 12.316, 47.30, 24.0, 'spiral', 0.5, 'Water masers orbiting its black hole gave one of the most precise distance measurements ever.'],
+    ['Needle (NGC 4565)', 12.606, 25.99, 40.0, 'spiral', 0.5, 'A perfectly edge-on spiral — a needle of light with a dust lane down its spine.'],
+    ['Hidden Galaxy (IC 342)', 3.780, 68.10, 11.0, 'spiral', 0.5, 'Would be one of the brightest galaxies in our sky if the Milky Way\'s dust didn\'t hide it.'],
+    ['M66', 11.338, 12.99, 36.0, 'spiral', 0.45, 'The largest of the Leo Triplet, its arms warped by gravitational tug-of-war with its neighbors.']
   ];
 
   function dir(raH, decDeg) {
@@ -65,7 +78,9 @@
       const R = 130 * size;
 
       // Dense clouds — scale star count with apparent size (hero galaxies get far more).
-      const N = Math.round((kind === 'irregular' ? 16000 : kind === 'elliptical' ? 24000 : 34000) * size);
+      // Counts doubled 2026-07-06: flying INSIDE one felt sparse — the whole point of
+      // approaching a galaxy is being surrounded by its stars.
+      const N = Math.round((kind === 'irregular' ? 30000 : kind === 'elliptical' ? 42000 : 62000) * size);
       const pos = new Float32Array(N * 3), col = new Float32Array(N * 3), siz = new Float32Array(N);
 
       // Random orientation so galaxies don't all face the same way.
