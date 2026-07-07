@@ -126,7 +126,11 @@
       fill.position.set(-5, -3, 10);
       fill.visible = false;
       this.rig.add(fill);
-      this.lights = [key, fill];
+      // warm engine wash — lights the hull from behind when thrusting
+      this.thrustLight = new THREE.PointLight(0xff9a3c, 0.0, 30);
+      this.thrustLight.position.set(0, 0.6, 4.2);
+      this.rig.add(this.thrustLight);
+      this.lights = [key, fill, this.thrustLight];
 
       this._off = new THREE.Vector3(0, 3.5, 14);
       this._tick = this._tick.bind(this);
@@ -159,13 +163,20 @@
     _tick() {
       if (this.active) {
         const cam = this.rc.camera;
+        // RIGID follow: position locked (no drift under thrust/warp — Matt: the
+        // ship must never pull away), only rotation eases for a soft feel.
         const want = this._off.clone().applyQuaternion(this.rig.quaternion).add(this.rig.position);
-        cam.position.lerp(want, 0.16);
-        cam.quaternion.slerp(this.rig.quaternion, 0.14);
+        cam.position.copy(want);
+        cam.quaternion.slerp(this.rig.quaternion, 0.22);
         // engines: breathe with thrust, and burn ORANGE when firing (blue at idle)
         const thrusting = this.np.isThrusting || this.np.isBoosting;
         const target = thrusting ? (this.np.isBoosting ? 3.4 : 2.1) : 0.9;
         const wantTex = thrusting ? this._glowOrange : this._glowBlue;
+        // hull glow: orange engine light breathes up with thrust, off at idle
+        if (this.thrustLight) {
+          const li = thrusting ? (this.np.isBoosting ? 4.0 : 2.4) : 0.0;
+          this.thrustLight.intensity += (li - this.thrustLight.intensity) * 0.2;
+        }
         for (const e of (this.engines || [])) {
           e.scale.setScalar(e.scale.x + (target - e.scale.x) * 0.2);
           if (e.material.map !== wantTex) { e.material.map = wantTex; e.material.needsUpdate = true; }
