@@ -410,22 +410,34 @@ struct ContentView: View {
     // MARK: - Top bar pieces
 
     // View switcher: HELM (in-cockpit art) → VISOR (clean glass) → CHASE (behind ship).
+    // The button PREVIEWS the view you'll get ("→ CHASE"), and HELM is skipped in
+    // portrait where the cockpit art can't show — no dead taps either way.
+    private func nextViewMode() -> String {
+        let landscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+        let order = landscape ? ["helm", "visor", "chase"] : ["visor", "chase"]
+        guard let i = order.firstIndex(of: viewMode) else { return order[0] }
+        return order[(i + 1) % order.count]
+    }
+
+    private func viewModeIcon(_ mode: String) -> String {
+        mode == "chase" ? "airplane" : (mode == "visor" ? "eye" : "person.crop.rectangle")
+    }
+
     private var viewModeButton: some View {
-        Button {
+        let next = nextViewMode()
+        return Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            let order = ["helm", "visor", "chase"]
-            let next = order[((order.firstIndex(of: viewMode) ?? 0) + 1) % order.count]
             viewMode = next
             navigationController.evaluateJavaScript("window.galaxyExplorer?.setViewMode?.('\(next)')")
         } label: {
             VStack(spacing: 1) {
-                Image(systemName: viewMode == "chase" ? "airplane" : (viewMode == "visor" ? "eye" : "person.crop.rectangle"))
+                Image(systemName: viewModeIcon(next))
                     .font(.system(size: 15, weight: .medium))
-                Text(viewMode.uppercased())
+                Text("→ " + next.uppercased())
                     .font(.system(size: 7, weight: .bold, design: .monospaced))
             }
             .foregroundColor(.cyan.opacity(0.85))
-            .frame(width: 44, height: 40)
+            .frame(width: 50, height: 40)
             .background(Color.black.opacity(0.55))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.cyan.opacity(0.5), lineWidth: 1))
             .cornerRadius(10)
