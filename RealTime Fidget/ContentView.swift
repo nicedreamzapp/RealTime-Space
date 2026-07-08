@@ -17,11 +17,14 @@ struct ContentView: View {
     @State private var lutIntensity = UserDefaults.standard.object(forKey: "lutIntensity") as? Double ?? 0.5
     @State private var spatialAudioEnabled = UserDefaults.standard.object(forKey: "spatialAudioEnabled") as? Bool ?? false
     @State private var cockpitOn = UserDefaults.standard.object(forKey: "cockpitOn") as? Bool ?? true
-    @State private var uiHidden = false
+    // "-shot" launch mode skips the splash for App Store capture. It hides the chrome for
+    // clean art frames UNLESS "-keepUI" is also passed (then controls + HUD stay visible).
+    @State private var uiHidden = ProcessInfo.processInfo.arguments.contains("-shot")
+        && !ProcessInfo.processInfo.arguments.contains("-keepUI")
     @State private var showNavigateMenu = false
     @State private var isPaused = false
     @State private var isWarping = false
-    @State private var showSplash = true
+    @State private var showSplash = !ProcessInfo.processInfo.arguments.contains("-shot")
     @State private var showCredits = false
     // Paywall opened early from the ⋯ menu. "-showUnlock" launch arg forces it at boot
     // (used to capture the App Review screenshot of the purchase screen).
@@ -360,6 +363,33 @@ struct ContentView: View {
             .onAppear {
                 // Send saved cruise speed to JS (best-effort; JS guards if not ready yet)
                 navigationController.evaluateJavaScript("window.galaxyExplorer?.setMaxSpeed?.(\(Int(maxSpeed)))")
+
+                // App Store hero-shot capture: `-shot -shotView <helm|visor|chase> -shotTarget <Name>`.
+                // Waits for the WebGL scene + textures to warm up, sets the view, then frames the target.
+                let args = ProcessInfo.processInfo.arguments
+                if args.contains("-shot") {
+                    let keepUI = args.contains("-keepUI")
+                    let view = args.firstIndex(of: "-shotView").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "visor"
+                    let target = args.firstIndex(of: "-shotTarget").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+                    // Fire after the 8K textures + scene have warmed up (galaxyExplorer isn't
+                    // ready at 4s). Keep labels/orbits + HUD when -keepUI (real-app screenshots).
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+                        navigationController.evaluateJavaScript("window.galaxyExplorer?.setViewMode?.('\(view)')")
+                        if !keepUI {
+                            navigationController.evaluateJavaScript("window.galaxyExplorer?.setPlanetLabelsVisible?.(false)")
+                            navigationController.evaluateJavaScript("window.galaxyExplorer?.setOrbitLinesVisible?.(false)")
+                        }
+                        if let target { navigationController.evaluateJavaScript("window.galaxyExplorer?.flyToByName?.('\(target)')") }
+                    }
+                    // Clean-art mode only: lift the WebGL canvas above every DOM overlay so the
+                    // frame is a pure 3D scene. Skipped for -keepUI (we want the UI visible).
+                    if !keepUI {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 17) {
+                            let hide = "(function(){var c=document.querySelector('canvas');if(!c)return;c.style.setProperty('position','fixed','important');c.style.setProperty('inset','0','important');c.style.setProperty('width','100vw','important');c.style.setProperty('height','100vh','important');c.style.setProperty('z-index','2147483647','important');})()"
+                            navigationController.evaluateJavaScript(hide)
+                        }
+                    }
+                }
 
                 // (Cockpit visibility is owned entirely by the web layer now.)
 
