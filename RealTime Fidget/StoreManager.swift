@@ -151,98 +151,135 @@ struct UnlockView: View {
     var onClose: (() -> Void)?
 
     var body: some View {
-        ZStack {
-            // Deep-space backdrop with a faint horizon glow.
-            Color.black.ignoresSafeArea()
-            RadialGradient(
-                colors: [Color(red: 0.05, green: 0.10, blue: 0.22).opacity(0.9), .black],
-                center: .bottom, startRadius: 20, endRadius: 600
-            )
-            .ignoresSafeArea()
+        // A single GeometryReader gives the exact screen size. Every layer is framed to
+        // that size, so there is no ambient offset — the content is dead-centered on every
+        // device and both orientations. A ScrollView guarantees the CTA is always reachable
+        // in landscape, where the height is short.
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+            let isLandscape = w > h
 
-            VStack(spacing: 18) {
-                Spacer()
+            ZStack(alignment: .topTrailing) {
+                // ---- Cinematic full-bleed backdrop ----
+                Image("PaywallBG")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: w, height: h)
+                    .clipped()
 
-                Text("🚀")
-                    .font(.system(size: 56))
+                LinearGradient(
+                    colors: [.black.opacity(0.55), .black.opacity(0.25), .black.opacity(0.75)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(width: w, height: h)
 
-                Text("RealTime Space")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                // ---- Centered content card ----
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 16) {
+                        Text("RealTime Space")
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
 
-                Group {
-                    if store.daysRemaining > 0 {
-                        Text("\(store.daysRemaining) days left in your free voyage")
-                            .foregroundColor(.cyan)
-                    } else {
-                        Text("Your \(StoreManager.trialDays)-day free voyage is complete")
-                            .foregroundColor(.cyan)
-                    }
-                }
-                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                        Text(store.daysRemaining > 0
+                             ? "\(store.daysRemaining) DAYS LEFT IN YOUR FREE VOYAGE"
+                             : "YOUR \(StoreManager.trialDays)-DAY FREE VOYAGE IS COMPLETE")
+                            .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                            .tracking(1.5)
+                            .foregroundStyle(Color.cyan)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
 
-                Text("Keep the whole universe — every planet, moon, star and view — forever. One small purchase, no subscription, no ads.")
-                    .font(.system(size: 15, weight: .medium, design: .rounded))
-                    .foregroundColor(.white.opacity(0.75))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 36)
+                        Text("Keep the whole universe — every planet, moon, star and view — yours forever.")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                Button {
-                    Task { await store.buy() }
-                } label: {
-                    HStack(spacing: 8) {
-                        if store.purchasing { ProgressView().tint(.black) }
-                        Text("Unlock Forever · \(store.product?.displayPrice ?? "$0.99")")
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 14)
-                    .background(Capsule().fill(Color.cyan))
-                }
-                .disabled(store.purchasing)
-                .padding(.top, 8)
-
-                Button {
-                    Task { await store.restore() }
-                } label: {
-                    Text("Restore Purchase")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white.opacity(0.55))
-                        .underline()
-                }
-                .disabled(store.purchasing)
-
-                if let error = store.errorMessage {
-                    Text(error)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.orange)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                }
-
-                Spacer()
-                Spacer()
-            }
-
-            if let onClose {
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button(action: onClose) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(.white.opacity(0.7))
-                                .frame(width: 40, height: 40)
-                                .background(Circle().fill(Color.white.opacity(0.12)))
+                        Button {
+                            Task { await store.buy() }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if store.purchasing { ProgressView().tint(.black) }
+                                Text("Unlock Forever · \(store.product?.displayPrice ?? "$0.99")")
+                                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                            }
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                Capsule().fill(
+                                    LinearGradient(colors: [Color(red: 0.55, green: 0.9, blue: 1.0), .cyan],
+                                                   startPoint: .top, endPoint: .bottom)
+                                )
+                            )
+                            .shadow(color: .cyan.opacity(0.5), radius: 16, y: 4)
                         }
-                        .padding(.top, 20)
-                        .padding(.trailing, 20)
+                        .disabled(store.purchasing)
+                        .padding(.top, 4)
+
+                        Text("No subscription · No ads · One-time purchase")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .multilineTextAlignment(.center)
+
+                        Button {
+                            Task { await store.restore() }
+                        } label: {
+                            Text("Restore Purchase")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.65))
+                                .underline()
+                        }
+                        .disabled(store.purchasing)
+
+                        if let error = store.errorMessage {
+                            Text(error)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.orange)
+                                .multilineTextAlignment(.center)
+                        }
                     }
-                    Spacer()
+                    .padding(.vertical, 28)
+                    .padding(.horizontal, 26)
+                    .frame(maxWidth: 420)
+                    .background(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(.black.opacity(0.45))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                    .stroke(.white.opacity(0.12), lineWidth: 1)
+                            )
+                    )
+                    .padding(.horizontal, 20)
+                    // Center the card horizontally, and vertically fill at least the screen
+                    // height so short content sits dead-center (portrait) but can scroll (landscape).
+                    .frame(maxWidth: .infinity, minHeight: h)
+                }
+                .frame(width: w, height: h)
+
+                // ---- Close button (only when dismissable) ----
+                if let onClose {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .frame(width: 40, height: 40)
+                            .background(Circle().fill(.black.opacity(0.4)))
+                    }
+                    .padding(.top, isLandscape ? 12 : 24)
+                    .padding(.trailing, 20)
                 }
             }
+            .frame(width: w, height: h)
         }
+        .ignoresSafeArea()
         .onChange(of: store.isUnlocked) { _, unlocked in
             if unlocked { onClose?() }
         }

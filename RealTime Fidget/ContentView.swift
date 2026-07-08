@@ -23,7 +23,9 @@ struct ContentView: View {
     @State private var isWarping = false
     @State private var showSplash = true
     @State private var showCredits = false
-    @State private var showUnlock = false   // paywall opened early from the ⋯ menu
+    // Paywall opened early from the ⋯ menu. "-showUnlock" launch arg forces it at boot
+    // (used to capture the App Review screenshot of the purchase screen).
+    @State private var showUnlock = ProcessInfo.processInfo.arguments.contains("-showUnlock")
     @State private var viewMode = "helm"   // helm (cockpit, default) | visor (clean) | chase
 
     let joystickRadius: CGFloat = 60
