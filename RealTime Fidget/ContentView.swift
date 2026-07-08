@@ -3,6 +3,8 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var navigationController = SpaceNavigationController()
     @StateObject private var galaxyManager = GalaxyDataManager()
+    @StateObject private var store = StoreManager()
+    @Environment(\.scenePhase) private var scenePhase
     
     @State private var joystickOffset = CGSize.zero
     @State private var isThrustButtonPressed = false
@@ -21,6 +23,7 @@ struct ContentView: View {
     @State private var isWarping = false
     @State private var showSplash = true
     @State private var showCredits = false
+    @State private var showUnlock = false   // paywall opened early from the ⋯ menu
     @State private var viewMode = "helm"   // helm (cockpit, default) | visor (clean) | chase
 
     let joystickRadius: CGFloat = 60
@@ -31,7 +34,7 @@ struct ContentView: View {
     // reach the card underneath instead of the invisible native controls.
     // Splash/credits count as chrome-hidden too: in landscape especially, the splash art
     // doesn't cover the whole screen and the THRUST/joystick controls bled through it.
-    private var chromeHidden: Bool { uiHidden || navigationController.hideChrome || showSplash || showCredits }
+    private var chromeHidden: Bool { uiHidden || navigationController.hideChrome || showSplash || showCredits || showUnlock || store.locked }
 
     // Every place you can autopilot to, grouped. `fly` is the engine object name passed to
     // flyToByName (which now reaches planets, moons, comets, nebulae and the black hole).
@@ -200,6 +203,14 @@ struct ContentView: View {
                                     showNavigateMenu = false
                                     withAnimation(.easeInOut(duration: 0.3)) { showCredits = true }
                                 }
+                                // Purchase point reachable from day one (App Review needs to
+                                // find the IAP; eager buyers shouldn't have to wait 60 days).
+                                if !store.isUnlocked {
+                                    navButton("✨  Unlock Forever · $0.99") {
+                                        showNavigateMenu = false
+                                        withAnimation(.easeInOut(duration: 0.3)) { showUnlock = true }
+                                    }
+                                }
 
                                 Divider().background(Color.cyan.opacity(0.2))
 
@@ -326,6 +337,23 @@ struct ContentView: View {
                         .transition(.opacity)
                         .zIndex(101)
                 }
+
+                // Unlock Forever — opened early from the ⋯ menu (dismissable), or forced
+                // as a hard gate once the 60-day free voyage ends (no close button).
+                if showUnlock || store.locked {
+                    UnlockView(store: store, onClose: store.locked ? nil : {
+                        withAnimation(.easeInOut(duration: 0.3)) { showUnlock = false }
+                    })
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .zIndex(200)
+                }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { store.refreshTrial() }
+            }
+            .onChange(of: store.isUnlocked) { _, unlocked in
+                if unlocked { showUnlock = false }
             }
             .onAppear {
                 // Send saved cruise speed to JS (best-effort; JS guards if not ready yet)
