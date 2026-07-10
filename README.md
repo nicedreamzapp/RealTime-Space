@@ -1,6 +1,6 @@
 <div align="center">
 
-# RealTime Fidget
+# RealTime Space
 
 ### A photoreal real-time solar system explorer for iOS.
 
@@ -126,3 +126,7 @@ MIT — see [LICENSE](LICENSE).
 <div align="center">
 <sub>Made with WebGL, real photons, and a lot of Cmd-R</sub>
 </div>
+
+## Support
+
+Questions, bugs, or ideas? Email **info@nicedreamzwholesale.com** and we'll get back to you.
