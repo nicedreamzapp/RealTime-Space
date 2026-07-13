@@ -1,0 +1,38 @@
+{
+  "identifier" : "8A1B2C3D",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "0.99",
+      "familyShareable" : false,
+      "internalID" : "6F7E8D9C",
+      "localizations" : [
+        {
+          "description" : "Every planet, moon, star and view — forever.",
+          "displayName" : "Unlock Forever",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.nicedreamz.realtimespace.unlock",
+      "referenceName" : "Unlock Forever",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

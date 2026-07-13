@@ -1,0 +1,788 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		990966892EEAE52100D7C31B /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 990966882EEAE52100D7C31B /* SwiftUI.framework */; };
+		9909668B2EEAE52B00D7C31B /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9909668A2EEAE52B00D7C31B /* UIKit.framework */; };
+		9909668D2EEAE53300D7C31B /* Combine.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9909668C2EEAE53300D7C31B /* Combine.framework */; };
+		9909668F2EEAE53E00D7C31B /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9909668E2EEAE53E00D7C31B /* WebKit.framework */; };
+		990966912EEAE54900D7C31B /* SceneKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 990966902EEAE54900D7C31B /* SceneKit.framework */; };
+		990966932EEAE55300D7C31B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 990966922EEAE55300D7C31B /* Foundation.framework */; };
+		990966952EEAE55B00D7C31B /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 990966942EEAE55B00D7C31B /* CoreGraphics.framework */; };
+		990966972EEAE56500D7C31B /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 990966962EEAE56500D7C31B /* QuartzCore.framework */; };
+		990966992EEAE56F00D7C31B /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 990966982EEAE56F00D7C31B /* AVFoundation.framework */; };
+		9909669B2EEAE57800D7C31B /* CoreHaptics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9909669A2EEAE57800D7C31B /* CoreHaptics.framework */; };
+		9909669D2EEAE7E100D7C31B /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9909669C2EEAE7E100D7C31B /* AudioManager.swift */; };
+		9929445F2E8BD10D0053A19C /* Starfield.js in Resources */ = {isa = PBXBuildFile; fileRef = 99280B992E8BCB9E000623CD /* Starfield.js */; };
+		99AA000000000000000A0001 /* Moons.js in Resources */ = {isa = PBXBuildFile; fileRef = 99AA000000000000000B0001 /* Moons.js */; };
+		99AA000000000000000A0002 /* AudioEngine.js in Resources */ = {isa = PBXBuildFile; fileRef = 99AA000000000000000B0002 /* AudioEngine.js */; };
+		99AA000000000000000A0003 /* Missions.js in Resources */ = {isa = PBXBuildFile; fileRef = 99AA000000000000000B0003 /* Missions.js */; };
+		99A0B1512E8A7DB100113A42 /* SphereRadar.js in Resources */ = {isa = PBXBuildFile; fileRef = 99A0B1502E8A7D6600113A42 /* SphereRadar.js */; };
+		99AEF80C2EC0C8BE00428913 /* SolarSystemSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99AEF80B2EC0C8BE00428913 /* SolarSystemSceneView.swift */; };
+		99AEF81C2EC0DF7400428913 /* SimpleRadarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99AEF81B2EC0DF7100428913 /* SimpleRadarView.swift */; };
+		99B70E862E8BB1A4003F9928 /* GalaxyBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B70E852E8BB19F003F9928 /* GalaxyBridge.swift */; };
+		99B70E8A2E8BB228003F9928 /* WorkingPortalWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B70E892E8BB21E003F9928 /* WorkingPortalWebView.swift */; };
+		99B70E8C2E8BB31C003F9928 /* GalaxyData.json in Resources */ = {isa = PBXBuildFile; fileRef = 99B70E8B2E8BB317003F9928 /* GalaxyData.json */; };
+		99B70E922E8BB58B003F9928 /* RendererCore.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70E912E8BB584003F9928 /* RendererCore.js */; };
+		99B70E952E8BB5D9003F9928 /* UpdateLoop.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70E942E8BB5D3003F9928 /* UpdateLoop.js */; };
+		99B70E9F2E8BB66E003F9928 /* Planet.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70E9E2E8BB666003F9928 /* Planet.js */; };
+		99B70EA72E8BB73F003F9928 /* Nebula.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EA62E8BB73A003F9928 /* Nebula.js */; };
+		99B70EAD2E8BB7A2003F9928 /* Comet.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EAC2E8BB79B003F9928 /* Comet.js */; };
+		99B70EC52E8BB830003F9928 /* LightingSystem.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EC42E8BB82B003F9928 /* LightingSystem.js */; };
+		99B70EC72E8BB855003F9928 /* OrbitalMechanics.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EC62E8BB850003F9928 /* OrbitalMechanics.js */; };
+		99B70EDD2E8BB971003F9928 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EDC2E8BB96C003F9928 /* index.html */; };
+		99B70EDF2E8BB98E003F9928 /* main.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EDE2E8BB989003F9928 /* main.js */; };
+		99B70EE02E8BBD0A003F9928 /* HUD.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EDA2E8BB900003F9928 /* HUD.js */; };
+		99B70EE12E8BBD0A003F9928 /* ParticleSystem.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70ED82E8BB8D3003F9928 /* ParticleSystem.js */; };
+		99B70EE22E8BBD0A003F9928 /* NavigationPhysics.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EC82E8BB869003F9928 /* NavigationPhysics.js */; };
+		99B70EE32E8BBD0A003F9928 /* AsteroidBelt.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EA82E8BB762003F9928 /* AsteroidBelt.js */; };
+		99B70EE42E8BBD0A003F9928 /* Star.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EA22E8BB6AF003F9928 /* Star.js */; };
+		99B70EE62E8BBD84003F9928 /* Vector3D.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B70EE52E8BBD75003F9928 /* Vector3D.swift */; };
+		99CCC0012EEAFF0100000001 /* BlackHole.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0002EEAFF0100000001 /* BlackHole.js */; };
+		99CCC0032EEAFF0100000002 /* WarpEffect.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0022EEAFF0100000002 /* WarpEffect.js */; };
+		99CCC0052EEAFF0100000003 /* VolumetricNebula.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0042EEAFF0100000003 /* VolumetricNebula.js */; };
+		99CCC0072EEAFF0100000004 /* CelestialCatalog.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0062EEAFF0100000004 /* CelestialCatalog.js */; };
+		99CCC0092EEAFF0100000005 /* ExplorationTracker.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0082EEAFF0100000005 /* ExplorationTracker.js */; };
+		99CCC00B2EEAFF0100000006 /* NavigationArrows.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC00A2EEAFF0100000006 /* NavigationArrows.js */; };
+		99FE000000FF000000FF1101 /* textures in Resources */ = {isa = PBXBuildFile; fileRef = 99FE000000FF000000FF1001 /* textures */; };
+		99FE000000FF000000FF2101 /* codex in Resources */ = {isa = PBXBuildFile; fileRef = 99FE000000FF000000FF2001 /* codex */; };
+		99D56BC72E82B672003CF912 /* SpaceNavigationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99D56BC62E82B638003CF912 /* SpaceNavigationController.swift */; };
+		99D56BCB2E82B6F7003CF912 /* GalaxyDataManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99D56BCA2E82B6E3003CF912 /* GalaxyDataManager.swift */; };
+		99D56C092E82D8EE003CF912 /* GalaxyControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99D56C082E82D8E9003CF912 /* GalaxyControlView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		99427BC02E796E4600523831 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 99427BAA2E796E4500523831 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 99427BB12E796E4500523831;
+			remoteInfo = "RealTime Fidget";
+		};
+		99427BCA2E796E4600523831 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 99427BAA2E796E4500523831 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 99427BB12E796E4500523831;
+			remoteInfo = "RealTime Fidget";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		990966882EEAE52100D7C31B /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk/System/iOSSupport/System/Library/Frameworks/SwiftUI.framework; sourceTree = DEVELOPER_DIR; };
+		9909668A2EEAE52B00D7C31B /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk/System/iOSSupport/System/Library/Frameworks/UIKit.framework; sourceTree = DEVELOPER_DIR; };
+		9909668C2EEAE53300D7C31B /* Combine.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Combine.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk/System/Library/Frameworks/Combine.framework; sourceTree = DEVELOPER_DIR; };
+		9909668E2EEAE53E00D7C31B /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk/System/iOSSupport/System/Library/PrivateFrameworks/WebKit.framework; sourceTree = DEVELOPER_DIR; };
+		990966902EEAE54900D7C31B /* SceneKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SceneKit.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk/System/iOSSupport/System/Library/Frameworks/SceneKit.framework; sourceTree = DEVELOPER_DIR; };
+		990966922EEAE55300D7C31B /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		990966942EEAE55B00D7C31B /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk/System/Library/Frameworks/CoreGraphics.framework; sourceTree = DEVELOPER_DIR; };
+		990966962EEAE56500D7C31B /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk/System/Library/Frameworks/QuartzCore.framework; sourceTree = DEVELOPER_DIR; };
+		990966982EEAE56F00D7C31B /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk/System/Library/Frameworks/AVFoundation.framework; sourceTree = DEVELOPER_DIR; };
+		9909669A2EEAE57800D7C31B /* CoreHaptics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreHaptics.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk/System/Library/Frameworks/CoreHaptics.framework; sourceTree = DEVELOPER_DIR; };
+		9909669C2EEAE7E100D7C31B /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
+		99280B992E8BCB9E000623CD /* Starfield.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Starfield.js; sourceTree = "<group>"; };
+		99AA000000000000000B0001 /* Moons.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Moons.js; sourceTree = "<group>"; };
+		99AA000000000000000B0002 /* AudioEngine.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = AudioEngine.js; sourceTree = "<group>"; };
+		99AA000000000000000B0003 /* Missions.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Missions.js; sourceTree = "<group>"; };
+		99427BB22E796E4500523831 /* RealTime Fidget.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "RealTime Fidget.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		99427BBF2E796E4600523831 /* RealTime FidgetTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "RealTime FidgetTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		99427BC92E796E4600523831 /* RealTime FidgetUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "RealTime FidgetUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		99A0B1502E8A7D6600113A42 /* SphereRadar.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = SphereRadar.js; sourceTree = "<group>"; };
+		99AEF80B2EC0C8BE00428913 /* SolarSystemSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolarSystemSceneView.swift; sourceTree = "<group>"; };
+		99AEF81B2EC0DF7100428913 /* SimpleRadarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimpleRadarView.swift; sourceTree = "<group>"; };
+		99B70E852E8BB19F003F9928 /* GalaxyBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyBridge.swift; sourceTree = "<group>"; };
+		99B70E892E8BB21E003F9928 /* WorkingPortalWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkingPortalWebView.swift; sourceTree = "<group>"; };
+		99B70E8B2E8BB317003F9928 /* GalaxyData.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = GalaxyData.json; sourceTree = "<group>"; };
+		99B70E912E8BB584003F9928 /* RendererCore.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = RendererCore.js; sourceTree = "<group>"; };
+		99B70E942E8BB5D3003F9928 /* UpdateLoop.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = UpdateLoop.js; sourceTree = "<group>"; };
+		99B70E9E2E8BB666003F9928 /* Planet.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Planet.js; sourceTree = "<group>"; };
+		99B70EA22E8BB6AF003F9928 /* Star.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Star.js; sourceTree = "<group>"; };
+		99B70EA62E8BB73A003F9928 /* Nebula.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Nebula.js; sourceTree = "<group>"; };
+		99B70EA82E8BB762003F9928 /* AsteroidBelt.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = AsteroidBelt.js; sourceTree = "<group>"; };
+		99B70EAC2E8BB79B003F9928 /* Comet.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Comet.js; sourceTree = "<group>"; };
+		99B70EC42E8BB82B003F9928 /* LightingSystem.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = LightingSystem.js; sourceTree = "<group>"; };
+		99B70EC62E8BB850003F9928 /* OrbitalMechanics.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = OrbitalMechanics.js; sourceTree = "<group>"; };
+		99B70EC82E8BB869003F9928 /* NavigationPhysics.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = NavigationPhysics.js; sourceTree = "<group>"; };
+		99B70ED82E8BB8D3003F9928 /* ParticleSystem.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ParticleSystem.js; sourceTree = "<group>"; };
+		99B70EDA2E8BB900003F9928 /* HUD.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = HUD.js; sourceTree = "<group>"; };
+		99B70EDC2E8BB96C003F9928 /* index.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = index.html; sourceTree = "<group>"; };
+		99B70EDE2E8BB989003F9928 /* main.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = main.js; sourceTree = "<group>"; };
+		99B70EE52E8BBD75003F9928 /* Vector3D.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Vector3D.swift; sourceTree = "<group>"; };
+		99D56BC62E82B638003CF912 /* SpaceNavigationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceNavigationController.swift; sourceTree = "<group>"; };
+		99D56BCA2E82B6E3003CF912 /* GalaxyDataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyDataManager.swift; sourceTree = "<group>"; };
+		99D56C082E82D8E9003CF912 /* GalaxyControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyControlView.swift; sourceTree = "<group>"; };
+		99CCC0002EEAFF0100000001 /* BlackHole.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = BlackHole.js; sourceTree = "<group>"; };
+		99CCC0022EEAFF0100000002 /* WarpEffect.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = WarpEffect.js; sourceTree = "<group>"; };
+		99CCC0042EEAFF0100000003 /* VolumetricNebula.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = VolumetricNebula.js; sourceTree = "<group>"; };
+		99CCC0062EEAFF0100000004 /* CelestialCatalog.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = CelestialCatalog.js; sourceTree = "<group>"; };
+		99CCC0082EEAFF0100000005 /* ExplorationTracker.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ExplorationTracker.js; sourceTree = "<group>"; };
+		99CCC00A2EEAFF0100000006 /* NavigationArrows.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = NavigationArrows.js; sourceTree = "<group>"; };
+		99FE000000FF000000FF1001 /* textures */ = {isa = PBXFileReference; lastKnownFileType = folder; path = textures; sourceTree = "<group>"; };
+		99FE000000FF000000FF2001 /* codex */ = {isa = PBXFileReference; lastKnownFileType = folder; path = codex; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		99427BB42E796E4500523831 /* RealTime Fidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "RealTime Fidget";
+			sourceTree = "<group>";
+		};
+		99427BC22E796E4600523831 /* RealTime FidgetTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "RealTime FidgetTests";
+			sourceTree = "<group>";
+		};
+		99427BCC2E796E4600523831 /* RealTime FidgetUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "RealTime FidgetUITests";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		99427BAF2E796E4500523831 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99427BBC2E796E4600523831 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99427BC62E796E4600523831 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				990966972EEAE56500D7C31B /* QuartzCore.framework in Frameworks */,
+				990966892EEAE52100D7C31B /* SwiftUI.framework in Frameworks */,
+				9909669B2EEAE57800D7C31B /* CoreHaptics.framework in Frameworks */,
+				990966992EEAE56F00D7C31B /* AVFoundation.framework in Frameworks */,
+				990966932EEAE55300D7C31B /* Foundation.framework in Frameworks */,
+				9909668D2EEAE53300D7C31B /* Combine.framework in Frameworks */,
+				990966952EEAE55B00D7C31B /* CoreGraphics.framework in Frameworks */,
+				990966912EEAE54900D7C31B /* SceneKit.framework in Frameworks */,
+				9909668F2EEAE53E00D7C31B /* WebKit.framework in Frameworks */,
+				9909668B2EEAE52B00D7C31B /* UIKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		990966872EEAE52000D7C31B /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				9909669A2EEAE57800D7C31B /* CoreHaptics.framework */,
+				990966982EEAE56F00D7C31B /* AVFoundation.framework */,
+				990966962EEAE56500D7C31B /* QuartzCore.framework */,
+				990966942EEAE55B00D7C31B /* CoreGraphics.framework */,
+				990966922EEAE55300D7C31B /* Foundation.framework */,
+				990966902EEAE54900D7C31B /* SceneKit.framework */,
+				9909668E2EEAE53E00D7C31B /* WebKit.framework */,
+				9909668C2EEAE53300D7C31B /* Combine.framework */,
+				9909668A2EEAE52B00D7C31B /* UIKit.framework */,
+				990966882EEAE52100D7C31B /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		99427BA92E796E4500523831 = {
+			isa = PBXGroup;
+			children = (
+				99CCC0002EEAFF0100000001 /* BlackHole.js */,
+				99CCC0022EEAFF0100000002 /* WarpEffect.js */,
+				99CCC0042EEAFF0100000003 /* VolumetricNebula.js */,
+				99CCC0062EEAFF0100000004 /* CelestialCatalog.js */,
+				99CCC0082EEAFF0100000005 /* ExplorationTracker.js */,
+				99CCC00A2EEAFF0100000006 /* NavigationArrows.js */,
+				99FE000000FF000000FF1001 /* textures */,
+				99FE000000FF000000FF2001 /* codex */,
+				99AEF81B2EC0DF7100428913 /* SimpleRadarView.swift */,
+				99280B992E8BCB9E000623CD /* Starfield.js */,
+				99AA000000000000000B0001 /* Moons.js */,
+				99AA000000000000000B0002 /* AudioEngine.js */,
+				99AA000000000000000B0003 /* Missions.js */,
+				99B70EE52E8BBD75003F9928 /* Vector3D.swift */,
+				99B70EDE2E8BB989003F9928 /* main.js */,
+				99B70EDC2E8BB96C003F9928 /* index.html */,
+				99B70EDA2E8BB900003F9928 /* HUD.js */,
+				99B70ED82E8BB8D3003F9928 /* ParticleSystem.js */,
+				99B70EC82E8BB869003F9928 /* NavigationPhysics.js */,
+				99B70EC62E8BB850003F9928 /* OrbitalMechanics.js */,
+				99B70EC42E8BB82B003F9928 /* LightingSystem.js */,
+				99B70EAC2E8BB79B003F9928 /* Comet.js */,
+				99B70EA82E8BB762003F9928 /* AsteroidBelt.js */,
+				99B70EA62E8BB73A003F9928 /* Nebula.js */,
+				99B70EA22E8BB6AF003F9928 /* Star.js */,
+				99B70E9E2E8BB666003F9928 /* Planet.js */,
+				99B70E942E8BB5D3003F9928 /* UpdateLoop.js */,
+				99B70E912E8BB584003F9928 /* RendererCore.js */,
+				99B70E8B2E8BB317003F9928 /* GalaxyData.json */,
+				99B70E892E8BB21E003F9928 /* WorkingPortalWebView.swift */,
+				99B70E852E8BB19F003F9928 /* GalaxyBridge.swift */,
+				99A0B1502E8A7D6600113A42 /* SphereRadar.js */,
+				99D56C082E82D8E9003CF912 /* GalaxyControlView.swift */,
+				99D56BCA2E82B6E3003CF912 /* GalaxyDataManager.swift */,
+				99D56BC62E82B638003CF912 /* SpaceNavigationController.swift */,
+				99427BB42E796E4500523831 /* RealTime Fidget */,
+				99427BC22E796E4600523831 /* RealTime FidgetTests */,
+				99427BCC2E796E4600523831 /* RealTime FidgetUITests */,
+				99427BB32E796E4500523831 /* Products */,
+				99AEF80B2EC0C8BE00428913 /* SolarSystemSceneView.swift */,
+				990966872EEAE52000D7C31B /* Frameworks */,
+				9909669C2EEAE7E100D7C31B /* AudioManager.swift */,
+			);
+			sourceTree = "<group>";
+		};
+		99427BB32E796E4500523831 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				99427BB22E796E4500523831 /* RealTime Fidget.app */,
+				99427BBF2E796E4600523831 /* RealTime FidgetTests.xctest */,
+				99427BC92E796E4600523831 /* RealTime FidgetUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		99427BB12E796E4500523831 /* RealTime Fidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 99427BD32E796E4600523831 /* Build configuration list for PBXNativeTarget "RealTime Fidget" */;
+			buildPhases = (
+				99427BAE2E796E4500523831 /* Sources */,
+				99427BAF2E796E4500523831 /* Frameworks */,
+				99427BB02E796E4500523831 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				99427BB42E796E4500523831 /* RealTime Fidget */,
+			);
+			name = "RealTime Fidget";
+			packageProductDependencies = (
+			);
+			productName = "RealTime Fidget";
+			productReference = 99427BB22E796E4500523831 /* RealTime Fidget.app */;
+			productType = "com.apple.product-type.application";
+		};
+		99427BBE2E796E4600523831 /* RealTime FidgetTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 99427BD62E796E4600523831 /* Build configuration list for PBXNativeTarget "RealTime FidgetTests" */;
+			buildPhases = (
+				99427BBB2E796E4600523831 /* Sources */,
+				99427BBC2E796E4600523831 /* Frameworks */,
+				99427BBD2E796E4600523831 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				99427BC12E796E4600523831 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				99427BC22E796E4600523831 /* RealTime FidgetTests */,
+			);
+			name = "RealTime FidgetTests";
+			packageProductDependencies = (
+			);
+			productName = "RealTime FidgetTests";
+			productReference = 99427BBF2E796E4600523831 /* RealTime FidgetTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		99427BC82E796E4600523831 /* RealTime FidgetUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 99427BD92E796E4600523831 /* Build configuration list for PBXNativeTarget "RealTime FidgetUITests" */;
+			buildPhases = (
+				99427BC52E796E4600523831 /* Sources */,
+				99427BC62E796E4600523831 /* Frameworks */,
+				99427BC72E796E4600523831 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				99427BCB2E796E4600523831 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				99427BCC2E796E4600523831 /* RealTime FidgetUITests */,
+			);
+			name = "RealTime FidgetUITests";
+			packageProductDependencies = (
+			);
+			productName = "RealTime FidgetUITests";
+			productReference = 99427BC92E796E4600523831 /* RealTime FidgetUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		99427BAA2E796E4500523831 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2610;
+				TargetAttributes = {
+					99427BB12E796E4500523831 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					99427BBE2E796E4600523831 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 99427BB12E796E4500523831;
+					};
+					99427BC82E796E4600523831 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 99427BB12E796E4500523831;
+					};
+				};
+			};
+			buildConfigurationList = 99427BAD2E796E4500523831 /* Build configuration list for PBXProject "RealTime Fidget" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 99427BA92E796E4500523831;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 99427BB32E796E4500523831 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				99427BB12E796E4500523831 /* RealTime Fidget */,
+				99427BBE2E796E4600523831 /* RealTime FidgetTests */,
+				99427BC82E796E4600523831 /* RealTime FidgetUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		99427BB02E796E4500523831 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				99CCC0012EEAFF0100000001 /* BlackHole.js in Resources */,
+				99CCC0032EEAFF0100000002 /* WarpEffect.js in Resources */,
+				99CCC0052EEAFF0100000003 /* VolumetricNebula.js in Resources */,
+				99CCC0072EEAFF0100000004 /* CelestialCatalog.js in Resources */,
+				99CCC0092EEAFF0100000005 /* ExplorationTracker.js in Resources */,
+				99CCC00B2EEAFF0100000006 /* NavigationArrows.js in Resources */,
+				9929445F2E8BD10D0053A19C /* Starfield.js in Resources */,
+				99AA000000000000000A0001 /* Moons.js in Resources */,
+				99AA000000000000000A0002 /* AudioEngine.js in Resources */,
+				99AA000000000000000A0003 /* Missions.js in Resources */,
+				99B70EE02E8BBD0A003F9928 /* HUD.js in Resources */,
+				99B70EE12E8BBD0A003F9928 /* ParticleSystem.js in Resources */,
+				99B70EE22E8BBD0A003F9928 /* NavigationPhysics.js in Resources */,
+				99B70EE32E8BBD0A003F9928 /* AsteroidBelt.js in Resources */,
+				99B70EE42E8BBD0A003F9928 /* Star.js in Resources */,
+				99A0B1512E8A7DB100113A42 /* SphereRadar.js in Resources */,
+				99B70EC72E8BB855003F9928 /* OrbitalMechanics.js in Resources */,
+				99B70EDD2E8BB971003F9928 /* index.html in Resources */,
+				99B70EA72E8BB73F003F9928 /* Nebula.js in Resources */,
+				99B70E922E8BB58B003F9928 /* RendererCore.js in Resources */,
+				99B70E8C2E8BB31C003F9928 /* GalaxyData.json in Resources */,
+				99B70E952E8BB5D9003F9928 /* UpdateLoop.js in Resources */,
+				99B70EAD2E8BB7A2003F9928 /* Comet.js in Resources */,
+				99B70EC52E8BB830003F9928 /* LightingSystem.js in Resources */,
+				99B70EDF2E8BB98E003F9928 /* main.js in Resources */,
+				99B70E9F2E8BB66E003F9928 /* Planet.js in Resources */,
+				99FE000000FF000000FF1101 /* textures in Resources */,
+				99FE000000FF000000FF2101 /* codex in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99427BBD2E796E4600523831 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99427BC72E796E4600523831 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		99427BAE2E796E4500523831 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				99D56BCB2E82B6F7003CF912 /* GalaxyDataManager.swift in Sources */,
+				99B70E8A2E8BB228003F9928 /* WorkingPortalWebView.swift in Sources */,
+				99D56C092E82D8EE003CF912 /* GalaxyControlView.swift in Sources */,
+				99B70EE62E8BBD84003F9928 /* Vector3D.swift in Sources */,
+				99AEF81C2EC0DF7400428913 /* SimpleRadarView.swift in Sources */,
+				99D56BC72E82B672003CF912 /* SpaceNavigationController.swift in Sources */,
+				99B70E862E8BB1A4003F9928 /* GalaxyBridge.swift in Sources */,
+				9909669D2EEAE7E100D7C31B /* AudioManager.swift in Sources */,
+				99AEF80C2EC0C8BE00428913 /* SolarSystemSceneView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99427BBB2E796E4600523831 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99427BC52E796E4600523831 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		99427BC12E796E4600523831 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 99427BB12E796E4500523831 /* RealTime Fidget */;
+			targetProxy = 99427BC02E796E4600523831 /* PBXContainerItemProxy */;
+		};
+		99427BCB2E796E4600523831 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 99427BB12E796E4500523831 /* RealTime Fidget */;
+			targetProxy = 99427BCA2E796E4600523831 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		99427BD12E796E4600523831 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = B9RA6QH559;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		99427BD22E796E4600523831 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = B9RA6QH559;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		99427BD42E796E4600523831 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 12;
+				DEVELOPMENT_TEAM = B9RA6QH559;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "RealTime Space";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-Fidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		99427BD52E796E4600523831 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 12;
+				DEVELOPMENT_TEAM = B9RA6QH559;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "RealTime Space";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-Fidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		99427BD72E796E4600523831 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 12;
+				DEVELOPMENT_TEAM = B9RA6QH559;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-FidgetTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RealTime Fidget.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RealTime Fidget";
+			};
+			name = Debug;
+		};
+		99427BD82E796E4600523831 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 12;
+				DEVELOPMENT_TEAM = B9RA6QH559;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-FidgetTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RealTime Fidget.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RealTime Fidget";
+			};
+			name = Release;
+		};
+		99427BDA2E796E4600523831 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 12;
+				DEVELOPMENT_TEAM = B9RA6QH559;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-FidgetUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "RealTime Fidget";
+			};
+			name = Debug;
+		};
+		99427BDB2E796E4600523831 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 12;
+				DEVELOPMENT_TEAM = B9RA6QH559;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-FidgetUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "RealTime Fidget";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		99427BAD2E796E4500523831 /* Build configuration list for PBXProject "RealTime Fidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99427BD12E796E4600523831 /* Debug */,
+				99427BD22E796E4600523831 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		99427BD32E796E4600523831 /* Build configuration list for PBXNativeTarget "RealTime Fidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99427BD42E796E4600523831 /* Debug */,
+				99427BD52E796E4600523831 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		99427BD62E796E4600523831 /* Build configuration list for PBXNativeTarget "RealTime FidgetTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99427BD72E796E4600523831 /* Debug */,
+				99427BD82E796E4600523831 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		99427BD92E796E4600523831 /* Build configuration list for PBXNativeTarget "RealTime FidgetUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99427BDA2E796E4600523831 /* Debug */,
+				99427BDB2E796E4600523831 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 99427BAA2E796E4500523831 /* Project object */;
+}

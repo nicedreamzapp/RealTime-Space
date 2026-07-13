@@ -39,3 +39,10 @@ fastlane/test_output
 
 # Project-local Claude config
 .claude/settings.local.json
+
+# Android
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+**/.DS_Store

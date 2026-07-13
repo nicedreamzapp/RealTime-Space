@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Galaxy Explorer</title>
+    <!-- ANDROID PORT: the WebView renders edge-to-edge under the status bar and reports
+         env(safe-area-inset-top)=0, so the web icon dock (.cx-controls, default top:240px)
+         sits ~24dp higher than the native Compose rail (which respects the status-bar inset)
+         and collides with the native radar/menu/view-mode column. Push it down in portrait so
+         the native rail and the web dock form one clean, non-overlapping right-edge column. -->
+    <style>
+      @media (orientation: portrait) { .cx-controls { top: 296px !important; } }
+    </style>
+    <!-- ANDROID PORT bridge shim: emulate the iOS WKWebView message handlers so the
+         UNMODIFIED web bundle's window.webkit.messageHandlers.*.postMessage() calls reach
+         the native @JavascriptInterface (window.AndroidBridge). Must run before any engine
+         script, so it lives first in <head>. -->
+    <script>
+    (function(){
+        function send(m){
+            try {
+                var s = (typeof m === 'string') ? m : JSON.stringify(m);
+                if (window.AndroidBridge && window.AndroidBridge.postMessage) window.AndroidBridge.postMessage(s);
+            } catch(e){}
+        }
+        function logfwd(m){
+            try {
+                var s = (typeof m === 'string') ? m : JSON.stringify(m);
+                if (window.AndroidBridge && window.AndroidBridge.log) window.AndroidBridge.log(s);
+            } catch(e){}
+        }
+        window.webkit = window.webkit || {};
+        window.webkit.messageHandlers = window.webkit.messageHandlers || {};
+        window.webkit.messageHandlers.iosHandler = { postMessage: send };
+        window.webkit.messageHandlers.logging = { postMessage: logfwd };
+        window.__SPACE_BRIDGE_READY__ = true;
+    })();
+    </script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: #000005;
+            overflow: hidden;
+            -webkit-user-select: none;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        }
+
+        #galaxyCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* ========== GLASSMORPHISM BASE ========== */
+        .glass {
+            background: linear-gradient(
+                135deg,
+                rgba(255, 255, 255, 0.08) 0%,
+                rgba(255, 255, 255, 0.02) 100%
+            );
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow:
+                0 8px 32px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1),
+                inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+        }
+
+        /* ========== HIDE HTML HUD - Swift provides these ========== */
+        /* The Swift app provides: EXPLORER label, THRUST status, radar, target info */
+        /* So we HIDE the HTML versions to avoid overlap */
+
+        #hud-container {
+            display: none !important;
+        }
+
+        #radar-container {
+            display: none !important;
+        }
+
+        #target-info {
+            display: none !important;
+        }
+
+        /* ========== VELOCITY BAR - Bottom Center ========== */
+        /* Hidden - Swift provides velocity display */
+        #velocity-container {
+            display: none !important;
+        }
+
+        /* ========== CROSSHAIR ========== */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 28px;
+            height: 28px;
+            z-index: 50;
+            pointer-events: none;
+        }
+
+        #crosshair svg {
+            width: 100%;
+            height: 100%;
+            opacity: 0.3;
+            filter: drop-shadow(0 0 2px rgba(100, 200, 255, 0.3));
+        }
+
+        /* ========== THRUST INDICATOR ========== */
+        /* Hidden - Swift provides thrust indicator */
+        #thrust-indicator {
+            display: none !important;
+        }
+
+        /* ========== COMPASS HEADING ========== */
+        #compass {
+            position: absolute;
+            top: 85px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(100, 220, 255, 0.4);
+            font-family: 'SF Mono', 'Menlo', monospace;
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: 3px;
+            z-index: 100;
+            text-shadow: 0 0 8px rgba(0, 0, 0, 0.9);
+        }
+
+        /* ========== OBJECT MARKERS ========== */
+        .object-marker {
+            position: absolute;
+            pointer-events: none;
+            z-index: 60;
+        }
+
+        .marker-diamond {
+            width: 8px;
+            height: 8px;
+            background: #22d3ee;
+            transform: rotate(45deg);
+            box-shadow: 0 0 8px rgba(34, 211, 238, 0.6);
+        }
+
+        .marker-label {
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 8px;
+            white-space: nowrap;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="galaxyCanvas"></canvas>
+
+    <!-- Compass heading - positioned below Swift UI -->
+    <div id="compass">127°</div>
+
+    <!-- Crosshair - center of screen -->
+    <div id="crosshair">
+        <svg viewBox="0 0 32 32" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1">
+            <circle cx="16" cy="16" r="8" stroke-dasharray="2 2"/>
+            <line x1="16" y1="4" x2="16" y2="10"/>
+            <line x1="16" y1="22" x2="16" y2="28"/>
+            <line x1="4" y1="16" x2="10" y2="16"/>
+            <line x1="22" y1="16" x2="28" y2="16"/>
+        </svg>
+    </div>
+
+    <!-- Hidden elements - Swift provides these overlays -->
+    <div id="hud-container" class="glass"></div>
+    <div id="radar-container" class="glass"></div>
+    <div id="target-info" class="glass">
+        <div id="target-name">SCANNING...</div>
+        <div id="target-distance">---</div>
+    </div>
+    <div id="thrust-indicator">THRUSTING</div>
+    <div id="velocity-container">
+        <div id="velocity-value">0 m/s</div>
+        <div id="velocity-bar-bg">
+            <div id="velocity-bar"></div>
+        </div>
+    </div>
+
+    <!-- Three.js r150 + post-processing addons, pre-bundled into ONE self-contained
+         classic script. NO CDN, NO ES-module/importmap dependency, so the engine boots
+         offline and can't be killed by a flaky network. The bundle sets a complete
+         window.THREE (core + EffectComposer/RenderPass/ShaderPass/UnrealBloomPass/
+         GammaCorrectionShader). Regenerate with esbuild if the addon set changes. -->
+    <script>
+        // Surface uncaught errors/rejections to native console (onConsoleMessage) so a
+        // silent init failure can't hide behind a black screen.
+        window.addEventListener('error', function(e){
+            console.error('WINDOW_ERROR: ' + (e.message||'') + ' @ ' + (e.filename||'') + ':' + (e.lineno||'') + (e.error&&e.error.stack?('\n'+e.error.stack):''));
+        });
+        window.addEventListener('unhandledrejection', function(e){
+            console.error('UNHANDLED_REJECTION: ' + (e.reason && (e.reason.stack||e.reason.message) || e.reason));
+        });
+    </script>
+    <script src="textures/lib/three.bundle.js"></script>
+    <script>
+        // Post-processing (bloom/god-rays/LUT) is ON. It used to render black on iOS
+        // WKWebView, so the composer now uses an iOS-safe UnsignedByte render target AND a
+        // runtime black-frame guard that auto-falls-back to direct rendering if the very
+        // first composed frames come out black. So bloom can never leave a black screen —
+        // worst case it silently reverts to the old direct path. Set this to true to force
+        // the direct path manually (e.g. for debugging).
+        window.__FORCE_DIRECT__ = true;
+        // Boot guard: if the THREE bundle somehow failed to load, say so loudly instead
+        // of leaving a silent black screen (the old CDN failure mode).
+        if (!window.THREE || !window.THREE.EffectComposer) {
+            console.error('❌ THREE bundle failed to load — engine cannot start (window.THREE missing)');
+        }
+
+        const scripts = [
+            'RendererCore.js',
+            'LightingSystem.js',
+            'NavigationPhysics.js',
+            'OrbitalMechanics.js',
+            'UpdateLoop.js',
+            'Starfield.js',
+            'Star.js',
+            'Planet.js',
+            'Moons.js',
+            'AsteroidBelt.js',
+            'Comet.js',
+            'Nebula.js',
+            'ParticleSystem.js',
+            'HUD.js',
+            'SphereRadar.js',
+            'codex/SpaceData.js',
+            'CelestialCatalog.js',
+            'ExplorationTracker.js',
+            'codex/Codex.js',
+            'codex/LiveData.js',
+            'codex/ISS.js',
+            'codex/Constellations.js',
+            'codex/data/hyg_stars.js',
+            'codex/HYGStarfield.js',
+            'codex/Interstellar.js',
+            'codex/Exoplanets.js',
+            'codex/Galaxies.js',
+            'codex/Deepsky.js',
+            'codex/Cockpit.js',
+            'codex/StarProximity.js',
+            'codex/ChaseView.js',
+            'codex/ExoSystems.js',
+            'codex/MilkyWay.js',
+            'NavigationArrows.js',
+            'AudioEngine.js',
+            'Missions.js',
+            'BlackHole.js',
+            'WarpEffect.js',
+            'VolumetricNebula.js',
+            'main.js'
+        ];
+        const APP_VERSION = '2026-07-06a'; // bump to bust browser cache after edits
+        // Query-string cache busting is for http dev serving only — file:// URLs
+        // inside the app bundle don't cache and may not tolerate query params.
+        const bust = location.protocol.startsWith('http') ? '?v=' + APP_VERSION : '';
+        // Classic script (not a module) so it runs without importmaps/CDN — wrap the
+        // sequential loader in an async IIFE since top-level await isn't allowed here.
+        (async () => {
+            for (const src of scripts) {
+                await new Promise((resolve) => {
+                    const s = document.createElement('script');
+                    s.src = src + bust;
+                    s.onload = resolve;
+                    s.onerror = () => {
+                        console.error('❌ Failed to load script:', src);
+                        resolve(); // keep loading the rest
+                    };
+                    document.body.appendChild(s);
+                });
+            }
+            console.log('✅ All engine scripts loaded; galaxyExplorer should be live');
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,332 @@
+[
+  {
+    "name": "Solar System",
+    "position": { "x": 0, "y": 0, "z": 0 },
+    "radius": 300,
+    "scale": 1.0,
+    "objects": [
+      {
+        "id": "sol",
+        "name": "Sol",
+        "type": "star",
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "radius": 10.0,
+        "mass": 333000,
+        "color": 16777000,
+        "temperature": 5772,
+        "luminosity": 20.0,
+        "spectralClass": "G2V",
+        "orbitalData": null
+      },
+      {
+        "id": "mercury",
+        "name": "Mercury",
+        "type": "planet",
+        "position": { "x": 18, "y": 0, "z": 0 },
+        "radius": 0.8,
+        "mass": 0.055,
+        "color": 9205587,
+        "temperature": 440,
+        "luminosity": 0.0,
+        "spectralClass": "Rocky",
+        "orbitalData": {
+          "semiMajorAxis": 18,
+          "eccentricity": 0.02,
+          "inclination": 0.0,
+          "longitudeOfAscendingNode": 0.0,
+          "argumentOfPeriapsis": 0,
+          "meanAnomalyAtEpoch": 0,
+          "orbitalPeriod": 400
+        }
+      },
+      {
+        "id": "venus",
+        "name": "Venus",
+        "type": "planet",
+        "position": { "x": 28, "y": 0, "z": 0 },
+        "radius": 1.5,
+        "mass": 0.815,
+        "color": 15057796,
+        "temperature": 737,
+        "luminosity": 0.0,
+        "spectralClass": "Rocky",
+        "orbitalData": {
+          "semiMajorAxis": 28,
+          "eccentricity": 0.02,
+          "inclination": 0.0,
+          "longitudeOfAscendingNode": 0.0,
+          "argumentOfPeriapsis": 0,
+          "meanAnomalyAtEpoch": 60,
+          "orbitalPeriod": 600
+        }
+      },
+      {
+        "id": "earth",
+        "name": "Earth",
+        "type": "planet",
+        "position": { "x": 40, "y": 0, "z": 0 },
+        "radius": 1.8,
+        "mass": 1.0,
+        "color": 4886754,
+        "temperature": 288,
+        "luminosity": 0.0,
+        "spectralClass": "Rocky",
+        "orbitalData": {
+          "semiMajorAxis": 40,
+          "eccentricity": 0.02,
+          "inclination": 0.0,
+          "longitudeOfAscendingNode": 0.0,
+          "argumentOfPeriapsis": 0,
+          "meanAnomalyAtEpoch": 120,
+          "orbitalPeriod": 900
+        }
+      },
+      {
+        "id": "moon",
+        "name": "Moon",
+        "type": "moon",
+        "position": { "x": 45, "y": 0, "z": 0 },
+        "radius": 0.5,
+        "mass": 0.012,
+        "color": 13421772,
+        "temperature": 250,
+        "luminosity": 0.0,
+        "spectralClass": "Rocky",
+        "orbitalData": {
+          "semiMajorAxis": 5,
+          "eccentricity": 0.05,
+          "inclination": 0.0,
+          "longitudeOfAscendingNode": 0.0,
+          "argumentOfPeriapsis": 0,
+          "meanAnomalyAtEpoch": 0,
+          "orbitalPeriod": 120
+        }
+      },
+      {
+        "id": "mars",
+        "name": "Mars",
+        "type": "planet",
+        "position": { "x": 55, "y": 0, "z": 0 },
+        "radius": 1.2,
+        "mass": 0.107,
+        "color": 13458524,
+        "temperature": 210,
+        "luminosity": 0.0,
+        "spectralClass": "Rocky",
+        "orbitalData": {
+          "semiMajorAxis": 55,
+          "eccentricity": 0.03,
+          "inclination": 0.0,
+          "longitudeOfAscendingNode": 0.0,
+          "argumentOfPeriapsis": 0,
+          "meanAnomalyAtEpoch": 180,
+          "orbitalPeriod": 1200
+        }
+      },
+      {
+        "id": "jupiter",
+        "name": "Jupiter",
+        "type": "planet",
+        "position": { "x": 80, "y": 0, "z": 0 },
+        "radius": 6.0,
+        "mass": 317.8,
+        "color": 13935988,
+        "temperature": 165,
+        "luminosity": 0.0,
+        "spectralClass": "Gas Giant",
+        "orbitalData": {
+          "semiMajorAxis": 80,
+          "eccentricity": 0.02,
+          "inclination": 0.0,
+          "longitudeOfAscendingNode": 0.0,
+          "argumentOfPeriapsis": 0,
+          "meanAnomalyAtEpoch": 240,
+          "orbitalPeriod": 2500
+        }
+      },
+      {
+        "id": "io",
+        "name": "Io",
+        "type": "moon",
+        "position": { "x": 90, "y": 0, "z": 0 },
+        "radius": 0.5,
+        "mass": 0.015,
+        "color": 16763904,
+        "temperature": 130,
+        "luminosity": 0.0,
+        "spectralClass": "Volcanic",
+        "orbitalData": null
+      },
+      {
+        "id": "europa",
+        "name": "Europa",
+        "type": "moon",
+        "position": { "x": 93, "y": 0, "z": 0 },
+        "radius": 0.45,
+        "mass": 0.008,
+        "color": 11198207,
+        "temperature": 102,
+        "luminosity": 0.0,
+        "spectralClass": "Ice",
+        "orbitalData": null
+      },
+      {
+        "id": "saturn",
+        "name": "Saturn",
+        "type": "planet",
+        "position": { "x": 110, "y": 0, "z": 0 },
+        "radius": 5.0,
+        "mass": 95.2,
+        "color": 15390374,
+        "temperature": 134,
+        "luminosity": 0.0,
+        "spectralClass": "Gas Giant",
+        "orbitalData": {
+          "semiMajorAxis": 110,
+          "eccentricity": 0.02,
+          "inclination": 0.0,
+          "longitudeOfAscendingNode": 0.0,
+          "argumentOfPeriapsis": 0,
+          "meanAnomalyAtEpoch": 300,
+          "orbitalPeriod": 4000
+        }
+      },
+      {
+        "id": "titan",
+        "name": "Titan",
+        "type": "moon",
+        "position": { "x": 122, "y": 0, "z": 0 },
+        "radius": 0.7,
+        "mass": 0.023,
+        "color": 13395558,
+        "temperature": 94,
+        "luminosity": 0.0,
+        "spectralClass": "Atmospheric",
+        "orbitalData": null
+      },
+      {
+        "id": "uranus",
+        "name": "Uranus",
+        "type": "planet",
+        "position": { "x": 145, "y": 0, "z": 0 },
+        "radius": 3.2,
+        "mass": 14.5,
+        "color": 8965597,
+        "temperature": 76,
+        "luminosity": 0.0,
+        "spectralClass": "Ice Giant",
+        "orbitalData": {
+          "semiMajorAxis": 145,
+          "eccentricity": 0.02,
+          "inclination": 0.0,
+          "longitudeOfAscendingNode": 0.0,
+          "argumentOfPeriapsis": 0,
+          "meanAnomalyAtEpoch": 0,
+          "orbitalPeriod": 6000
+        }
+      },
+      {
+        "id": "neptune",
+        "name": "Neptune",
+        "type": "planet",
+        "position": { "x": 180, "y": 0, "z": 0 },
+        "radius": 3.0,
+        "mass": 17.1,
+        "color": 4490495,
+        "temperature": 72,
+        "luminosity": 0.0,
+        "spectralClass": "Ice Giant",
+        "orbitalData": {
+          "semiMajorAxis": 180,
+          "eccentricity": 0.02,
+          "inclination": 0.0,
+          "longitudeOfAscendingNode": 0.0,
+          "argumentOfPeriapsis": 0,
+          "meanAnomalyAtEpoch": 60,
+          "orbitalPeriod": 8000
+        }
+      },
+      {
+        "id": "halley",
+        "name": "Halley's Comet",
+        "type": "comet",
+        "position": { "x": 35, "y": 5, "z": 20 },
+        "radius": 1.0,
+        "mass": 0.00001,
+        "color": 11198463,
+        "temperature": 200,
+        "luminosity": 0.0,
+        "spectralClass": "Comet",
+        "orbitalData": {
+          "semiMajorAxis": 70,
+          "eccentricity": 0.5,
+          "inclination": 0.1,
+          "longitudeOfAscendingNode": 0.0,
+          "argumentOfPeriapsis": 0,
+          "meanAnomalyAtEpoch": 0,
+          "orbitalPeriod": 2000
+        }
+      },
+      {
+        "id": "hale-bopp",
+        "name": "Hale-Bopp",
+        "type": "comet",
+        "position": { "x": -40, "y": -8, "z": 50 },
+        "radius": 1.2,
+        "mass": 0.00001,
+        "color": 11198463,
+        "temperature": 200,
+        "luminosity": 0.0,
+        "spectralClass": "Comet",
+        "orbitalData": {
+          "semiMajorAxis": 100,
+          "eccentricity": 0.6,
+          "inclination": 0.1,
+          "longitudeOfAscendingNode": 0.0,
+          "argumentOfPeriapsis": 0,
+          "meanAnomalyAtEpoch": 90,
+          "orbitalPeriod": 3000
+        }
+      },
+      {
+        "id": "orion-nebula",
+        "name": "Orion Nebula",
+        "type": "nebula",
+        "position": { "x": 300, "y": 80, "z": -250 },
+        "radius": 150,
+        "mass": 10000,
+        "color": 16737480,
+        "temperature": 10000,
+        "luminosity": 100,
+        "spectralClass": "Emission",
+        "orbitalData": null
+      },
+      {
+        "id": "carina-nebula",
+        "name": "Carina Nebula",
+        "type": "nebula",
+        "position": { "x": -280, "y": -50, "z": 320 },
+        "radius": 120,
+        "mass": 8000,
+        "color": 16729190,
+        "temperature": 10000,
+        "luminosity": 80,
+        "spectralClass": "Emission",
+        "orbitalData": null
+      },
+      {
+        "id": "eagle-nebula",
+        "name": "Eagle Nebula",
+        "type": "nebula",
+        "position": { "x": 180, "y": -80, "z": -180 },
+        "radius": 90,
+        "mass": 6000,
+        "color": 16755302,
+        "temperature": 9500,
+        "luminosity": 60,
+        "spectralClass": "Emission",
+        "orbitalData": null
+      }
+    ]
+  }
+]
