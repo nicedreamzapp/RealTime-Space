@@ -6,10 +6,11 @@
 
 Fly through the entire solar system on your phone — every planet, moon, ring system, and the Sun rendered with real NASA imagery, true-3D atmospheric scattering, and cinematic post-processing.
 
-[![Download on the App Store](https://img.shields.io/badge/Download_on_the-App_Store-0D96F6?style=flat-square&logo=apple&logoColor=white)](https://apps.apple.com/us/app/realtime-space/id6788646103)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)]()
+### [![Download on the App Store](https://img.shields.io/badge/Download_on_the-App_Store-0D96F6?style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/us/app/realtime-space/id6788646103)
 
-**[Download RealTime Space on the App Store — free](https://apps.apple.com/us/app/realtime-space/id6788646103)**
+**[Download RealTime Space on the App Store — free](https://apps.apple.com/us/app/realtime-space/id6788646103)** — free for 60 days, then one $0.99 unlock keeps the universe forever.
+
+[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)]()
 
 </div>
 
