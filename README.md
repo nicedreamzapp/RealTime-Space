@@ -6,7 +6,7 @@
 
 Fly through the entire solar system on your phone — every planet, moon, ring system, and the Sun rendered with real NASA imagery, true-3D atmospheric scattering, and cinematic post-processing.
 
-### [![Download on the App Store](https://img.shields.io/badge/Download_on_the-App_Store-0D96F6?style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/us/app/realtime-space/id6788646103)
+### [![Download on the App Store](https://img.shields.io/badge/Download_on_the-App_Store-0D96F6?style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/us/app/realtime-space/id6788646103) [![Get it on Google Play](https://img.shields.io/badge/Get_it_on-Google_Play-01875f?style=for-the-badge&logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.nicedreamz.realtimespace)
 
 **[Download RealTime Space on the App Store — free](https://apps.apple.com/us/app/realtime-space/id6788646103)** — free for 60 days, then one $0.99 unlock keeps the universe forever.
 
@@ -20,7 +20,7 @@ This repo holds both platforms of RealTime Space, cleanly separated:
 
 SwiftUI + `WKWebView` wrapping a Three.js/WebGL galaxy renderer. Full source, Xcode project, and textures live in [`ios/`](ios/).
 
-**Status:** ✅ **Live on the App Store** — [download it here](https://apps.apple.com/us/app/realtime-space/id6788646103) (free).
+**Status:** ✅ **Live on the App Store and Google Play** — [iPhone](https://apps.apple.com/us/app/realtime-space/id6788646103) · [Android](https://play.google.com/store/apps/details?id=com.nicedreamz.realtimespace) (free).
 
 ## 🤖 Android
 
