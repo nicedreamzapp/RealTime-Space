@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
 
     private val state = SpaceState()
     private lateinit var bridge: WebBridge
+    private lateinit var store: StoreManager
 
     @Suppress("DEPRECATION")
     private fun vibrator() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -45,6 +46,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         bridge = WebBridge(vibrator(), state, onReady = { onEngineReady() })
+        store = StoreManager(this)
 
         val assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
@@ -101,8 +103,15 @@ class MainActivity : ComponentActivity() {
             )
             // Native flight chrome overlays the WebView (Tier 3)
             SpaceChrome(state, bridge)
+            // Hard gate after the 60-day free voyage (mirrors iOS StoreManager)
+            PaywallOverlay(store)
           }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (this::store.isInitialized) store.refreshTrial()
     }
 
     /** READY handshake from the web engine: sync persisted settings + resend current nav state. */

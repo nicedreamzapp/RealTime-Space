@@ -5,3 +5,10 @@ local.properties
 .idea/
 *.iml
 .DS_Store
+
+# signing — never commit. Play will not re-roll an upload key casually.
+keystore.properties
+*.jks
+*.p12
+*.keystore
+*.p8
