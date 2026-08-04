@@ -26,7 +26,7 @@ SwiftUI + `WKWebView` wrapping a Three.js/WebGL galaxy renderer. Full source, Xc
 
 The Android port — a WebView shell around the same renderer, with all web assets bundled. Source in [`android/`](android/).
 
-**Status:** Submitted to Google Play — review in progress (July 2026). The code is available now in [`android/`](android/).
+**Status:** ✅ [Live on Google Play](https://play.google.com/store/apps/details?id=com.nicedreamz.realtimespace). Source in [`android/`](android/).
 
 ## Links
 
