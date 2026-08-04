@@ -8,7 +8,7 @@ Fly through the entire solar system on your phone — every planet, moon, ring s
 
 ### [![Download on the App Store](https://img.shields.io/badge/Download_on_the-App_Store-0D96F6?style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/us/app/realtime-space/id6788646103) [![Get it on Google Play](https://img.shields.io/badge/Get_it_on-Google_Play-01875f?style=for-the-badge&logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.nicedreamz.realtimespace)
 
-**[Download RealTime Space on the App Store — free](https://apps.apple.com/us/app/realtime-space/id6788646103)** — free for 60 days, then one $0.99 unlock keeps the universe forever.
+**Download RealTime Space on [iPhone](https://apps.apple.com/us/app/realtime-space/id6788646103) or [Android](https://play.google.com/store/apps/details?id=com.nicedreamz.realtimespace)** — free for 60 days, then one $0.99 unlock keeps the universe forever.
 
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)]()
 
