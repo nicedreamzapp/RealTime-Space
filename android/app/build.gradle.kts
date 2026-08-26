@@ -33,7 +33,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Play requires >=25% DEX coverage (optimize/shrink/obfuscate) from Feb 2027.
+            // false is 0%. proguard-rules.pro keeps the JS bridge and billing.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
