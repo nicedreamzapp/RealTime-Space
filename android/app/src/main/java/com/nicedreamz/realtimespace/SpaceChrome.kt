@@ -1,5 +1,6 @@
 package com.nicedreamz.realtimespace
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -11,6 +12,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Slider
@@ -58,14 +62,40 @@ import kotlin.math.roundToInt
 private val Mono = FontFamily.Monospace
 
 @Composable
-fun SpaceChrome(state: SpaceState, bridge: WebBridge) {
+fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnlock: () -> Unit) {
     var showPanel by remember { mutableStateOf(false) }
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    // The radar is the widest thing in the top-right rail; the panel sits to its LEFT so the
+    // ⋯/✕ button is never covered (the 1.1 panel slid in OVER the rail and the ✕ was
+    // unreachable — the only way out was force-stopping the app).
+    val radarDp = if (landscape) 92 else 120
+
+    // Android Back / back-gesture closes the panel instead of quitting the app.
+    BackHandler(enabled = showPanel) { showPanel = false }
 
     AnimatedVisibility(visible = !state.chromeHidden, enter = fadeIn(), exit = fadeOut()) {
         // safeDrawingPadding keeps every control clear of the status bar, nav bar AND display
         // cutout on all four edges — critical in landscape where the nav bar / notch is on a side.
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+
+            // ---------- TAP-OUTSIDE SCRIM (under everything else) ----------
+            if (showPanel) {
+                Box(Modifier.fillMaxSize().pointerInput(Unit) {
+                    detectTapGestures { showPanel = false }
+                })
+            }
+
+            // ---------- NAVIGATE / SETTINGS PANEL (drawn BEFORE the rail so the rail stays on top) ----------
+            AnimatedVisibility(
+                visible = showPanel,
+                modifier = Modifier.align(Alignment.TopEnd).padding(
+                    top = 8.dp,
+                    end = (12 + radarDp + 8).dp,
+                    bottom = if (landscape) 100.dp else 150.dp
+                ),
+                enter = slideInHorizontally { it } + fadeIn(),
+                exit = slideOutHorizontally { it } + fadeOut()
+            ) { NavigatePanel(state, bridge, store, onUnlock = { showPanel = false; onUnlock() }) }
 
             // ---------- TOP-RIGHT RAIL: radar, menu, view-mode ----------
             Column(
@@ -73,18 +103,10 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge) {
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                RadarView(state, sizeDp = if (landscape) 92 else 120)
+                RadarView(state, sizeDp = radarDp)
                 MenuButton(showPanel) { showPanel = !showPanel }
                 ViewModeButton(bridge)
             }
-
-            // ---------- NAVIGATE / SETTINGS PANEL ----------
-            AnimatedVisibility(
-                visible = showPanel,
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = if (landscape) 8.dp else 70.dp, end = 12.dp, bottom = if (landscape) 8.dp else 140.dp),
-                enter = slideInHorizontally { it } + fadeIn(),
-                exit = slideOutHorizontally { it } + fadeOut()
-            ) { NavigatePanel(state, bridge) }
 
             // ---------- BOTTOM CONSOLE ----------
             Row(
@@ -285,10 +307,12 @@ private fun SpeedPill(state: SpaceState, bridge: WebBridge) {
 }
 
 @Composable
-private fun NavigatePanel(state: SpaceState, bridge: WebBridge) {
+private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnlock: () -> Unit) {
     Column(
         Modifier.width(210.dp).clip(RoundedCornerShape(14.dp)).background(PanelFill)
-            .border(1.dp, CyanBorder, RoundedCornerShape(14.dp)).padding(16.dp),
+            .border(1.dp, CyanBorder, RoundedCornerShape(14.dp))
+            .verticalScroll(rememberScrollState())   // never taller than the space above the console
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
         SectionHeader("DISPLAY")
@@ -308,6 +332,19 @@ private fun NavigatePanel(state: SpaceState, bridge: WebBridge) {
             Text(
                 "→  $name", color = Cyan.copy(alpha = 0.9f), fontSize = 11.sp, fontFamily = Mono, fontWeight = FontWeight.Medium,
                 modifier = Modifier.fillMaxWidth().clickable { bridge.flyToByName(name); bridge.haptic("light") }.padding(vertical = 4.dp)
+            )
+        }
+        // Pay-now option during the free voyage (mirrors the iOS ⋯ menu). Hidden once owned.
+        if (!store.isUnlocked) {
+            Spacer(Modifier.height(2.dp))
+            SectionHeader("OWN IT")
+            Text(
+                "✨  Unlock Forever · ${store.price}", color = Color(0xFFFFD86B), fontSize = 11.sp, fontFamily = Mono, fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth().clickable { bridge.haptic("light"); onUnlock() }.padding(vertical = 4.dp)
+            )
+            Text(
+                "${store.daysRemaining} free days left · one time, no subscription",
+                color = Cyan.copy(alpha = 0.6f), fontSize = 9.sp, fontFamily = Mono
             )
         }
     }
