@@ -2,6 +2,7 @@ package com.nicedreamz.realtimespace
 
 import android.app.Activity
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -189,10 +190,15 @@ class StoreManager(private val activity: Activity) {
     }
 }
 
-/** Hard gate shown when the 60-day voyage is over and the unlock isn't owned. */
+/**
+ * Unlock screen. Hard gate when the 60-day voyage is over and the unlock isn't owned
+ * (onClose == null); dismissable when opened early from the ⋯ panel's "Unlock Forever".
+ */
 @Composable
-fun PaywallOverlay(store: StoreManager) {
-    if (!store.locked) return
+fun PaywallOverlay(store: StoreManager, visible: Boolean = store.locked, onClose: (() -> Unit)? = null) {
+    if (!visible && !store.locked) return
+    val dismissable = !store.locked && onClose != null
+    if (dismissable) BackHandler { onClose?.invoke() }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -203,7 +209,10 @@ fun PaywallOverlay(store: StoreManager) {
     ) {
         Text("RealTime Space", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text(
-            "Your free 60-day voyage has ended.\nUnlock the whole galaxy forever — one time, no subscription.",
+            if (store.locked)
+                "Your free 60-day voyage has ended.\nUnlock the whole galaxy forever — one time, no subscription."
+            else
+                "${store.daysRemaining} days left on your free voyage.\nSkip the wait and own the whole galaxy forever — one time, no subscription.",
             color = Color(0xFFB8C2D9), fontSize = 16.sp, textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 14.dp, bottom = 26.dp)
         )
@@ -218,6 +227,11 @@ fun PaywallOverlay(store: StoreManager) {
         }
         TextButton(onClick = { store.restore() }) {
             Text("Restore purchase", color = Color(0xFF8FA3C8))
+        }
+        if (dismissable) {
+            TextButton(onClick = { onClose?.invoke() }) {
+                Text("Not now — keep exploring free", color = Color(0xFF8FA3C8))
+            }
         }
         store.errorMessage?.let {
             Text(it, color = Color(0xFFFF7A7A), fontSize = 13.sp, textAlign = TextAlign.Center,

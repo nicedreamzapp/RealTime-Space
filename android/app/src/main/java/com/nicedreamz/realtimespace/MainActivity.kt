@@ -20,6 +20,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
@@ -53,6 +58,9 @@ class MainActivity : ComponentActivity() {
             .build()
 
         setContent {
+          // Unlock screen opened early from the ⋯ panel (dismissable); auto-closes on purchase.
+          var showUnlock by remember { mutableStateOf(false) }
+          LaunchedEffect(store.isUnlocked) { if (store.isUnlocked) showUnlock = false }
           androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
@@ -102,9 +110,10 @@ class MainActivity : ComponentActivity() {
                 }
             )
             // Native flight chrome overlays the WebView (Tier 3)
-            SpaceChrome(state, bridge)
-            // Hard gate after the 60-day free voyage (mirrors iOS StoreManager)
-            PaywallOverlay(store)
+            SpaceChrome(state, bridge, store, onUnlock = { showUnlock = true })
+            // Hard gate after the 60-day free voyage (mirrors iOS StoreManager), or the
+            // same screen opened early + dismissable from "Unlock Forever" in the panel.
+            PaywallOverlay(store, visible = showUnlock || store.locked, onClose = { showUnlock = false })
           }
         }
     }
