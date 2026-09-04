@@ -5,7 +5,7 @@ import Combine
 
 // MARK: - StoreManager
 // Free voyage model: everything is free for 60 days from FIRST launch, then a one-time
-// $0.99 non-consumable ("unlock forever") gates the whole app. NOT a subscription.
+// $1.99 non-consumable ("unlock forever") gates the whole app. NOT a subscription.
 // The first-launch date lives in the Keychain so deleting/reinstalling the app does
 // not restart the trial (UserDefaults would).
 @MainActor
@@ -205,7 +205,7 @@ struct UnlockView: View {
                         } label: {
                             HStack(spacing: 8) {
                                 if store.purchasing { ProgressView().tint(.black) }
-                                Text("Unlock Forever · \(store.product?.displayPrice ?? "$0.99")")
+                                Text("Unlock Forever · \(store.product?.displayPrice ?? "$1.99")")
                                     .font(.system(size: 18, weight: .bold, design: .rounded))
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.7)
