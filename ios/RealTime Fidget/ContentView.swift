@@ -211,7 +211,7 @@ struct ContentView: View {
                                 // Purchase point reachable from day one (App Review needs to
                                 // find the IAP; eager buyers shouldn't have to wait 60 days).
                                 if !store.isUnlocked {
-                                    navButton("✨  Unlock Forever · $0.99") {
+                                    navButton("✨  Unlock Forever · $1.99") {
                                         showNavigateMenu = false
                                         withAnimation(.easeInOut(duration: 0.3)) { showUnlock = true }
                                     }

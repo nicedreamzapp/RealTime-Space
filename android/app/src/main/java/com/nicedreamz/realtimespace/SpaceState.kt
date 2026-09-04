@@ -21,7 +21,7 @@ data class RadarBlip(
 class SpaceState {
     // ---- TIER 5 / IAP (STUB) ----
     // iOS gates some features behind StoreKit IAP "com.nicedreamz.realtimespace.unlock"
-    // ($0.99 Unlock Forever) and hides chrome when store.locked. On Android this is STUBBED as
+    // ($1.99 Unlock Forever) and hides chrome when store.locked. On Android this is STUBBED as
     // permanently unlocked so nothing is blocked.
     // TODO(billing): integrate Google Play Billing (com.android.billingclient) for the same
     // product id, restore purchases, and gate the paywall/locked overlay on the real entitlement.

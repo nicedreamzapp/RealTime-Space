@@ -39,7 +39,7 @@ import com.android.billingclient.api.QueryPurchasesParams
 
 /**
  * Free-voyage model, mirroring iOS StoreManager: everything free for 60 days
- * from first launch, then the one-time $0.99 non-consumable
+ * from first launch, then the one-time $1.99 non-consumable
  * "com.nicedreamz.realtimespace.unlock" hard-gates the app. NOT a subscription.
  * First-launch date persists in SharedPreferences (iOS uses the Keychain).
  */
@@ -61,7 +61,7 @@ class StoreManager(private val activity: Activity) {
         private set
     var daysRemaining by mutableStateOf(TRIAL_DAYS)
         private set
-    var price by mutableStateOf("$0.99")
+    var price by mutableStateOf("$1.99")
         private set
     var errorMessage by mutableStateOf<String?>(null)
         private set
