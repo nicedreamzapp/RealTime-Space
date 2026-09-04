@@ -140,7 +140,7 @@ class StoreManager(private val activity: Activity) {
             ).build()
         ) { result, list ->
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                details = list.firstOrNull()
+                details = list.productDetailsList.firstOrNull()
                 details?.oneTimePurchaseOfferDetails?.formattedPrice?.let { price = it }
             }
         }
