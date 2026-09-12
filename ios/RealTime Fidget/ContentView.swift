@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit   // Product.displayPrice on the Unlock Forever menu button
 
 struct ContentView: View {
     @StateObject private var navigationController = SpaceNavigationController()
@@ -214,7 +215,7 @@ struct ContentView: View {
                                 // Purchase point reachable from day one (App Review needs to
                                 // find the IAP; eager buyers shouldn't have to wait 60 days).
                                 if !store.isUnlocked {
-                                    navButton("✨  Unlock Forever · $1.99") {
+                                    unlockButton("Unlock Forever · \(store.product?.displayPrice ?? "$1.99")") {
                                         showNavigateMenu = false
                                         withAnimation(.easeInOut(duration: 0.3)) { showUnlock = true }
                                     }
@@ -798,6 +799,39 @@ struct ContentView: View {
 
     // MARK: - Transparent UI Helpers
     @ViewBuilder
+    /// The one button in the menu that asks for money. It used to borrow navButton's
+    /// style — 11pt monospaced cyan text at 90% on a cyan 14% wash — which is cyan on
+    /// cyan and unreadable at a glance (Matt, 2026-09-11). It now wears the same black
+    /// -on-cyan capsule the paywall itself uses, so the purchase CTA reads instantly and
+    /// does not look like "Credits". Price comes from StoreKit, never a hard-coded string.
+    private func unlockButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        } label: {
+            HStack(spacing: 6) {
+                Text("\u{2728}")
+                    .font(.system(size: 13))
+                Text(title)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .foregroundStyle(.black)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 7).fill(
+                    LinearGradient(colors: [Color(red: 0.55, green: 0.9, blue: 1.0), .cyan],
+                                   startPoint: .top, endPoint: .bottom)
+                )
+            )
+            .shadow(color: .cyan.opacity(0.35), radius: 8, y: 2)
+        }
+        .accessibilityLabel("Unlock Forever, \(title.replacingOccurrences(of: "Unlock Forever \u{00B7} ", with: ""))")
+    }
+
     private func navButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
