@@ -283,6 +283,7 @@ class VolumetricNebula {
 
             const tubeGeo = new THREE.TubeGeometry(curve, 32, this.scale * 0.05, 8, false);
             const tubeMat = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
                 color: 0x020105,
                 transparent: true,
                 opacity: 0.6,
@@ -540,6 +541,30 @@ class VolumetricNebula {
 
         // Slow rotation
         this.mesh.rotation.y += deltaTime * 0.002;
+
+        // Distance fade — nebulae are destinations, not sky-wide floodlights.
+        // Full glory up close, soft distant smudge from across the system (the
+        // Carina pink was outshining Saturn from thousands of units away).
+        if (cameraPosition) {
+            const R = this.radius || 300;
+            const d = this.mesh.position.distanceTo(cameraPosition);
+            let fade = 1.25 - (d - 3 * R) / (9 * R);
+            fade = Math.max(0.15, Math.min(1.0, fade));
+            fade = Math.round(fade * 20) / 20;          // quantize: skip no-op traversals
+            if (this._fade !== fade) {
+                this._fade = fade;
+                this.mesh.traverse(c => {
+                    const m = c.material;
+                    if (!m || !m.transparent) return;
+                    if (m.userData._baseOpacity === undefined && typeof m.opacity === 'number') {
+                        m.userData._baseOpacity = m.opacity;
+                    }
+                    if (m.userData._baseOpacity !== undefined) {
+                        m.opacity = m.userData._baseOpacity * fade;
+                    }
+                });
+            }
+        }
     }
 
     dispose() {

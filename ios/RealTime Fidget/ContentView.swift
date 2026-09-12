@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit   // Product.displayPrice on the Unlock Forever menu button
 
 struct ContentView: View {
     @StateObject private var navigationController = SpaceNavigationController()
@@ -50,7 +51,8 @@ struct ContentView: View {
                 FlyItem("🌑", "Mercury", "Mercury"), FlyItem("🟡", "Venus", "Venus"),
                 FlyItem("🌍", "Earth", "Earth"), FlyItem("🔴", "Mars", "Mars"),
                 FlyItem("🟠", "Jupiter", "Jupiter"), FlyItem("🪐", "Saturn", "Saturn"),
-                FlyItem("🔵", "Uranus", "Uranus"), FlyItem("🔵", "Neptune", "Neptune") ]),
+                FlyItem("🔵", "Uranus", "Uranus"), FlyItem("🔵", "Neptune", "Neptune"),
+                FlyItem("🤍", "Pluto · dwarf planet", "Pluto") ]),
             FlySection(title: "Moons", items: [
                 FlyItem("🌕", "The Moon", "Moon"), FlyItem("🌋", "Io", "Io"),
                 FlyItem("🧊", "Europa", "Europa"), FlyItem("🌑", "Ganymede", "Ganymede"),
@@ -121,6 +123,7 @@ struct ContentView: View {
                             VStack(spacing: 8) {
                                 menuButton
                                 viewModeButton
+                                tourButton
                             }
                         }
                         .padding(.horizontal, 16)
@@ -137,6 +140,7 @@ struct ContentView: View {
                                 .frame(width: 120, height: 120)
                                 menuButton
                                 viewModeButton
+                                tourButton
                             }
                         }
                         .padding(.horizontal, 16)
@@ -211,7 +215,7 @@ struct ContentView: View {
                                 // Purchase point reachable from day one (App Review needs to
                                 // find the IAP; eager buyers shouldn't have to wait 60 days).
                                 if !store.isUnlocked {
-                                    navButton("✨  Unlock Forever · $1.99") {
+                                    unlockButton("Unlock Forever · \(store.product?.displayPrice ?? "$1.99")") {
                                         showNavigateMenu = false
                                         withAnimation(.easeInOut(duration: 0.3)) { showUnlock = true }
                                     }
@@ -371,15 +375,28 @@ struct ContentView: View {
                     let keepUI = args.contains("-keepUI")
                     let view = args.firstIndex(of: "-shotView").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "visor"
                     let target = args.firstIndex(of: "-shotTarget").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
-                    // Fire after the 8K textures + scene have warmed up (galaxyExplorer isn't
-                    // ready at 4s). Keep labels/orbits + HUD when -keepUI (real-app screenshots).
+                    // Fire once the engine is actually ready — a fixed 8s timer raced the
+                    // script loader on slow boots (Simulator especially) and the flyTo
+                    // silently no-opped, leaving the camera wherever it spawned. The bridge
+                    // is fire-and-forget (no completion), so the retry loop lives in the
+                    // page itself: poll for flyToByName, then aim the shot. Keep
+                    // labels/orbits + HUD when -keepUI (real-app screenshots).
+                    let targetJS = target.map { "setTimeout(function(){ ge.flyToByName('\($0)'); }, 3000);" } ?? ""
+                    let uiJS = keepUI ? "" : "ge.setPlanetLabelsVisible && ge.setPlanetLabelsVisible(false); ge.setOrbitLinesVisible && ge.setOrbitLinesVisible(false);"
+                    let shotJS = """
+                    (function(){ var n = 0; var iv = setInterval(function(){
+                        n++;
+                        var ge = window.galaxyExplorer;
+                        if (ge && typeof ge.flyToByName === 'function') {
+                            clearInterval(iv);
+                            ge.setViewMode && ge.setViewMode('\(view)');
+                            \(uiJS)
+                            \(targetJS)
+                        } else if (n > 60) { clearInterval(iv); }
+                    }, 1000); })()
+                    """
                     DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
-                        navigationController.evaluateJavaScript("window.galaxyExplorer?.setViewMode?.('\(view)')")
-                        if !keepUI {
-                            navigationController.evaluateJavaScript("window.galaxyExplorer?.setPlanetLabelsVisible?.(false)")
-                            navigationController.evaluateJavaScript("window.galaxyExplorer?.setOrbitLinesVisible?.(false)")
-                        }
-                        if let target { navigationController.evaluateJavaScript("window.galaxyExplorer?.flyToByName?.('\(target)')") }
+                        navigationController.evaluateJavaScript(shotJS)
                     }
                     // Clean-art mode only: lift the WebGL canvas above every DOM overlay so the
                     // frame is a pure 3D scene. Skipped for -keepUI (we want the UI visible).
@@ -502,6 +519,35 @@ struct ContentView: View {
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.cyan.opacity(0.5), lineWidth: 1))
             .cornerRadius(10)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Camera view")
+        .accessibilityValue("Switch to \(next)")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    // GRAND TOUR — one tap starts the scenic autopilot (toggle: tap again to stop).
+    // Styled to sit in the same rail as the view-mode button.
+    private var tourButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            navigationController.evaluateJavaScript("window.galaxyExplorer?.toggleScenicTour?.()")
+        } label: {
+            VStack(spacing: 1) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15, weight: .medium))
+                Text("TOUR")
+                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+            }
+            .foregroundColor(.cyan.opacity(0.85))
+            .frame(width: 50, height: 40)
+            .background(Color.black.opacity(0.55))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.cyan.opacity(0.5), lineWidth: 1))
+            .cornerRadius(10)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Grand tour")
+        .accessibilityHint("Starts or stops the scenic autopilot")
+        .accessibilityAddTraits(.isButton)
     }
 
     private var menuButton: some View {
@@ -518,6 +564,7 @@ struct ContentView: View {
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.cyan.opacity(0.5), lineWidth: 1))
                 .cornerRadius(10)
         }
+        .accessibilityLabel(showNavigateMenu ? "Close the menu" : "Menu")
     }
 
     // MARK: - Bottom control pieces
@@ -531,6 +578,8 @@ struct ContentView: View {
                 .foregroundColor(.cyan.opacity(0.7))
             Slider(value: $maxSpeed, in: 15...250, step: 5)
                 .tint(.cyan)
+                .accessibilityLabel("Maximum speed")
+                .accessibilityValue("\(Int(maxSpeed))")
                 .onChange(of: maxSpeed) { newValue in
                     UserDefaults.standard.set(newValue, forKey: "maxSpeed")
                     navigationController.evaluateJavaScript("window.galaxyExplorer?.setMaxSpeed?.(\(Int(newValue)))")
@@ -567,6 +616,11 @@ struct ContentView: View {
         .cornerRadius(9)
         .shadow(color: isWarping ? .purple.opacity(0.7) : .clear, radius: 6)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Warp drive, 100 times speed")
+        .accessibilityHint("Touch and hold to engage")
+        .accessibilityValue(isWarping ? "Engaged" : "Off")
+        .accessibilityAddTraits(.isButton)
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
@@ -606,6 +660,9 @@ struct ContentView: View {
         }
         .frame(width: diameter, height: diameter)
         .contentShape(Circle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Flight joystick")
+        .accessibilityHint("Drag to steer the ship")
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .local)
                 .onChanged { value in
@@ -666,6 +723,7 @@ struct ContentView: View {
                         .cornerRadius(12)
                 }
                 .disabled(isPaused)
+                .accessibilityLabel("Fly to the nearest planet")
 
                 Button {
                     guard !isPaused else { return }
@@ -683,6 +741,7 @@ struct ContentView: View {
                         .cornerRadius(8)
                 }
                 .disabled(isPaused)
+                .accessibilityLabel("Stop the ship")
             }
 
             VStack(spacing: 8) {
@@ -714,6 +773,11 @@ struct ContentView: View {
             .overlay(RoundedRectangle(cornerRadius: 18).stroke((isThrustButtonPressed ? Color.orange : Color.cyan).opacity(0.6), lineWidth: 1))
             .cornerRadius(18)
             .contentShape(Rectangle())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Thrust")
+            .accessibilityHint("Touch and hold to accelerate")
+            .accessibilityValue(isThrustButtonPressed ? "Thrusting" : "Idle")
+            .accessibilityAddTraits(.isButton)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { _ in
@@ -735,6 +799,39 @@ struct ContentView: View {
 
     // MARK: - Transparent UI Helpers
     @ViewBuilder
+    /// The one button in the menu that asks for money. It used to borrow navButton's
+    /// style — 11pt monospaced cyan text at 90% on a cyan 14% wash — which is cyan on
+    /// cyan and unreadable at a glance (Matt, 2026-09-11). It now wears the same black
+    /// -on-cyan capsule the paywall itself uses, so the purchase CTA reads instantly and
+    /// does not look like "Credits". Price comes from StoreKit, never a hard-coded string.
+    private func unlockButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        } label: {
+            HStack(spacing: 6) {
+                Text("\u{2728}")
+                    .font(.system(size: 13))
+                Text(title)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .foregroundStyle(.black)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 7).fill(
+                    LinearGradient(colors: [Color(red: 0.55, green: 0.9, blue: 1.0), .cyan],
+                                   startPoint: .top, endPoint: .bottom)
+                )
+            )
+            .shadow(color: .cyan.opacity(0.35), radius: 8, y: 2)
+        }
+        .accessibilityLabel("Unlock Forever, \(title.replacingOccurrences(of: "Unlock Forever \u{00B7} ", with: ""))")
+    }
+
     private func navButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()

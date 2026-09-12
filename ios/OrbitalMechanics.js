@@ -116,8 +116,14 @@ class OrbitalMechanics {
         const rotationSpeed = (2 * Math.PI) / obj.rotationPeriod;
         obj.mesh.rotation.y += rotationSpeed * deltaTime * rotationScale;
 
-        // Apply axial tilt if specified
+        // Apply axial tilt if specified.
+        // Rotation order MUST be ZYX: with the default XYZ, the constant Z tilt
+        // gets swept around by the ever-growing Y spin, so the tilt axis PRECESSES
+        // — Saturn's rings visibly tumbled around the planet instead of holding a
+        // fixed plane. ZYX applies spin about the body axis first, then the tilt,
+        // which keeps the ring plane rock-steady.
         if (obj.axialTilt && !obj._tiltApplied) {
+            obj.mesh.rotation.order = 'ZYX';
             obj.mesh.rotation.z = obj.axialTilt;
             obj._tiltApplied = true;
         }
@@ -206,6 +212,7 @@ class OrbitalMechanics {
                 geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
                 const material = new THREE.LineBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
                     color: obj.color || 0x4488ff,
                     transparent: true,
                     opacity: 0.3

@@ -34,6 +34,7 @@ let volumetricNebulae = [];
 
 let planetHighlights = [];
 let activeFly = null;
+let scenicTour = null;
 
 let showPlanetLabels = true;
 
@@ -56,13 +57,16 @@ function setCinematicMode(on) {
         // Ignore
     }
 
-    // Adjust bloom pass - cinematic mode gets extra bloom punch
+    // Adjust bloom pass - cinematic mode gets extra bloom punch.
+    // Desktop browser runs HDR half-float bloom, which reads slightly flatter at the
+    // same strength — give it a small lift so both platforms match visually.
     if (rendererCore?.composer && rendererCore.bloomPass) {
+        const deskBoost = rendererCore.isNativeApp === false ? 0.1 : 0;
         if (on) {
-            rendererCore.bloomPass.strength = 0.5;    // Cinematic glow (still tamer than old default)
+            rendererCore.bloomPass.strength = 0.5 + deskBoost;    // Cinematic glow (still tamer than old default)
             rendererCore.bloomPass.threshold = 0.8;
         } else {
-            rendererCore.bloomPass.strength = 0.32;
+            rendererCore.bloomPass.strength = 0.32 + deskBoost;
             rendererCore.bloomPass.threshold = 0.9;
         }
     }
@@ -120,7 +124,14 @@ function initGalaxy() {
                 lutTexture = loader.load(
                     'FilmLUT.png',
                     function(texture) {
-                        texture.encoding = THREE.SRGBColorSpace;
+                        // LUT is DATA, not an image: no mipmaps (they smear the 32-row
+                        // table into black), no sRGB decode (raw lookup values), plain
+                        // linear filtering for smooth interpolation between entries.
+                        texture.generateMipmaps = false;
+                        texture.minFilter = THREE.LinearFilter;
+                        texture.magFilter = THREE.LinearFilter;
+                        if (THREE.NoColorSpace !== undefined) texture.colorSpace = THREE.NoColorSpace;
+                        texture.needsUpdate = true;
                         lutTexture = texture;
                         console.log("🎨 LUT texture loaded");
                     },
@@ -142,9 +153,18 @@ function initGalaxy() {
                 // iOS WKWebView renders the composer BLACK when it uses half-float render
                 // targets (the old bug). Force a plain 8-bit UnsignedByte target, which every
                 // iOS WebGL context supports, so the pipeline actually produces pixels.
+                // Desktop browsers get true half-float HDR targets — smoother bloom
+                // falloff, no gradient banding. The black-frame guard still covers both.
+                //
+                // 2026-09-12: I briefly switched iOS to half-float here, reading the soft
+                // patches around the Sun in Matt's screenshots as an 8-bit banding artifact.
+                // They are not — he confirmed the phone looks right. The phone keeps 8-bit.
+                // The wedge Matt is chasing is on the DESKTOP build, not here.
+                const _hdrOK = !rendererCore.isNativeApp && THREE.HalfFloatType !== undefined;
+                const _isDesktop = !rendererCore.isNativeApp;
                 const _dbs = rendererCore.renderer.getDrawingBufferSize(new THREE.Vector2());
                 const _iosRT = new THREE.WebGLRenderTarget(_dbs.x, _dbs.y, {
-                    type: THREE.UnsignedByteType,
+                    type: _hdrOK ? THREE.HalfFloatType : THREE.UnsignedByteType,
                     format: THREE.RGBAFormat,
                     minFilter: THREE.LinearFilter,
                     magFilter: THREE.LinearFilter
@@ -157,9 +177,10 @@ function initGalaxy() {
                 if (typeof UnrealBloomPass !== 'undefined') {
                     const bloomPass = new UnrealBloomPass(
                         new THREE.Vector2(window.innerWidth, window.innerHeight),
-                        0.32,  // Strength — cut from 0.55: bloom was white-washing the sun
-                               // disk and planet highlights into glare
-                        0.5,   // Radius
+                        _isDesktop ? 0.42 : 0.32,  // Strength — cut from 0.55: bloom was white-washing
+                               // the sun disk and planet highlights into glare.
+                               // Desktop HDR pipeline reads flatter → slight lift.
+                        _isDesktop ? 0.6 : 0.5,   // Radius — wider soft halo on desktop
                         0.9    // Threshold — only truly blown pixels bloom now
                     );
                     composer.addPass(bloomPass);
@@ -169,8 +190,9 @@ function initGalaxy() {
                     // are the most likely thing to render black on iOS. Force them to 8-bit
                     // and re-allocate at the current size. Wrapped defensively — if the
                     // internals differ across THREE versions, the black-frame guard still
-                    // catches any failure.
+                    // catches any failure. Desktop keeps the half-float targets (HDR bloom).
                     try {
+                        if (_hdrOK) throw 'hdr-targets'; // skip coercion — keep half-float
                         const byte = THREE.UnsignedByteType;
                         const rts = [].concat(
                             bloomPass.renderTargetsHorizontal || [],
@@ -266,36 +288,29 @@ function initGalaxy() {
                             const float sliceSize = 1.0 / size;
                             const float slicePixelSize = sliceSize / size;
                             
-                            vec3 sampleAs3DLUT(sampler2D lut, vec3 color) {
-                                // Clamp input color
-                                color = clamp(color, 0.0, 1.0);
-
-                                // Get the index of the slice
-                                float blueIndex = color.b * (size - 1.0);
-                                float sliceLow = floor(blueIndex);
-                                float sliceHigh = min(size - 1.0, sliceLow + 1.0);
-                                float sliceFrac = fract(blueIndex);
-
-                                // Compute UV for low slice
-                                float xOffsetLow = sliceLow * sliceSize;
-                                vec2 uvLow = vec2(xOffsetLow + color.r * sliceSize + slicePixelSize * 0.5,
-                                                  color.g * size * slicePixelSize + slicePixelSize * 0.5);
-                                // Compute UV for high slice
-                                float xOffsetHigh = sliceHigh * sliceSize;
-                                vec2 uvHigh = vec2(xOffsetHigh + color.r * sliceSize + slicePixelSize * 0.5,
-                                                  color.g * size * slicePixelSize + slicePixelSize * 0.5);
-
-                                // Sample color from both slices
-                                vec3 sliceColorLow = texture2D(lut, uvLow).rgb;
-                                vec3 sliceColorHigh = texture2D(lut, uvHigh).rgb;
-
-                                // Interpolate between slices
-                                return mix(sliceColorLow, sliceColorHigh, sliceFrac);
+                            vec3 filmGrade(vec3 c) {
+                                // Procedural film look — replaces the 3D-LUT texture
+                                // lookup, whose strip sampling proved unreliable across
+                                // GPUs. Same recipe: gentle saturation, soft S-curve,
+                                // warm highlights / teal shadows. All terms clamped.
+                                c = clamp(c, 0.0, 1.0);
+                                float lum = dot(c, vec3(0.299, 0.587, 0.114));
+                                c = lum + (c - lum) * 1.12;                  // saturation
+                                c = clamp(c, 0.0, 1.0);
+                                vec3 sc = c * c * (3.0 - 2.0 * c);           // S-curve
+                                c = mix(c, sc, 0.55);
+                                float w = smoothstep(0.5, 1.0, lum);         // highlights
+                                float d = 1.0 - smoothstep(0.0, 0.5, lum);   // shadows
+                                c.r *= (1.0 + 0.06 * w) * (1.0 - 0.03 * d);
+                                c.b *= (1.0 - 0.05 * w) * (1.0 + 0.06 * d);
+                                c.g *= 1.0 + 0.01 * w;
+                                return clamp(c, 0.0, 1.0);
                             }
 
                             void main() {
                                 vec4 original = texture2D(tDiffuse, vUv);
-                                vec3 lutColor = sampleAs3DLUT(lutMap, original.rgb);
+                                
+                                vec3 lutColor = filmGrade(original.rgb);
 
                                 // Mix original and LUT color by intensity
                                 vec3 finalColor = mix(original.rgb, lutColor, intensity);
@@ -608,7 +623,7 @@ function createUpdateSystems() {
         },
         {
             name: "Nebulae",
-            update: (dt) => nebulae?.forEach(n => n.update(dt))
+            update: (dt, rc) => nebulae?.forEach(n => n.update(dt, rc?.camera))
         },
         {
             name: "Particles",
@@ -812,6 +827,15 @@ function createUpdateSystems() {
                     const time = performance.now() * 0.001;
                     const s = 1.0 + 0.06 * Math.sin(time * 3);
                     ph.glow.scale.set(s, s, 1);
+
+                    // The ring is a FINDER — it earns its keep at a distance and gets
+                    // out of the photo up close. Fade fully out inside 12 planet radii
+                    // (you can obviously see the planet), full hint strength beyond 40.
+                    const r = ph.planet.radius || 2;
+                    const near = 12 * r, far = 40 * r;
+                    let ringFade = (dist - near) / (far - near);
+                    ringFade = Math.min(Math.max(ringFade, 0), 1);
+                    ph.glow.material.opacity = 0.05 * ringFade;
                 });
             }
         },
@@ -853,6 +877,13 @@ function createUpdateSystems() {
                         }
                     }
                 }
+            }
+        },
+        // Grand Tour autopilot — cinematic multi-stop scenic route
+        {
+            name: "ScenicTour",
+            update: (dt) => {
+                if (scenicTour) scenicTour.update(dt);
             }
         },
         // Comet spatial audio updater - periodic soft positional hiss
@@ -1356,6 +1387,26 @@ function flyToObject(obj, distanceMultiplier = 3) {
     };
 }
 
+// Resolve any flyable object by name — same search order as flyToByName, but
+// returns the live object (mesh + radius) so the Grand Tour can track it.
+function findFlyableByName(name) {
+    if (!name) return null;
+    const nameLower = name.toLowerCase();
+    const pools = [objects, comets, nebulae, blackHoles];
+    for (const pool of pools) {
+        if (!pool) continue;
+        const found = pool.find(o => o && o.name && o.name.toLowerCase() === nameLower);
+        if (found && found.mesh) return found;
+    }
+    if (asteroidBelt && /asteroid|belt/.test(nameLower)) {
+        return { name: "Main Asteroid Belt", mesh: asteroidBelt.mesh, radius: 50 };
+    }
+    const uni = window.__universe || [];
+    const star = uni.find(o => o && o.name && o.name.toLowerCase() === nameLower);
+    if (star && star.mesh) return { name: star.name, mesh: star.mesh, radius: star.radius || 20 };
+    return null;
+}
+
 function flyToByName(name, distanceMultiplier = 3) {
     if (!name) return;
     const nameLower = name.toLowerCase();
@@ -1416,6 +1467,7 @@ function createPlanetRings(planet, planetRadius) {
 
         const ringGeo = new THREE.RingGeometry(inner, outer, 64);
         const ringMat = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
             color: color,
             side: THREE.DoubleSide,
             transparent: true,
@@ -1435,7 +1487,7 @@ function createPlanetRings(planet, planetRadius) {
 function createMoon(moonData, parentPlanet) {
     const moonGeo = new THREE.SphereGeometry(moonData.radius, 64, 32);
     const loader = new THREE.TextureLoader();
-    const moonColor = loader.load('textures/moon/moon_color_1k.jpg',
+    const moonColor = loader.load('textures/moon/moon_4k.jpg',
         () => console.log('🌑 Moon texture loaded'),
         undefined,
         (err) => console.warn('Moon texture failed:', err));
@@ -1515,7 +1567,8 @@ const PLANET_EPHEMERIS = {
     Jupiter: [ 34.40438, 0.08308529],
     Saturn:  [ 49.94432, 0.03344414],
     Uranus:  [313.23218, 0.01172834],
-    Neptune: [304.88003, 0.00598103]
+    Neptune: [304.88003, 0.00598103],
+    Pluto:   [238.92904, 0.00397557]
 };
 
 function currentMeanLongitude(name) {
@@ -1553,14 +1606,21 @@ function createSolarSystem() {
 
     // Planet data (semi-realistic orbital distances scaled down)
     const planetData = [
-        { name: "Mercury", radius: 0.8, color: 0x9a8560, distance: 40, period: 88, planetType: "rocky", hasAtmosphere: false, texturePack: "mercury" },
-        { name: "Venus", radius: 1.5, color: 0xf0d080, distance: 60, period: 225, planetType: "rocky", atmosphereColor: 0xffdd99, atmosphereDensity: 2.0, texturePack: "venus" },
-        { name: "Earth", radius: 1.6, color: 0x3388ee, distance: 85, period: 365, planetType: "rocky", atmosphereColor: 0x66bbff, hasClouds: true, texturePack: "earth" },
-        { name: "Mars", radius: 1.1, color: 0xd06040, distance: 115, period: 687, planetType: "rocky", atmosphereColor: 0xffbb99, atmosphereDensity: 0.3, texturePack: "mars" },
-        { name: "Jupiter", radius: 8, color: 0xe0b080, distance: 200, period: 4333, planetType: "gas", hasAtmosphere: true, texturePack: "jupiter" },
-        { name: "Saturn", radius: 7, color: 0xf8e0a0, distance: 320, period: 10759, planetType: "gas", hasRings: true, texturePack: "saturn" },
-        { name: "Uranus", radius: 4, color: 0x70ccee, distance: 450, period: 30687, planetType: "ice", hasRings: true, texturePack: "uranus" },
-        { name: "Neptune", radius: 3.8, color: 0x3355ee, distance: 550, period: 60190, planetType: "ice", texturePack: "neptune" }
+        // axialTilt = real values in radians (Earth 23.4°, Saturn 26.7°, Uranus
+        // famously sideways at ~98°). Without these, every planet rolled a RANDOM
+        // tilt each launch — Saturn's rings sat at a different angle every time.
+        { name: "Mercury", radius: 0.8, color: 0x9a8560, distance: 40, period: 88, planetType: "rocky", hasAtmosphere: false, axialTilt: 0.001, texturePack: "mercury" },
+        { name: "Venus", radius: 1.5, color: 0xf0d080, distance: 60, period: 225, planetType: "rocky", atmosphereColor: 0xffdd99, atmosphereDensity: 2.0, axialTilt: 0.05, texturePack: "venus" },
+        { name: "Earth", radius: 1.6, color: 0x3388ee, distance: 85, period: 365, planetType: "rocky", atmosphereColor: 0x66bbff, hasClouds: true, axialTilt: 0.409, texturePack: "earth" },
+        { name: "Mars", radius: 1.1, color: 0xd06040, distance: 115, period: 687, planetType: "rocky", atmosphereColor: 0xffbb99, atmosphereDensity: 0.3, axialTilt: 0.439, texturePack: "mars" },
+        { name: "Jupiter", radius: 8, color: 0xe0b080, distance: 200, period: 4333, planetType: "gas", hasAtmosphere: true, atmosphereColor: 0xe8d0a8, axialTilt: 0.055, texturePack: "jupiter" },
+        { name: "Saturn", radius: 7, color: 0xf8e0a0, distance: 320, period: 10759, planetType: "gas", hasRings: true, atmosphereColor: 0xf0e0b8, axialTilt: 0.466, texturePack: "saturn" },
+        { name: "Uranus", radius: 4, color: 0x70ccee, distance: 450, period: 30687, planetType: "ice", hasRings: true, axialTilt: 1.706, texturePack: "uranus" },
+        { name: "Neptune", radius: 3.8, color: 0x3355ee, distance: 550, period: 60190, planetType: "ice", axialTilt: 0.494, texturePack: "neptune" },
+        // Pluto — demoted on paper, not in here. Real eccentric, tilted orbit
+        // (e=0.25, i=17°), so it swings inside its drawn distance and rides above
+        // the ecliptic; no orbit ring since a flat circle would just be wrong.
+        { name: "Pluto", radius: 0.45, color: 0xc9b29b, distance: 650, period: 90560, planetType: "rocky", hasAtmosphere: false, axialTilt: 2.14, texturePack: "pluto", eccentricity: 0.25, inclination: 0.30, noOrbitLine: true }
     ];
 
     planetData.forEach(data => {
@@ -1576,10 +1636,12 @@ function createSolarSystem() {
             hasRings: data.hasRings || false,
             hasClouds: data.hasClouds || false,
             texturePack: data.texturePack || null,
+            axialTilt: data.axialTilt,
             orbitalData: {
                 semiMajorAxis: data.distance,
                 period: data.period,
-                eccentricity: 0.02,
+                eccentricity: data.eccentricity ?? 0.02,
+                inclination: data.inclination || 0,
                 // Real ephemeris: start where the planet actually is today
                 meanAnomalyAtEpoch: currentMeanLongitude(data.name)
             }
@@ -1588,8 +1650,9 @@ function createSolarSystem() {
         rendererCore.scene.add(planet.mesh);
         objects.push(planet);
 
-        // Create orbit line
-        createOrbitLine(data.distance);
+        // Create orbit line (skipped for tilted/eccentric orbits like Pluto's,
+        // where a flat circle would misrepresent the real path)
+        if (!data.noOrbitLine) createOrbitLine(data.distance);
     });
 
     // Add Earth's moon — and wire eclipse shadows both ways
@@ -1650,6 +1713,7 @@ function createOrbitLine(radius) {
     }
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     const material = new THREE.LineBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
         color: 0x334455,
         transparent: true,
         opacity: 0.3
@@ -1896,7 +1960,10 @@ function createPlanetHighlights() {
                 transparent: true,
                 opacity: 0.05,
                 side: THREE.DoubleSide,
-                blending: THREE.AdditiveBlending
+                blending: THREE.AdditiveBlending,
+                depthWrite: false   // MUST be off: the ring is nearly invisible, but with
+                                    // depthWrite on it stamped the depth buffer and erased
+                                    // every star behind it — the "black donut around Earth"
             });
             glow = new THREE.Mesh(glowGeo, glowMat);
             glow.rotation.x = Math.PI / 2;
@@ -2022,6 +2089,34 @@ function exposeFlyToAPI() {
 
     window.galaxyExplorer.setCinematicMode = setCinematicMode;
     window.galaxyExplorer.getCinematicMode = getCinematicMode;
+
+    // Grand Tour autopilot — scenic multi-stop cinematic route
+    window.galaxyExplorer.startScenicTour = function() {
+        if (typeof ScenicTour === 'undefined' || !rendererCore?.camera) return;
+        if (!scenicTour) {
+            scenicTour = new ScenicTour({
+                camera: rendererCore.camera,
+                findByName: findFlyableByName,
+                onStart: () => {
+                    activeFly = null;                       // a queued fly-to would fight the tour
+                    if (navPhysics?.velocity?.set) navPhysics.velocity.set(0, 0, 0);
+                },
+                onStop: () => {
+                    if (navPhysics?.velocity?.set) navPhysics.velocity.set(0, 0, 0);
+                }
+            });
+        }
+        scenicTour.start();
+    };
+    window.galaxyExplorer.stopScenicTour = function() {
+        if (scenicTour) scenicTour.stop('user');
+    };
+    // Native TOUR button is a toggle — state lives here in JS, so a tour that
+    // ends on its own (complete / tap-to-exit) can't leave the button stale.
+    window.galaxyExplorer.toggleScenicTour = function() {
+        if (scenicTour && scenicTour.active) { scenicTour.stop('user'); return; }
+        window.galaxyExplorer.startScenicTour();
+    };
 
     // Time acceleration (also driveable from Swift)
     window.galaxyExplorer.cycleTimeScale = cycleTimeScale;

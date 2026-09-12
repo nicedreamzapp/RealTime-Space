@@ -44,6 +44,7 @@ class NavigationArrows {
         // Arrow head (cone)
         const headGeometry = new THREE.ConeGeometry(0.5, 1.5, 8);
         const headMaterial = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
             color: 0x00ffff,
             transparent: true,
             opacity: 0.8 - (index * 0.12),
@@ -56,6 +57,7 @@ class NavigationArrows {
         // Arrow shaft
         const shaftGeometry = new THREE.CylinderGeometry(0.15, 0.15, 1.5, 8);
         const shaftMaterial = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
             color: 0x00ffff,
             transparent: true,
             opacity: 0.5 - (index * 0.08),
@@ -69,6 +71,7 @@ class NavigationArrows {
         // Glow ring
         const ringGeometry = new THREE.RingGeometry(0.6, 0.8, 16);
         const ringMaterial = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
             color: 0x00ffff,
             transparent: true,
             opacity: 0.3 - (index * 0.05),

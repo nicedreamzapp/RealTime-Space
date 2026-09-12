@@ -45,6 +45,8 @@
 		99B70EE62E8BBD84003F9928 /* Vector3D.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B70EE52E8BBD75003F9928 /* Vector3D.swift */; };
 		99CCC0012EEAFF0100000001 /* BlackHole.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0002EEAFF0100000001 /* BlackHole.js */; };
 		99CCC0032EEAFF0100000002 /* WarpEffect.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0022EEAFF0100000002 /* WarpEffect.js */; };
+		99CCC0052EEAFF0100000002 /* ScenicTour.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0042EEAFF0100000002 /* ScenicTour.js */; };
+		99CCC0072EEAFF0100000002 /* FilmLUT.png in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0062EEAFF0100000002 /* FilmLUT.png */; };
 		99CCC0052EEAFF0100000003 /* VolumetricNebula.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0042EEAFF0100000003 /* VolumetricNebula.js */; };
 		99CCC0072EEAFF0100000004 /* CelestialCatalog.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0062EEAFF0100000004 /* CelestialCatalog.js */; };
 		99CCC0092EEAFF0100000005 /* ExplorationTracker.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0082EEAFF0100000005 /* ExplorationTracker.js */; };
@@ -118,6 +120,8 @@
 		99D56C082E82D8E9003CF912 /* GalaxyControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyControlView.swift; sourceTree = "<group>"; };
 		99CCC0002EEAFF0100000001 /* BlackHole.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = BlackHole.js; sourceTree = "<group>"; };
 		99CCC0022EEAFF0100000002 /* WarpEffect.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = WarpEffect.js; sourceTree = "<group>"; };
+		99CCC0042EEAFF0100000002 /* ScenicTour.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ScenicTour.js; sourceTree = "<group>"; };
+		99CCC0062EEAFF0100000002 /* FilmLUT.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = FilmLUT.png; sourceTree = "<group>"; };
 		99CCC0042EEAFF0100000003 /* VolumetricNebula.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = VolumetricNebula.js; sourceTree = "<group>"; };
 		99CCC0062EEAFF0100000004 /* CelestialCatalog.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = CelestialCatalog.js; sourceTree = "<group>"; };
 		99CCC0082EEAFF0100000005 /* ExplorationTracker.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ExplorationTracker.js; sourceTree = "<group>"; };
@@ -201,6 +205,8 @@
 			children = (
 				99CCC0002EEAFF0100000001 /* BlackHole.js */,
 				99CCC0022EEAFF0100000002 /* WarpEffect.js */,
+				99CCC0042EEAFF0100000002 /* ScenicTour.js */,
+				99CCC0062EEAFF0100000002 /* FilmLUT.png */,
 				99CCC0042EEAFF0100000003 /* VolumetricNebula.js */,
 				99CCC0062EEAFF0100000004 /* CelestialCatalog.js */,
 				99CCC0082EEAFF0100000005 /* ExplorationTracker.js */,
@@ -376,6 +382,8 @@
 			files = (
 				99CCC0012EEAFF0100000001 /* BlackHole.js in Resources */,
 				99CCC0032EEAFF0100000002 /* WarpEffect.js in Resources */,
+				99CCC0052EEAFF0100000002 /* ScenicTour.js in Resources */,
+				99CCC0072EEAFF0100000002 /* FilmLUT.png in Resources */,
 				99CCC0052EEAFF0100000003 /* VolumetricNebula.js in Resources */,
 				99CCC0072EEAFF0100000004 /* CelestialCatalog.js in Resources */,
 				99CCC0092EEAFF0100000005 /* ExplorationTracker.js in Resources */,
@@ -597,7 +605,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = B9RA6QH559;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -612,7 +620,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-Fidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -630,8 +638,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = B9RA6QH559;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -646,7 +654,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.3.1;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				PROVISIONING_PROFILE_SPECIFIER = "RTSpace AppStore M5 20260911";
 				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-Fidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -664,11 +674,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = B9RA6QH559;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-FidgetTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -686,11 +696,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = B9RA6QH559;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-FidgetTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -707,10 +717,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = B9RA6QH559;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-FidgetUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -727,10 +737,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 22;
 				DEVELOPMENT_TEAM = B9RA6QH559;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "B9RA6QH559.RealTime-FidgetUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;

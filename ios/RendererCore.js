@@ -14,11 +14,19 @@ class RendererCore {
         // Detect device capabilities
         this.isMobile = window.innerWidth < 768;
         this.isHighEnd = window.devicePixelRatio >= 3; // iPhone Pro/Pro Max
+        // Native app (WKWebView / Android WebView) vs plain desktop browser — the
+        // desktop GPU can afford quality the phone pipeline deliberately gives up.
+        this.isNativeApp = !!(window.webkit?.messageHandlers?.iosHandler || window.AndroidBridge);
         // Cap at 2x: on a ~460ppi phone display 2x is already retina-sharp, while 3x
         // pushes ~2.25x the pixels through the multi-pass cinematic pipeline for no
         // visible gain — the single biggest framerate cost on Pro Max.
         this.maxPixelRatio = 2;
         this.pixelRatio = Math.min(window.devicePixelRatio, this.maxPixelRatio);
+        if (!this.isNativeApp) {
+            // Desktop browser: supersample 1x monitors to 1.5x — visibly crisper
+            // stars and ring edges, cheap on any discrete/Apple-silicon GPU.
+            this.pixelRatio = Math.min(Math.max(window.devicePixelRatio, 1.5), this.maxPixelRatio);
+        }
 
         this.initScene();
         this.initCamera();

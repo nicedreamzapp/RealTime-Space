@@ -112,29 +112,34 @@ class Comet {
     _createComa() {
         this.comaLayers = [];
 
-        // Multiple coma layers for depth
-        const layers = [
-            { scale: 3, opacity: 0.25, color: 0xccddff },
-            { scale: 5, opacity: 0.15, color: 0xaaccff },
-            { scale: 8, opacity: 0.08, color: 0x88bbff },
-            { scale: 12, opacity: 0.04, color: 0x6699ff }
-        ];
+        // REWRITTEN 2026-07-30: the coma used to be 4 nested translucent SPHERES.
+        // Spheres edge-brighten (longer path at the limb), so each shell drew a
+        // hard circle outline — the coma read as a concentric-circle DARTBOARD
+        // floating next to whatever planet the comet was passing (users saw it as
+        // "broken skewed planet rings"). A camera-facing sprite with a radial
+        // gradient is what a fuzzy gas cloud actually looks like.
+        const c = document.createElement('canvas');
+        c.width = c.height = 128;
+        const ctx = c.getContext('2d');
+        const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+        grad.addColorStop(0.0, 'rgba(220, 232, 255, 0.85)');
+        grad.addColorStop(0.25, 'rgba(170, 200, 255, 0.35)');
+        grad.addColorStop(0.6, 'rgba(120, 160, 255, 0.10)');
+        grad.addColorStop(1.0, 'rgba(100, 140, 255, 0.0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 128, 128);
+        const comaTex = new THREE.CanvasTexture(c);
 
-        layers.forEach(layer => {
-            const geometry = new THREE.SphereGeometry(this.radius * layer.scale, 24, 24);
-            const material = new THREE.MeshBasicMaterial({
-                color: layer.color,
-                transparent: true,
-                opacity: layer.opacity,
-                side: THREE.BackSide,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false
-            });
-
-            const coma = new THREE.Mesh(geometry, material);
-            this.mesh.add(coma);
-            this.comaLayers.push(coma);
-        });
+        const comaSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: comaTex,
+            transparent: true,
+            opacity: 0.55,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        }));
+        comaSprite.scale.setScalar(this.radius * 16);
+        this.mesh.add(comaSprite);
+        this.comaLayers.push(comaSprite);
 
         // Central bright glow
         const glowGeo = new THREE.SphereGeometry(this.radius * 2, 16, 16);
@@ -370,9 +375,13 @@ class Comet {
 
         // Animate coma layers
         this.comaLayers.forEach((coma, i) => {
-            coma.material.opacity = (0.04 + i * 0.07) * tailIntensity;
-            const pulse = 1 + Math.sin(this.time * 2 + i) * 0.1;
-            coma.scale.setScalar(pulse);
+            // Single radial-gradient sprite now (the old nested-sphere shells drew
+            // dartboard circles). Pulse breathes around the sprite's BASE scale —
+            // setScalar(pulse) alone would collapse it to ~1 world unit.
+            coma.material.opacity = 0.55 * tailIntensity;
+            if (coma._baseScale === undefined) coma._baseScale = coma.scale.x;
+            const pulse = 1 + Math.sin(this.time * 2 + i) * 0.08;
+            coma.scale.setScalar(coma._baseScale * pulse);
         });
 
         // Animate central glow
