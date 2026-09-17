@@ -2,6 +2,7 @@ package com.nicedreamz.realtimespace
 
 import android.app.Activity
 import android.content.Context
+import java.security.MessageDigest
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -10,18 +11,26 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -164,6 +173,39 @@ class StoreManager(private val activity: Activity) {
         locked = false
     }
 
+    /**
+     * Gift codes. These are Matt's OWN codes, not Google Play promo codes: Play's are
+     * unchoosable strings, limited in number, and only redeem inside the Play app, which is
+     * no use for handing someone a free copy. These are short words, checked here, offline.
+     *
+     * Stored as SHA-256, and the words themselves are deliberately NOT in this repo - a hash
+     * is one-way, a comment naming the code is not. To mint one:
+     *   echo -n YOURCODE | shasum -a 256
+     * The digests match the iPhone build exactly, so one word works on both platforms.
+     */
+    private val codeHashes = setOf(
+        "53edfbd29c8559f897047209b58a90e30fae91759a46ec020274001ccd582bcf",  // gift code 1
+        "2f48d108f49087a665c016d1006b60a588fa321fa4e5ef8643b1c4957f199d39",  // gift code 2
+        "c8c8f7fe625a1a98824e4fc4887ca38b8caeb22ad91c4f40d500c3378549597e",  // owner
+    )
+
+    private fun sha256(s: String): String =
+        MessageDigest.getInstance("SHA-256").digest(s.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+
+    /** Returns true and unlocks if the typed code matches; sets errorMessage otherwise. */
+    fun applyUnlockCode(raw: String): Boolean {
+        val cleaned = raw.uppercase().filter { !it.isWhitespace() && it != '-' }
+        if (cleaned.isEmpty()) return false
+        if (sha256(cleaned) !in codeHashes) {
+            errorMessage = "That code didn't match. Check it and try again."
+            return false
+        }
+        errorMessage = null
+        grantUnlock()
+        return true
+    }
+
     fun buy() {
         errorMessage = null
         val pd = details
@@ -227,6 +269,37 @@ fun PaywallOverlay(store: StoreManager, visible: Boolean = store.locked, onClose
         }
         TextButton(onClick = { store.restore() }) {
             Text("Restore purchase", color = Color(0xFF8FA3C8))
+        }
+        // Code entry opens on this screen rather than sending anyone to the Play app.
+        var showCode by remember { mutableStateOf(false) }
+        var code by remember { mutableStateOf("") }
+        if (!showCode) {
+            TextButton(onClick = { showCode = true }) {
+                Text("Enter a code", color = Color(0xFF8FA3C8))
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { code = it },
+                    singleLine = true,
+                    placeholder = { Text("Your code", color = Color(0xFF6E7B94)) },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = {
+                        if (store.applyUnlockCode(code)) onClose?.invoke()
+                    }),
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Button(
+                    onClick = { if (store.applyUnlockCode(code)) onClose?.invoke() },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3D6BFF))
+                ) { Text("Unlock") }
+            }
         }
         if (dismissable) {
             TextButton(onClick = { onClose?.invoke() }) {
