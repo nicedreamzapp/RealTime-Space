@@ -12,13 +12,6 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
-Bundled astronomical textures retain their original licenses:
-- NASA Visible Earth imagery is in the public domain.
-- Solar System Scope textures (sun) are licensed CC-BY 4.0; see
-  https://www.solarsystemscope.com/textures/ for attribution requirements.
-- threex.planets sphere maps are released to the public domain by
-  Jerome Etienne; see https://github.com/jeromeetienne/threex.planets.
-
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE

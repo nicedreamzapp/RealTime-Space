@@ -36,4 +36,4 @@ The Android port — a WebView shell around the same renderer, with all web asse
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). Bundled textures keep their own licenses, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
