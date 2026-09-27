@@ -1,9 +1,6 @@
 package com.nicedreamz.realtimespace
 
-import android.content.Context
 import android.os.Build
-import android.speech.tts.TextToSpeech
-import java.util.Locale
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
@@ -32,11 +29,6 @@ class WebBridge(
     private val onReady: () -> Unit
 ) {
     @Volatile var webView: WebView? = null
-    /** Set by MainActivity so the tour can fall back to the phone's own voice. */
-    var appContext: Context? = null
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
-    private var pendingSpeech: Pair<String, String>? = null
     private val main = Handler(Looper.getMainLooper())
     private val http by lazy {
         OkHttpClient.Builder()
@@ -70,9 +62,6 @@ class WebBridge(
                 }
                 "FETCH" -> doFetch(o.optString("url"), o.optString("reqId"))
                 "PHOTO" -> Log.d(TAG, "PHOTO capture received (share TODO)")
-                // Tour read-aloud fallback, used only when a recorded clip is missing.
-                "SPEAK" -> main.post { speak(o.optString("text"), o.optString("lang", "en")) }
-                "SPEAK_STOP" -> main.post { tts?.stop() }
                 "AUDIO" -> { /* Web Audio is procedural on the web side; native no-op */ }
                 else -> { /* logged/unknown */ }
             }
@@ -84,32 +73,6 @@ class WebBridge(
     @JavascriptInterface
     fun log(msg: String) {
         Log.d("RTSpaceWeb", msg)
-    }
-
-    private fun speak(text: String, lang: String) {
-        if (text.isBlank()) return
-        val ctx = appContext ?: return
-        if (tts == null) {
-            pendingSpeech = text to lang
-            tts = TextToSpeech(ctx) { status ->
-                ttsReady = status == TextToSpeech.SUCCESS
-                pendingSpeech?.let { (t, l) -> pendingSpeech = null; if (ttsReady) say(t, l) }
-            }
-            return
-        }
-        if (!ttsReady) { pendingSpeech = text to lang; return }
-        say(text, lang)
-    }
-
-    private fun say(text: String, lang: String) {
-        val t = tts ?: return
-        try { t.language = Locale.forLanguageTag(lang) } catch (_: Exception) {}
-        t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tour")
-    }
-
-    fun shutdown() {
-        try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}
-        tts = null
     }
 
     fun haptic(style: String) {

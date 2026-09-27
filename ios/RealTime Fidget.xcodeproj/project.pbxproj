@@ -47,7 +47,6 @@
 		99CCC0032EEAFF0100000002 /* WarpEffect.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0022EEAFF0100000002 /* WarpEffect.js */; };
 		ABC9F9A6DB76610A17588B94 /* TourText.js in Resources */ = {isa = PBXBuildFile; fileRef = 305F6F5F4E3B9AC527F1A731 /* TourText.js */; };
 		84D4972386B7FE3C94C7B3C5 /* TourBuilder.js in Resources */ = {isa = PBXBuildFile; fileRef = 4F0168116DB842FAB6403533 /* TourBuilder.js */; };
-		EA8ED6D475483FC06DBB7739 /* audio in Resources */ = {isa = PBXBuildFile; fileRef = 5CFDA983104D48956AE13F98 /* audio */; };
 		99CCC0052EEAFF0100000002 /* ScenicTour.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0042EEAFF0100000002 /* ScenicTour.js */; };
 		99CCC0072EEAFF0100000002 /* FilmLUT.png in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0062EEAFF0100000002 /* FilmLUT.png */; };
 		99CCC0052EEAFF0100000003 /* VolumetricNebula.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0042EEAFF0100000003 /* VolumetricNebula.js */; };
@@ -125,7 +124,6 @@
 		99CCC0022EEAFF0100000002 /* WarpEffect.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = WarpEffect.js; sourceTree = "<group>"; };
 		305F6F5F4E3B9AC527F1A731 /* TourText.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = TourText.js; sourceTree = "<group>"; };
 		4F0168116DB842FAB6403533 /* TourBuilder.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = TourBuilder.js; sourceTree = "<group>"; };
-		5CFDA983104D48956AE13F98 /* audio */ = {isa = PBXFileReference; lastKnownFileType = folder; path = audio; sourceTree = "<group>"; };
 		99CCC0042EEAFF0100000002 /* ScenicTour.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ScenicTour.js; sourceTree = "<group>"; };
 		99CCC0062EEAFF0100000002 /* FilmLUT.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = FilmLUT.png; sourceTree = "<group>"; };
 		99CCC0042EEAFF0100000003 /* VolumetricNebula.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = VolumetricNebula.js; sourceTree = "<group>"; };
@@ -213,7 +211,6 @@
 				99CCC0022EEAFF0100000002 /* WarpEffect.js */,
 				305F6F5F4E3B9AC527F1A731 /* TourText.js */,
 				4F0168116DB842FAB6403533 /* TourBuilder.js */,
-				5CFDA983104D48956AE13F98 /* audio */,
 				99CCC0042EEAFF0100000002 /* ScenicTour.js */,
 				99CCC0062EEAFF0100000002 /* FilmLUT.png */,
 				99CCC0042EEAFF0100000003 /* VolumetricNebula.js */,
@@ -393,7 +390,6 @@
 				99CCC0032EEAFF0100000002 /* WarpEffect.js in Resources */,
 				ABC9F9A6DB76610A17588B94 /* TourText.js in Resources */,
 				84D4972386B7FE3C94C7B3C5 /* TourBuilder.js in Resources */,
-				EA8ED6D475483FC06DBB7739 /* audio in Resources */,
 				99CCC0052EEAFF0100000002 /* ScenicTour.js in Resources */,
 				99CCC0072EEAFF0100000002 /* FilmLUT.png in Resources */,
 				99CCC0052EEAFF0100000003 /* VolumetricNebula.js in Resources */,

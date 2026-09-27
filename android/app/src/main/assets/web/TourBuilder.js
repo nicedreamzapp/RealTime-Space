@@ -4,8 +4,7 @@
 // flies the real solar system to each one with the ScenicTour autopilot; at every stop
 // a card drops from the top with real facts, and a tap moves the tour on.
 //
-// Read-aloud is optional and always one tap away: the big sound button on the tour bar
-// silences it instantly and the choice is remembered.
+// Cards are text only; the app does not talk.
 //
 // Constellations are handled honestly: a constellation is a pattern seen from Earth, so
 // its stop is two views - from beside Earth (the familiar shape) and then from the side,
@@ -90,46 +89,6 @@
   function tempText(c) {
     return num(Math.round(c), 0) + '°C / ' + num(Math.round(c * 9 / 5 + 32), 0) + '°F';
   }
-  // Card title + fact read as one line; CJK and Hindi end sentences their own way.
-  const joinSpeech = (a, b) => a + (LANG === 'zh' || LANG === 'ja' ? '。' : LANG === 'hi' ? '। ' : '. ') + b;
-
-  // -------------------------------------------------------------- read aloud
-  // Every card is a recording in Matt's voice (audio/tour/<lang>/<id>.m4a). If a clip is
-  // missing, the phone's own voice reads the same words. One mute stops both instantly.
-  const Voice = {
-    on: store.get('tourVoice', 'on') !== 'off',
-    audio: null,
-    play(clipId, text) {
-      this.stop();
-      if (!this.on) return;
-      const a = new Audio(`audio/tour/${LANG}/${clipId}.m4a`);
-      this.audio = a;
-      let fell = false;
-      const fallback = () => { if (fell || this.audio !== a) return; fell = true; this._tts(text); };
-      a.addEventListener('error', fallback);
-      const pr = a.play();
-      if (pr && pr.catch) pr.catch(fallback);
-    },
-    _tts(text) {
-      if (!this.on || !text) return;
-      if (window.AndroidBridge) { post({ type: 'SPEAK', text, lang: LANG }); return; }
-      try {
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = LANG; u.rate = 0.95;
-        window.speechSynthesis.speak(u);
-      } catch (e) {}
-    },
-    stop() {
-      if (this.audio) { try { this.audio.pause(); this.audio.src = ''; } catch (e) {} this.audio = null; }
-      if (window.AndroidBridge) post({ type: 'SPEAK_STOP' });
-      try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) {}
-    },
-    set(on) {
-      this.on = !!on;
-      store.set('tourVoice', this.on ? 'on' : 'off');
-      if (!this.on) this.stop();
-    }
-  };
 
   // -------------------------------------------------------------- helpers
   const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -255,7 +214,6 @@
         Object.entries(ALL()).forEach(([code, t]) => sel.add(new Option(t.label, code)));
       }
       if (sel) sel.value = LANG;
-      this._renderSound();
     }
 
     setLanguage(code) {
@@ -263,27 +221,6 @@
       LANG = code;
       store.set('tourLang', code);
       this._renderPicker();
-    }
-
-    // Every clip the tour can play, with the exact words: feeds the voice renderer.
-    narration() {
-      const out = [];
-      const langs = Object.keys(ALL());
-      const keep = LANG;
-      langs.forEach(code => {
-        LANG = code;
-        GROUPS.forEach(g => g.items.forEach(item => {
-          const views = item.kind === 'constellation' ? ['earth', 'side'] : [null];
-          views.forEach(v => {
-            if (item.kind === 'constellation' && !window.constellations?.figure?.(item.name)) return;
-            const c = cardFor(item, v);
-            out.push({ lang: code, id: c.id, text: joinSpeech(c.title, c.fact) });
-          });
-        }));
-        out.push({ lang: code, id: 'done', text: ui('done') });
-      });
-      LANG = keep;
-      return out;
     }
 
     // ---------------- running a tour
@@ -394,12 +331,10 @@
       }
       const card = cardFor(stop.item, stop.view);
       this._showCard(card, stop, ui('stop', { i: num(stop.pickIndex + 1, 0), n: num(total, 0) }), last);
-      Voice.play(card.id, joinSpeech(card.title, card.fact));
       this._waiting = true;
     }
 
     _leave(stop) {
-      Voice.stop();
       this._hideCard();
       // The Earth view hands straight to the side view, so keep the lines lit between them.
       if (stop && stop.view === 'side') { window.constellations?.clearHighlight?.(); this._hideStarLabels(); }
@@ -454,7 +389,6 @@
     }
 
     _ended(reason) {
-      Voice.stop();
       window.constellations?.clearHighlight?.();
       this._hideStarLabels();
       this._hideCard();
@@ -464,7 +398,6 @@
         this.tour.classList.add('fin');
         this.done.classList.add('show');
         haptic('success');
-        Voice.play('done', ui('done'));
         return;
       }
       this._finish();
@@ -497,13 +430,6 @@
     }
 
     _hideCard() { this.card.classList.remove('show'); }
-
-    _renderSound() {
-      if (!this.soundBtn) return;
-      this.soundBtn.innerHTML = Voice.on ? `🔊<span>${esc(ui('soundOn'))}</span>` : `🔇<span>${esc(ui('soundOff'))}</span>`;
-      this.soundBtn.classList.toggle('off', !Voice.on);
-      this.soundBtn.setAttribute('aria-label', Voice.on ? 'Reading aloud is on. Tap to turn it off.' : 'Reading aloud is off. Tap to turn it on.');
-    }
 
     // Hide the native flight controls (and the scan/guide buttons) while the builder owns the screen.
     _chrome(hidden) {
@@ -552,7 +478,6 @@
         <div class="tb-fly"></div>
         <div class="tb-card" role="button"></div>
         <div class="tb-bar">
-          <button class="tb-sound"></button>
           <div class="tb-dots"></div>
           <button class="tb-end">✕<span>End</span></button>
         </div>
@@ -568,12 +493,9 @@
       this.flyLabel = t.querySelector('.tb-fly');
       this.dots = t.querySelector('.tb-dots');
       this.done = t.querySelector('.tb-done');
-      this.soundBtn = t.querySelector('.tb-sound');
-      this._renderSound();
       // Tap the card, or anywhere on the sky, to move on.
       this.card.addEventListener('click', () => this._continue());
       t.querySelector('.tb-catch').addEventListener('click', () => this._continue());
-      this.soundBtn.addEventListener('click', () => { Voice.set(!Voice.on); this._renderSound(); haptic('light'); });
       t.querySelector('.tb-end').addEventListener('click', () => { haptic('light'); this.end(); });
       t.querySelector('.tb-again').addEventListener('click', () => { this._finish(); this.picks = []; this.open(); });
       t.querySelector('.tb-free').addEventListener('click', () => this._finish());
@@ -651,7 +573,6 @@
         .tb-bar button { min-height: 48px; padding: 0 16px; border-radius: 24px; border: 1px solid rgba(120,180,255,.4);
           background: rgba(40,70,120,.5); color: #e8f2ff; font-size: 20px; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
         .tb-bar button span { font-size: 15px; font-weight: 700; }
-        .tb-sound.off { background: rgba(120, 40, 50, .55); border-color: rgba(255,120,130,.5); }
         .tb-dots { display: flex; gap: 6px; }
         .tb-dot { width: 10px; height: 10px; border-radius: 5px; background: var(--c); opacity: .35; }
         .tb-dot.past { opacity: .7; }
