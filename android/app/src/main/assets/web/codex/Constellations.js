@@ -83,6 +83,8 @@
       SOLO.forEach(s => { const p = pos3(THREE, s[1], s[2], s[4]); this._star(THREE, s, p); all.push([s, p]); });
       this._lines(THREE);
       scene.add(this.group);
+      this.figures = FIGURES;     // TourBuilder reads the real star positions
+      this._scene = scene;
       window.__universe = window.__universe || [];
       console.log('✨ True-3D constellations placed — they distort as you fly');
     }
@@ -127,6 +129,52 @@
       this.group.add(new THREE.LineSegments(g, m));
     }
 
+    // Real star positions + distances for one figure (null if unknown).
+    figure(name) {
+      const f = (this.figures || []).find(x => x.name.toLowerCase() === String(name).toLowerCase());
+      if (!f || !f._pos) return null;
+      return { name: f.name, stars: f.stars.map((s, i) => ({ name: s[0], ly: s[4], pos: f._pos[i] })), lines: f.lines };
+    }
+
+    // Draw one figure bold in the kid's chosen color: thick lines, bright stars and a
+    // label on every star giving its real distance, so the depth is readable from the side.
+    highlight(name, colorHex) {
+      this.clearHighlight();
+      const THREE = window.THREE, f = this.figure(name);
+      if (!THREE || !f || !this._scene) return;
+      const color = new THREE.Color(colorHex || '#7fd4ff');
+      const g = new THREE.Group();
+      g.renderOrder = 20;
+      // Width scales with how far the figure is, so it reads the same from Earth or beside it.
+      const far = f.stars.reduce((m, s) => Math.max(m, s.pos.length()), 0);
+      const w = Math.max(4, far * 0.0024);
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false, depthTest: false });
+      const up = new THREE.Vector3(0, 1, 0);
+      f.lines.forEach(([a, b]) => {
+        const pa = f.stars[a].pos, pb = f.stars[b].pos, len = pa.distanceTo(pb);
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(w, w, len, 6, 1, true), mat);
+        m.position.copy(pa).add(pb).multiplyScalar(0.5);
+        m.quaternion.setFromUnitVectors(up, pb.clone().sub(pa).normalize());
+        m.renderOrder = 20;
+        g.add(m);
+      });
+      const dotMat = new THREE.SpriteMaterial({ map: this._glow, color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, sizeAttenuation: false });
+      // Star names + distances are drawn as page text by TourBuilder (3D text sprites
+      // bloomed into grey blocks); here just a bright dot on each star.
+      f.stars.forEach(s => {
+        const d = new THREE.Sprite(dotMat); d.scale.setScalar(0.035); d.position.copy(s.pos); d.renderOrder = 21; g.add(d);
+      });
+      this._scene.add(g);
+      this._hl = g;
+    }
+
+    clearHighlight() {
+      const g = this._hl; this._hl = null;
+      if (!g) return;
+      g.parent && g.parent.remove(g);
+      g.traverse(o => { o.geometry && o.geometry.dispose(); if (o.material) { o.material.map && o.material.map !== this._glow && o.material.map.dispose(); o.material.dispose(); } });
+    }
+
     _glowTex(THREE) {
       const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
       const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
@@ -137,6 +185,8 @@
       // 3x canvas for CRISP text (sprite scale unchanged)
       const c = document.createElement('canvas'); c.width = 768; c.height = 192; const g = c.getContext('2d');
       g.font = '600 84px -apple-system, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      const wid = g.measureText(name).width;   // long tour labels ("Alnilam · 2,000 ly") shrink to fit
+      if (wid > 740) g.font = '600 ' + Math.floor(84 * 740 / wid) + 'px -apple-system, sans-serif';
       g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillText(name, 387, 99); g.fillStyle = '#dfeaff'; g.fillText(name, 384, 96);
       const t = new THREE.CanvasTexture(c);
       t.anisotropy = 4;

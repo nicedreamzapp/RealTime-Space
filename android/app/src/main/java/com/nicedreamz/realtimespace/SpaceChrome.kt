@@ -106,6 +106,7 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
                 RadarView(state, sizeDp = radarDp)
                 MenuButton(showPanel) { showPanel = !showPanel }
                 ViewModeButton(bridge)
+                TourButton { showPanel = false; bridge.openTour(); bridge.haptic("light") }
             }
 
             // ---------- BOTTOM CONSOLE ----------
@@ -143,6 +144,22 @@ private fun MenuButton(open: Boolean, onClick: () -> Unit) {
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) { Text(if (open) "✕" else "⋯", color = Cyan, fontSize = 20.sp, fontWeight = FontWeight.Medium) }
+}
+
+// "Make your tour": opens the web picker (planets, stars, constellations...).
+@Composable
+private fun TourButton(onClick: () -> Unit) {
+    Box(
+        Modifier.width(50.dp).height(40.dp).clip(RoundedCornerShape(10.dp)).background(PanelBg)
+            .border(1.dp, CyanBorder, RoundedCornerShape(10.dp))
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("🚀", fontSize = 15.sp)
+            Text("TOUR", color = Cyan, fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+        }
+    }
 }
 
 @Composable

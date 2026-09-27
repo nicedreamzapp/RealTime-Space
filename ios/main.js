@@ -2107,8 +2107,8 @@ function exposeFlyToAPI() {
     window.galaxyExplorer.getCinematicMode = getCinematicMode;
 
     // Grand Tour autopilot — scenic multi-stop cinematic route
-    window.galaxyExplorer.startScenicTour = function() {
-        if (typeof ScenicTour === 'undefined' || !rendererCore?.camera) return;
+    const ensureScenicTour = function() {
+        if (typeof ScenicTour === 'undefined' || !rendererCore?.camera) return null;
         if (!scenicTour) {
             scenicTour = new ScenicTour({
                 camera: rendererCore.camera,
@@ -2122,15 +2122,32 @@ function exposeFlyToAPI() {
                 }
             });
         }
-        scenicTour.start();
+        return scenicTour;
+    };
+    window.galaxyExplorer.startScenicTour = function() {
+        if (ensureScenicTour()) scenicTour.start();
     };
     window.galaxyExplorer.stopScenicTour = function() {
         if (scenicTour) scenicTour.stop('user');
     };
-    // Native TOUR button is a toggle — state lives here in JS, so a tour that
-    // ends on its own (complete / tap-to-exit) can't leave the button stale.
+    window.galaxyExplorer.skipScenicTour = function() {
+        if (scenicTour) scenicTour.skip();
+    };
+    window.galaxyExplorer.isScenicTourActive = function() {
+        return !!(scenicTour && scenicTour.active);
+    };
+    // A tour the kid built in TourBuilder.js: same autopilot, their stops.
+    window.galaxyExplorer.startCustomTour = function(custom) {
+        if (ensureScenicTour()) scenicTour.start(custom);
+    };
+    window.galaxyExplorer.findFlyableByName = findFlyableByName;
+    window.galaxyExplorer.getCamera = function() { return rendererCore?.camera || null; };
+    // Native TOUR button: opens "Make your tour" (the Grand Tour is one tap inside it).
+    // Tapping it during any tour ends that tour. State lives here in JS, so a tour that
+    // ends on its own can't leave the button stale.
     window.galaxyExplorer.toggleScenicTour = function() {
         if (scenicTour && scenicTour.active) { scenicTour.stop('user'); return; }
+        if (window.tourBuilder) { window.tourBuilder.open(); return; }
         window.galaxyExplorer.startScenicTour();
     };
 

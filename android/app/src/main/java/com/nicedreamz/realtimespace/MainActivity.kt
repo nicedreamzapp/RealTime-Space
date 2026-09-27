@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         bridge = WebBridge(vibrator(), state, onReady = { onEngineReady() })
+        bridge.appContext = applicationContext
         store = StoreManager(this)
 
         val assetLoader = WebViewAssetLoader.Builder()
@@ -116,6 +117,11 @@ class MainActivity : ComponentActivity() {
             PaywallOverlay(store, visible = showUnlock || store.locked, onClose = { showUnlock = false })
           }
         }
+    }
+
+    override fun onDestroy() {
+        if (this::bridge.isInitialized) bridge.shutdown()
+        super.onDestroy()
     }
 
     override fun onResume() {

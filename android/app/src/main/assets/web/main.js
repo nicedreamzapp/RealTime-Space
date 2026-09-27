@@ -34,6 +34,7 @@ let volumetricNebulae = [];
 
 let planetHighlights = [];
 let activeFly = null;
+let scenicTour = null;
 
 let showPlanetLabels = true;
 
@@ -861,6 +862,13 @@ function createUpdateSystems() {
                 }
             }
         },
+        // Tour autopilot (Grand Tour + "Make your tour")
+        {
+            name: "ScenicTour",
+            update: (dt) => {
+                if (scenicTour) scenicTour.update(dt);
+            }
+        },
         // Comet spatial audio updater - periodic soft positional hiss
         {
             name: "CometAudio",
@@ -1360,6 +1368,26 @@ function flyToObject(obj, distanceMultiplier = 3) {
         endPos: targetPos,
         endLookAt: objPos
     };
+}
+
+// Resolve any flyable object by name — same search order as flyToByName, but
+// returns the live object (mesh + radius) so the Grand Tour can track it.
+function findFlyableByName(name) {
+    if (!name) return null;
+    const nameLower = name.toLowerCase();
+    const pools = [objects, comets, nebulae, blackHoles];
+    for (const pool of pools) {
+        if (!pool) continue;
+        const found = pool.find(o => o && o.name && o.name.toLowerCase() === nameLower);
+        if (found && found.mesh) return found;
+    }
+    if (asteroidBelt && /asteroid|belt/.test(nameLower)) {
+        return { name: "Main Asteroid Belt", mesh: asteroidBelt.mesh, radius: 50 };
+    }
+    const uni = window.__universe || [];
+    const star = uni.find(o => o && o.name && o.name.toLowerCase() === nameLower);
+    if (star && star.mesh) return { name: star.name, mesh: star.mesh, radius: star.radius || 20 };
+    return null;
 }
 
 function flyToByName(name, distanceMultiplier = 3) {
@@ -2038,6 +2066,52 @@ function exposeFlyToAPI() {
 
     window.galaxyExplorer.setCinematicMode = setCinematicMode;
     window.galaxyExplorer.getCinematicMode = getCinematicMode;
+
+    // Grand Tour autopilot — scenic multi-stop cinematic route
+    const ensureScenicTour = function() {
+        if (typeof ScenicTour === 'undefined' || !rendererCore?.camera) return null;
+        if (!scenicTour) {
+            scenicTour = new ScenicTour({
+                camera: rendererCore.camera,
+                findByName: findFlyableByName,
+                onStart: () => {
+                    activeFly = null;                       // a queued fly-to would fight the tour
+                    if (navPhysics?.velocity?.set) navPhysics.velocity.set(0, 0, 0);
+                },
+                onStop: () => {
+                    if (navPhysics?.velocity?.set) navPhysics.velocity.set(0, 0, 0);
+                }
+            });
+        }
+        return scenicTour;
+    };
+    window.galaxyExplorer.startScenicTour = function() {
+        if (ensureScenicTour()) scenicTour.start();
+    };
+    window.galaxyExplorer.stopScenicTour = function() {
+        if (scenicTour) scenicTour.stop('user');
+    };
+    window.galaxyExplorer.skipScenicTour = function() {
+        if (scenicTour) scenicTour.skip();
+    };
+    window.galaxyExplorer.isScenicTourActive = function() {
+        return !!(scenicTour && scenicTour.active);
+    };
+    // A tour the kid built in TourBuilder.js: same autopilot, their stops.
+    window.galaxyExplorer.startCustomTour = function(custom) {
+        if (ensureScenicTour()) scenicTour.start(custom);
+    };
+    window.galaxyExplorer.findFlyableByName = findFlyableByName;
+    window.galaxyExplorer.getCamera = function() { return rendererCore?.camera || null; };
+    // Native TOUR button: opens "Make your tour" (the Grand Tour is one tap inside it).
+    // Tapping it during any tour ends that tour. State lives here in JS, so a tour that
+    // ends on its own can't leave the button stale.
+    window.galaxyExplorer.toggleScenicTour = function() {
+        if (scenicTour && scenicTour.active) { scenicTour.stop('user'); return; }
+        if (window.tourBuilder) { window.tourBuilder.open(); return; }
+        window.galaxyExplorer.startScenicTour();
+    };
+
 
     // Time acceleration (also driveable from Swift)
     window.galaxyExplorer.cycleTimeScale = cycleTimeScale;

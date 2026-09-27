@@ -57,10 +57,15 @@ class ScenicTour {
     }
 
     // ---------------------------------------------------------------- control
-    start() {
+    // custom = { stops, onArrive(stop, i, n), onLeave(stop), onEnd(reason) } runs a
+    // tour the kid built (TourBuilder.js): no auto-advance, the builder owns the
+    // cards and taps, and a stop may carry its own camera spot (constellations).
+    start(custom = null) {
         if (this.active) return;
         this.active = true;
         this.stopIndex = -1;
+        this.custom = custom;
+        this._route = custom ? custom.stops : this.STOPS;
         if (this.onStart) { try { this.onStart(); } catch (e) {} }
         // Clean full-window view — chase/cockpit cameras would fight the tour.
         try { window.galaxyExplorer?.setViewMode?.('visor'); } catch (e) {}
@@ -68,9 +73,9 @@ class ScenicTour {
         try { window.galaxyExplorer?.setCinematicMode?.(true); } catch (e) {}
 
         const canvas = document.getElementById('galaxyCanvas');
-        if (canvas) canvas.addEventListener('pointerdown', this._cancelHandler, { capture: true });
+        if (canvas && !custom) canvas.addEventListener('pointerdown', this._cancelHandler, { capture: true });
 
-        this.chip.classList.add('show');
+        if (!custom) this.chip.classList.add('show');
         this._advance();
         console.log("🎬 Grand Tour: departure");
     }
@@ -86,6 +91,13 @@ class ScenicTour {
         this._hideCard();
         try { window.galaxyExplorer?.setCinematicMode?.(this._prevCinematic); } catch (e) {}
         if (this.onStop) { try { this.onStop(reason); } catch (e) {} }
+        const custom = this.custom;
+        this.custom = null;
+        if (custom) {
+            if (this._leaving) { try { custom.onLeave?.(this._leaving); } catch (e) {} }
+            try { custom.onEnd?.(reason); } catch (e) {}
+        }
+        this._leaving = null;
         console.log(`🎬 Grand Tour: ended (${reason})`);
     }
 
@@ -95,8 +107,18 @@ class ScenicTour {
     }
 
     _advance() {
+        if (this.custom && this._leaving) {
+            try { this.custom.onLeave?.(this._leaving); } catch (e) {}
+        }
+        this._leaving = null;
         this.stopIndex++;
-        if (this.stopIndex >= this.STOPS.length) {
+        const route = this._route || this.STOPS;
+        if (this.custom && this.stopIndex >= route.length) {
+            this.phase = null;
+            this.stop('complete');
+            return;
+        }
+        if (this.stopIndex >= route.length) {
             this._showCard('Tour complete', 'The ship is yours, captain.', '');
             this._haptic('success');
             const self = this;
@@ -105,8 +127,8 @@ class ScenicTour {
             return;
         }
 
-        const stop = this.STOPS[this.stopIndex];
-        const obj = this.findByName(stop.name);
+        const stop = route[this.stopIndex];
+        const obj = stop.resolve ? stop.resolve() : this.findByName(stop.name);
         if (!obj || !obj.mesh) {
             console.warn(`🎬 Grand Tour: "${stop.name}" not found — skipping`);
             this._advance();
@@ -118,13 +140,25 @@ class ScenicTour {
 
         // Camera slot: hold current direction from target, at the stop's distance,
         // lifted a touch above the ecliptic so rings and cloud bands read well.
-        const dist = Math.max((obj.radius || 10) * stop.mult, 6);
-        const dir = this.camera.position.clone().sub(this._tmpTarget);
-        if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
-        dir.normalize();
-        dir.y = Math.max(dir.y, 0.18); // gentle high-angle
-        dir.normalize();
-        this._arriveOffset.copy(dir).multiplyScalar(dist);
+        if (stop.cameraAt) {
+            // Fixed vantage point (a constellation seen from Earth, or from the side).
+            this._arriveOffset.copy(stop.cameraAt()).sub(this._tmpTarget);
+        } else {
+            const dist = Math.max((obj.radius || 10) * stop.mult, 6);
+            const dir = this.camera.position.clone().sub(this._tmpTarget);
+            // Kid-built tours arrive on the sunlit side (a quarter turn off the Sun line so
+            // there's still some shadow for shape) instead of wherever the last stop was.
+            const sun = stop.sunSide && this.findByName('Sun');
+            if (sun && sun.mesh) {
+                sun.mesh.getWorldPosition(dir).sub(this._tmpTarget);
+                dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), 0.6);
+            }
+            if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+            dir.normalize();
+            dir.y = Math.max(dir.y, 0.18); // gentle high-angle
+            dir.normalize();
+            this._arriveOffset.copy(dir).multiplyScalar(dist);
+        }
 
         this._startPos.copy(this.camera.position);
         this._startQuat.copy(this.camera.quaternion);
@@ -132,7 +166,7 @@ class ScenicTour {
         this.phaseStart = performance.now();
         // Long legs get longer flights, capped so the outer system never drags.
         const legLength = this._startPos.distanceTo(this._tmpTarget);
-        this.flyDuration = Math.min(9000, 2400 + legLength * 6);
+        this.flyDuration = stop.flyMs || Math.min(9000, 2400 + legLength * 6);
         this._orbitAngle = 0;
         this._hideCard();
         this._setChipProgress();
@@ -163,9 +197,21 @@ class ScenicTour {
                 this.phase = 'dwell';
                 this.phaseStart = now;
                 this._orbitAngle = 0;
-                this._showCard(stop.title, stop.sub, `${this.stopIndex + 1} / ${this.STOPS.length}`);
                 this._haptic('light');
+                if (this.custom) {
+                    this._leaving = stop;
+                    try { this.custom.onArrive?.(stop, this.stopIndex, this._route.length); } catch (e) { console.error(e); }
+                } else {
+                    this._showCard(stop.title, stop.sub, `${this.stopIndex + 1} / ${this.STOPS.length}`);
+                }
             }
+            return;
+        }
+
+        // A still vantage point: hold the view, keep looking at the target.
+        if (stop.still) {
+            this.camera.position.copy(this._tmpTarget).add(this._arriveOffset);
+            this.camera.lookAt(this._tmpTarget);
             return;
         }
 
@@ -183,7 +229,8 @@ class ScenicTour {
         );
         this.camera.lookAt(this._tmpTarget);
 
-        if (now - this.phaseStart >= this.dwellDuration) this._advance();
+        // Custom tours wait for the kid to tap the card; the Grand Tour moves on by itself.
+        if (!this.custom && now - this.phaseStart >= this.dwellDuration) this._advance();
     }
 
     // ---------------------------------------------------------------- UI
@@ -248,7 +295,7 @@ class ScenicTour {
     }
 
     _setChipProgress() {
-        if (this._prog) this._prog.textContent = `${this.stopIndex + 1}/${this.STOPS.length}`;
+        if (this._prog) this._prog.textContent = `${this.stopIndex + 1}/${(this._route || this.STOPS).length}`;
     }
 
     _showCard(title, sub, count) {
