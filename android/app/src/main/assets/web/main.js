@@ -220,8 +220,14 @@ function initGalaxy() {
                                     float illum = 1.0;
                                     for (int i = 0; i < 32; i++) {
                                         coord += delta;
+                                        if (coord.x < 0.0 || coord.x > 1.0 || coord.y < 0.0 || coord.y > 1.0) break;
                                         vec3 s = texture2D(tDiffuse, coord).rgb;
                                         float lum = dot(s, vec3(0.299, 0.587, 0.114));
+                                        // Half-float scene targets can hold NaN/Inf texels (sun core, far
+                                        // geometry). One bad texel smeared along 32 ray steps became the
+                                        // black vertical bars ("black wedge", Sept 2026). NaN fails every
+                                        // comparison, so this skips NaN and Inf alike.
+                                        if (!(lum >= 0.0 && lum < 64.0)) { illum *= uDecay; continue; }
                                         s *= smoothstep(0.8, 1.25, lum); // only near-blown pixels (the sun core) shaft — star sprites/labels no longer smear into white rays
                                         rays += s * illum * uWeight;
                                         illum *= uDecay;
@@ -1814,7 +1820,17 @@ function createBlackHoles() {
     };
 
     const blackHole = new BlackHole(bhConfig);
-    blackHole.mesh.position.set(-800, 100, -1200);
+    // Where the real one is (Matt, 2026-09-27: "accurate, but more accessible"): toward
+    // Sagittarius (RA 17h45m40s, Dec -29.0 deg), 26,670 light-years out, on the same
+    // compressed sqrt scale the nearby stars use (codex/Interstellar.js gameRadius), so it
+    // sits beyond every star instead of beside the Sun. Still one tap away in the fly-to list.
+    // It used to be parked at (-800, 100, -1200), roughly Neptune's distance from the Sun.
+    {
+        const raH = 17 + 45 / 60 + 40 / 3600, decDeg = -29.0078, ly = 26670;
+        const ra = raH * 15 * Math.PI / 180, dec = decDeg * Math.PI / 180;
+        const r = Math.sqrt(ly) * 150;
+        blackHole.mesh.position.set(Math.cos(dec) * Math.cos(ra) * r, Math.sin(dec) * r, -Math.cos(dec) * Math.sin(ra) * r);
+    }
     rendererCore.scene.add(blackHole.mesh);
     blackHoles.push(blackHole);
 }

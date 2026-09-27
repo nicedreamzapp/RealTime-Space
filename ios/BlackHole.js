@@ -229,6 +229,9 @@ class BlackHole {
 
                     // HDR boost for hot regions
                     finalColor *= 1.0 + max(0.0, temperature - 1.5) * 2.0;
+                    // Cap it: unbounded HDR here overflowed the bloom pass, whose smallest blur
+                    // level then showed up as a hard-edged square halo around the disk (Sept 2026).
+                    finalColor = min(finalColor, vec3(3.0));
 
                     // Alpha based on density
                     float alpha = density * 0.8;
@@ -424,21 +427,27 @@ class BlackHole {
             const jetMaterial = new THREE.ShaderMaterial({
                 uniforms: {
                     time: { value: 0 },
-                    jetLength: { value: jetLength }
+                    jetLength: { value: jetLength },
+                    jetRadius: { value: jetRadius }
                 },
                 vertexShader: `
+                    uniform float jetLength;
                     varying vec3 vPosition;
                     varying float vHeight;
 
                     void main() {
                         vPosition = position;
-                        vHeight = (position.y + 0.5);
+                        // 0 at the black hole, 1 at the tip. position.y is in world units
+                        // (+/- jetLength/2), so the old "position.y + 0.5" sent exp(-vHeight*3)
+                        // to infinity on the lower half: a NaN/black line (Sept 2026).
+                        vHeight = clamp(position.y / jetLength + 0.5, 0.0, 1.0);
                         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                     }
                 `,
                 fragmentShader: `
                     uniform float time;
                     uniform float jetLength;
+                    uniform float jetRadius;
                     varying vec3 vPosition;
                     varying float vHeight;
 
@@ -448,7 +457,9 @@ class BlackHole {
                         vec3 outerColor = vec3(0.2, 0.3, 0.8);
 
                         float radialDist = length(vPosition.xz);
-                        vec3 jetColor = mix(coreColor, outerColor, radialDist * 5.0);
+                        // Clamped: an unclamped mix extrapolated past outerColor into negative
+                        // colour, which additive blending turns into a dark streak.
+                        vec3 jetColor = mix(coreColor, outerColor, clamp(radialDist / jetRadius, 0.0, 1.0));
 
                         // Intensity falls off with distance
                         float intensity = exp(-vHeight * 3.0);
@@ -456,9 +467,12 @@ class BlackHole {
                         // Plasma turbulence
                         float turbulence = sin(vHeight * 20.0 + time * 5.0) * 0.2 + 0.8;
 
-                        float alpha = intensity * turbulence * 0.5;
+                        // Soft edges: brightest on the axis, fading to nothing at the rim, so it
+                        // reads as a beam of plasma rather than a solid cone.
+                        float edge = 1.0 - clamp(radialDist / jetRadius, 0.0, 1.0);
+                        float alpha = intensity * turbulence * 0.35 * edge * edge;
 
-                        gl_FragColor = vec4(jetColor * 2.0, alpha);
+                        gl_FragColor = vec4(jetColor, alpha);
                     }
                 `,
                 transparent: true,
