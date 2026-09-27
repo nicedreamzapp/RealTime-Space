@@ -136,13 +136,15 @@ class ScenicTour {
         }
 
         this._current = { obj, stop };
+        // A fixed vantage point may move its own look-at pivot, so resolve it first.
+        const camAt = stop.cameraAt ? stop.cameraAt() : null;
         obj.mesh.getWorldPosition(this._tmpTarget);
 
         // Camera slot: hold current direction from target, at the stop's distance,
         // lifted a touch above the ecliptic so rings and cloud bands read well.
         if (stop.cameraAt) {
             // Fixed vantage point (a constellation seen from Earth, or from the side).
-            this._arriveOffset.copy(stop.cameraAt()).sub(this._tmpTarget);
+            this._arriveOffset.copy(camAt).sub(this._tmpTarget);
         } else {
             const dist = Math.max((obj.radius || 10) * stop.mult, 6);
             const dir = this.camera.position.clone().sub(this._tmpTarget);
@@ -247,10 +249,11 @@ class ScenicTour {
                 backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
                 font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;
                 color: #cfe4ff; font-size: 12px; letter-spacing: 0.08em;
-                z-index: 10040; transition: transform 0.45s cubic-bezier(0.2, 0.9, 0.25, 1);
-                pointer-events: auto; white-space: nowrap;
+                z-index: 10040; transition: transform 0.45s cubic-bezier(0.2, 0.9, 0.25, 1), opacity 0.3s;
+                pointer-events: none; white-space: nowrap; opacity: 0;
             }
-            .st-chip.show { transform: translateX(-50%) translateY(0); }
+            /* Hidden = invisible too: -70px alone left it peeking below the notch on iPhones. */
+            .st-chip.show { transform: translateX(-50%) translateY(0); opacity: 1; pointer-events: auto; }
             .st-chip .st-label { font-weight: 600; }
             .st-chip button {
                 appearance: none; border: 1px solid rgba(120, 180, 255, 0.4);

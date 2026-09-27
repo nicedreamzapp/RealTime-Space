@@ -105,8 +105,12 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
             ) {
                 RadarView(state, sizeDp = radarDp)
                 MenuButton(showPanel) { showPanel = !showPanel }
-                ViewModeButton(bridge)
-                TourButton { showPanel = false; bridge.openTour(); bridge.haptic("light") }
+                // TOUR sits beside the view-mode button, not under it, so the rail keeps its
+                // height and never runs into the web icon dock below it.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TourButton { showPanel = false; bridge.openTour(); bridge.haptic("light") }
+                    ViewModeButton(bridge)
+                }
             }
 
             // ---------- BOTTOM CONSOLE ----------

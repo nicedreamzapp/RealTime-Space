@@ -238,14 +238,38 @@
       const c = new THREE.Vector3();
       f.stars.forEach(s => c.add(s.pos));
       c.multiplyScalar(1 / f.stars.length);
+      // Earth view: stand just off Earth and aim at the middle of the pattern AS SEEN FROM
+      // EARTH (average direction, not the 3D centroid, which a far star drags sideways). If the
+      // whole figure can't fit below the card, widen the view for this stop only (stop.fov).
       const pivot = new THREE.Object3D();
-      pivot.position.copy(c);
       const resolve = () => ({ name: item.name, mesh: pivot, radius: 1 });
-      // Earth view: just off Earth, looking out at the figure.
+      let earthCam = null, earthFov = null;
       const fromEarth = () => {
+        if (earthCam) return earthCam;
         const e = findFlyable('Earth');
         const ep = e ? e.mesh.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3();
-        return ep.add(c.clone().sub(ep).normalize().multiplyScalar(8));
+        const dir = new THREE.Vector3();
+        f.stars.forEach(s => dir.add(s.pos.clone().sub(ep).normalize()));
+        dir.normalize();
+        const R = 1000;
+        const real = window.galaxyExplorer.getCamera();
+        const cam = real ? real.clone() : new THREE.PerspectiveCamera(68, 0.45, 0.01, 2e6);
+        if (real) cam.aspect = real.aspect;
+        cam.position.copy(ep).add(dir.clone().multiplyScalar(8));
+        const v = new THREE.Vector3();
+        for (let fov = cam.fov; fov <= 110; fov += 4) {
+          cam.fov = fov; cam.updateProjectionMatrix();
+          // lift the aim so the figure sits in the lower, uncovered part of the screen
+          const up = new THREE.Vector3(0, 1, 0).projectOnPlane(dir).normalize();
+          pivot.position.copy(cam.position).add(dir.clone().multiplyScalar(R))
+            .add(up.multiplyScalar(R * Math.tan(fov * Math.PI / 360) * 0.25));
+          cam.lookAt(pivot.position); cam.updateMatrixWorld(true);
+          const fits = f.stars.every(s => { v.copy(s.pos).project(cam); return Math.abs(v.x) < 0.85 && v.y < 0.2 && v.y > -0.85; });
+          earthFov = fov;
+          if (fits) break;
+        }
+        earthCam = cam.position.clone();
+        return earthCam;
       };
       // Side view: look across the line of sight from far enough out that the nearest and
       // farthest star both fit on screen, aimed at the middle of that depth range.
@@ -282,7 +306,7 @@
         return sideCam;
       };
       return [
-        Object.assign({ resolve, cameraAt: fromEarth, still: true, view: 'earth' }, base),
+        Object.assign({ resolve, cameraAt: fromEarth, still: true, view: 'earth', fov: () => earthFov }, base),
         Object.assign({ resolve: () => ({ name: item.name, mesh: sidePivot, radius: 1 }), cameraAt: fromSide, still: true, view: 'side', flyMs: 7000 }, base)
       ];
     }
@@ -325,6 +349,11 @@
       this._at = this._stops.indexOf(stop);
       const total = this.picks.length;
       const last = this._at === this._stops.length - 1;
+      if (stop.fov && stop.fov()) {
+        const cam = window.galaxyExplorer.getCamera();
+        if (cam && this._fov0 == null) this._fov0 = cam.fov;
+        if (cam) { cam.fov = stop.fov(); cam.updateProjectionMatrix(); }
+      }
       if (stop.view) {
         window.constellations.highlight(stop.item.name, stop.color);
         this._showStarLabels(window.constellations.figure(stop.item.name), stop.color);
@@ -334,7 +363,14 @@
       this._waiting = true;
     }
 
+    _restoreFov() {
+      const cam = window.galaxyExplorer.getCamera();
+      if (cam && this._fov0 != null) { cam.fov = this._fov0; cam.updateProjectionMatrix(); }
+      this._fov0 = null;
+    }
+
     _leave(stop) {
+      this._restoreFov();
       this._hideCard();
       // The Earth view hands straight to the side view, so keep the lines lit between them.
       if (stop && stop.view === 'side') { window.constellations?.clearHighlight?.(); this._hideStarLabels(); }
@@ -389,6 +425,7 @@
     }
 
     _ended(reason) {
+      this._restoreFov();
       window.constellations?.clearHighlight?.();
       this._hideStarLabels();
       this._hideCard();
@@ -525,7 +562,8 @@
           font-size: 15px; font-weight: 600; max-width: 96px; padding: 0 4px; outline: none; }
         .tb-lang option { color: #04101f; }
         .tb-x { width: 44px; height: 44px; border-radius: 22px; border: 1px solid rgba(120,180,255,.35); background: rgba(40,70,120,.4); color: #dceaff; font-size: 18px; flex: none; }
-        .tb-list { overflow-y: auto; padding: 0 16px 8px; -webkit-overflow-scrolling: touch; }
+        .tb-list { overflow-y: auto; padding: 0 16px 8px; -webkit-overflow-scrolling: touch;
+          flex: 1 1 auto; min-height: 0; overscroll-behavior: contain; }  /* min-height:0 or iOS Safari won't scroll a flex child */
         .tb-group { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #8fb3de; margin: 12px 0 8px; font-weight: 700; }
         .tb-chips { display: flex; flex-wrap: wrap; gap: 8px; }
         .tb-chip { min-height: 44px; padding: 0 14px 0 10px; border-radius: 22px; display: inline-flex; align-items: center; gap: 8px;
