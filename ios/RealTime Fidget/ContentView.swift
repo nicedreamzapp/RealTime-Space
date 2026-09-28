@@ -335,16 +335,8 @@ struct ContentView: View {
                 .allowsHitTesting(!chromeHidden)
                 }
 
-                // Build/version stamp at the bottom so we can tell builds apart at a glance.
-                VStack {
-                    Spacer()
-                    Text(appBuildString())
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundColor(.cyan.opacity(0.4))
-                        .padding(.bottom, 2)
-                }
-                .allowsHitTesting(false)
-                .opacity(chromeHidden ? 0 : 1)
+                // (The version/build stamp lives on the welcome screen only; on the flight view it
+                //  sat under the STOP button as debug text every player saw.)
 
                 // First-launch splash + How to Play (reopenable from the ⋯ menu).
                 if showSplash {
@@ -494,6 +486,13 @@ struct ContentView: View {
             }
             .navigationTitle("Fly To")
             .navigationBarTitleDisplayMode(.inline)
+            // A visible way out; swiping the sheet down is not something every kid knows.
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showPlanetPicker = false }
+                        .foregroundColor(.cyan)
+                }
+            }
             .scrollContentBackground(.hidden)
             .background(Color(red: 0.02, green: 0.04, blue: 0.08))
         }

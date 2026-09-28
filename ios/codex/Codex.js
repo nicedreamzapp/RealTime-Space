@@ -77,7 +77,7 @@
       } catch (e) {}
     }
     _refreshMuteButtons() {
-      document.querySelectorAll('.cx-mute').forEach(b => { b.textContent = this.muted ? '🔇' : '🔊'; });
+      document.querySelectorAll('.cx-mute').forEach(b => { b.textContent = this.muted ? '🔇' : '🔊'; b.setAttribute('aria-label', this.muted ? 'Sound is off' : 'Sound is on'); });
     }
 
     // ---- persistence ---------------------------------------------------------
@@ -245,7 +245,7 @@
               <div class="cx-card-class">${data.class}</div>
             </div>
             <div class="cx-head-btns">
-              <button class="cx-mute cx-icon-btn" title="Sound on/off">${this.muted ? '🔇' : '🔊'}</button>
+              <button class="cx-mute cx-icon-btn" title="Sound on/off" aria-label="${this.muted ? 'Sound is off' : 'Sound is on'}">${this.muted ? '🔇' : '🔊'}</button>
               <button class="cx-close" aria-label="close">✕</button>
             </div>
           </div>
@@ -389,7 +389,7 @@
               <div class="cx-guide-sub">${found} / ${keys.length} bodies discovered</div>
             </div>
             <div class="cx-head-btns">
-              <button class="cx-mute cx-icon-btn" title="Sound on/off">${this.muted ? '🔇' : '🔊'}</button>
+              <button class="cx-mute cx-icon-btn" title="Sound on/off" aria-label="${this.muted ? 'Sound is off' : 'Sound is on'}">${this.muted ? '🔇' : '🔊'}</button>
               <button class="cx-close" aria-label="close">✕</button>
             </div>
           </div>
@@ -434,7 +434,7 @@
               <div class="cx-guide-sub">tap a world to fly there · you are the green marker</div>
             </div>
             <div class="cx-head-btns">
-              <button class="cx-mute cx-icon-btn" title="Sound on/off">${this.muted ? '🔇' : '🔊'}</button>
+              <button class="cx-mute cx-icon-btn" title="Sound on/off" aria-label="${this.muted ? 'Sound is off' : 'Sound is on'}">${this.muted ? '🔇' : '🔊'}</button>
               <button class="cx-close" aria-label="close">✕</button>
             </div>
           </div>
@@ -630,7 +630,7 @@
               <div class="cx-guide-sub">tap a destination — autopilot takes you there</div>
             </div>
             <div class="cx-head-btns">
-              <button class="cx-mute cx-icon-btn" title="Sound on/off">${this.muted ? '🔇' : '🔊'}</button>
+              <button class="cx-mute cx-icon-btn" title="Sound on/off" aria-label="${this.muted ? 'Sound is off' : 'Sound is on'}">${this.muted ? '🔇' : '🔊'}</button>
               <button class="cx-close" aria-label="close">✕</button>
             </div>
           </div>
@@ -665,12 +665,12 @@
       wrap.className = 'cx-controls';
       wrap.innerHTML = `
         <div class="cx-btnrow">
-          <button class="cx-map-btn cx-icon-btn" id="cxMapBtn" title="Space Map">🗺️</button>
-          <button class="cx-live-btn cx-icon-btn" id="cxLiveBtn" title="Live — right now">🛰️</button>
-          <button class="cx-guide-btn" id="cxGuideBtn">
+          <button class="cx-map-btn cx-icon-btn" id="cxMapBtn" title="Space Map" aria-label="Space map">🗺️</button>
+          <button class="cx-live-btn cx-icon-btn" id="cxLiveBtn" title="Live — right now" aria-label="Live space station and asteroids">🛰️</button>
+          <button class="cx-guide-btn" id="cxGuideBtn" aria-label="Field Guide">
             📖 <span class="cx-guide-badge" id="cxGuideBadge">${this.scanned.size}</span>
           </button>
-          <button class="cx-mute cx-icon-btn" title="Sound on/off">${this.muted ? '🔇' : '🔊'}</button>
+          <button class="cx-mute cx-icon-btn" title="Sound on/off" aria-label="${this.muted ? 'Sound is off' : 'Sound is on'}">${this.muted ? '🔇' : '🔊'}</button>
         </div>`;
       document.body.appendChild(wrap);
 

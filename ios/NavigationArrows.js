@@ -175,6 +175,13 @@ class NavigationArrows {
 
             .prompt-left { left: 80px; top: 50%; transform: translateY(-50%); }
             .prompt-right { right: 360px; top: 50%; transform: translateY(-50%); }
+            /* Portrait phones are ~400px wide: 360px from the right pushed "TURN RIGHT"
+               off the left edge. Sit it just left of the button column instead. */
+            @media (orientation: portrait) {
+                .prompt-right { right: 84px; }
+                .prompt-left { left: 24px; }
+                .direction-prompt { white-space: nowrap; }
+            }
             .prompt-up { top: 80px; left: 50%; transform: translateX(-50%); }
             .prompt-down { bottom: 80px; left: 50%; transform: translateX(-50%); }
 

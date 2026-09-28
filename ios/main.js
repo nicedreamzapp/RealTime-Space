@@ -966,6 +966,9 @@ function createTimeControl() {
     timePillEl = document.createElement('div');
     timePillEl.id = 'time-pill';
     timePillEl.textContent = TIME_SCALES[0].label;
+    // A div, so VoiceOver/TalkBack read it as text; say what it is and that it can be tapped.
+    timePillEl.setAttribute('role', 'button');
+    timePillEl.setAttribute('aria-label', 'Time speed, 1 times. Tap to speed up time');
     timePillEl.style.cssText = `
         position: absolute; top: max(18px, env(safe-area-inset-top)); left: max(18px, env(safe-area-inset-left)); z-index: 120;
         padding: 6px 13px; border-radius: 14px;
@@ -988,7 +991,10 @@ function cycleTimeScale() {
     timeScaleIndex = (timeScaleIndex + 1) % TIME_SCALES.length;
     const entry = TIME_SCALES[timeScaleIndex];
     if (orbitalMechanics) orbitalMechanics.setTimeScale(entry.scale);
-    if (timePillEl) timePillEl.textContent = entry.label;
+    if (timePillEl) {
+        timePillEl.textContent = entry.label;
+        timePillEl.setAttribute('aria-label', 'Time speed, ' + entry.scale + ' times. Tap to change it');
+    }
     if (hud && typeof hud.showInfo === 'function') {
         hud.showInfo(entry.scale === 0 ? 'ORBITS PAUSED' : `ORBITAL TIME ${entry.scale}×`, 1200);
     }

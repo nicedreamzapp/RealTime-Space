@@ -27,7 +27,7 @@
     sun: {
       class: 'G-type main-sequence star (yellow dwarf)',
       radiusKm: 696340, massKg: 1.989e30, gravity: 27.95,
-      dayHours: 609.12, yearDays: null, tempC: 5505, distanceAU: 0, moons: 8,
+      dayHours: 609.12, yearDays: null, tempC: 5505, distanceAU: 0, moons: null,  // the Sun has planets, not moons
       composition: [
         { label: 'Hydrogen', pct: 73 },
         { label: 'Helium', pct: 25 },
@@ -87,7 +87,7 @@
         { label: 'Other', pct: 1 }
       ],
       discovered: 'Prehistoric',
-      fact: 'Mars has Olympus Mons, the tallest volcano in the solar system — 22 km high, three times Everest. Its red color is literally rust (iron oxide).',
+      fact: 'Mars has Olympus Mons, the tallest volcano in the solar system — 22 km high, about two and a half times as tall as Everest. Its red color is literally rust (iron oxide).',
       color: '#d96c4a'
     },
     jupiter: {
@@ -99,20 +99,20 @@
         { label: 'Helium', pct: 10 }
       ],
       discovered: 'Prehistoric',
-      fact: 'Jupiter is so massive it could swallow all the other planets combined. Its Great Red Spot is a storm wider than Earth that has raged for 350+ years.',
+      fact: 'Jupiter is so massive it could swallow all the other planets combined. Its Great Red Spot is a storm wider than Earth that has been raging for more than 150 years.',
       color: '#d8a47f'
     },
     saturn: {
       class: 'Gas giant · the ringed jewel',
       radiusKm: 58232, massKg: 5.683e26, gravity: 1.07,
-      dayHours: 10.66, yearDays: 10759, tempC: -140, distanceAU: 9.58, moons: 146,
+      dayHours: 10.66, yearDays: 10759, tempC: -140, distanceAU: 9.58, moons: 274,
       composition: [
         { label: 'Hydrogen', pct: 96 },
         { label: 'Helium', pct: 3 },
         { label: 'Other', pct: 1 }
       ],
       discovered: 'Prehistoric',
-      fact: 'Saturn is so light it would float in water. Its rings span 280,000 km but are often only ~10 meters thick — and it has 146 known moons, the most of any planet.',
+      fact: 'Saturn is so light it would float in water. Its rings span 280,000 km but are often only ~10 meters thick — and it has 274 known moons, the most of any planet (count as of 2025).',
       color: '#e3d2a2'
     },
     uranus: {
@@ -179,7 +179,7 @@
         { label: 'Iron core', pct: 25 }
       ],
       discovered: 'Galileo Galilei, 1610',
-      fact: 'Io has over 400 active volcanoes, some flinging plumes 500 km into space. Jupiter’s gravity flexes it so hard the surface bulges up to 100 m, twice a day.',
+      fact: 'Io has over 400 active volcanoes, some flinging plumes 500 km into space. Jupiter’s gravity flexes it so hard the surface bulges up to 100 m.',
       color: '#e8e06a'
     },
     europa: {
@@ -239,7 +239,7 @@
         { label: 'Silicate rock', pct: 40 }
       ],
       discovered: 'William Herschel, 1789',
-      fact: 'Enceladus blasts geysers of ocean water 1,000s of km into space from its south pole — feeding one of Saturn’s rings. It’s the whitest, most reflective body in the solar system.',
+      fact: 'Enceladus blasts geysers of ocean water hundreds of kilometers into space from its south pole — feeding one of Saturn’s rings. It’s the whitest, most reflective body in the solar system.',
       color: '#f2f6ff'
     },
 
