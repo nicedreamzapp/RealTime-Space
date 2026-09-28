@@ -110,6 +110,40 @@ class AsteroidBelt {
             this.asteroids.push(asteroid);
             this.mesh.add(asteroid.mesh);
         }
+        this.mesh.add(this.createDust());
+    }
+
+    // The 600 modelled rocks are real-sized for the scene and almost invisible from any
+    // distance, so "fly to the asteroid belt" showed empty space (Matt, 2026-09-28). A band of
+    // small points (the millions of rocks too small to model) makes the belt read as a belt.
+    createDust() {
+        const N = 18000;
+        const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+        const h = this.height || 10;
+        for (let i = 0; i < N; i++) {
+            const a = this._rnd() * Math.PI * 2;
+            // denser in the middle of the band, thinning toward the edges
+            const t = (this._rnd() + this._rnd()) / 2;
+            const r = this.innerRadius + (this.outerRadius - this.innerRadius) * t;
+            const y = (this._rnd() + this._rnd() - 1) * h * 0.5;
+            pos[i * 3] = Math.cos(a) * r; pos[i * 3 + 1] = y; pos[i * 3 + 2] = Math.sin(a) * r;
+            const g = 0.45 + this._rnd() * 0.35;          // grey-brown rock colours
+            col[i * 3] = g * 1.05; col[i * 3 + 1] = g * 0.95; col[i * 3 + 2] = g * 0.82;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        // Round, soft-edged dots (a bare PointsMaterial draws squares).
+        const c = document.createElement('canvas'); c.width = c.height = 32;
+        const g2 = c.getContext('2d'), grd = g2.createRadialGradient(16, 16, 0, 16, 16, 16);
+        grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.45, 'rgba(255,255,255,0.8)');
+        grd.addColorStop(1, 'rgba(255,255,255,0)');
+        g2.fillStyle = grd; g2.fillRect(0, 0, 32, 32);
+        const mat = new THREE.PointsMaterial({ size: 0.32, sizeAttenuation: true, vertexColors: true,
+            map: new THREE.CanvasTexture(c), transparent: true, opacity: 0.9, depthWrite: false, alphaTest: 0.02 });
+        const dust = new THREE.Points(geo, mat);
+        dust.name = 'AsteroidBeltDust';
+        return dust;
     }
 
     createAsteroid() {

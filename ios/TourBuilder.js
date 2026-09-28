@@ -231,6 +231,18 @@
         // Camera distance in body radii: ringed giants need room for the rings.
         const MULT = { Sun: 5.5, Saturn: 7, Jupiter: 4.5, Uranus: 5, Neptune: 4.5, ISS: 5 };
         const mult = /Belt|Nebula|Andromeda/.test(item.name) ? 2.2 : (MULT[item.name] || 3.6);
+        if (item.id === 'belt') {
+          // Look along the ring from just outside and above it, so the band of rocks curves
+          // away across the screen (from straight on, it is nearly empty space).
+          const THREE = window.THREE;
+          const spotAt = () => findFlyable(item.name).mesh.getWorldPosition(new THREE.Vector3());
+          const cameraAt = () => {
+            const p = spotAt(), out = p.clone().setY(0).normalize();
+            const tangent = new THREE.Vector3(-out.z, 0, out.x);
+            return p.clone().add(out.multiplyScalar(48)).add(new THREE.Vector3(0, 20, 0)).add(tangent.multiplyScalar(-38));
+          };
+          return [Object.assign({ name: item.name, cameraAt, still: true }, base)];
+        }
         return [Object.assign({ name: item.name, mult, sunSide: item.stats || item.id === 'iss' }, base)];
       }
       const THREE = window.THREE;

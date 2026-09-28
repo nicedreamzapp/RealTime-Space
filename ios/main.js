@@ -1393,6 +1393,19 @@ function flyToObject(obj, distanceMultiplier = 3) {
     };
 }
 
+// The belt's own mesh is centred on the Sun, so flying "to the belt" used to fly to the Sun
+// and show no rocks (Matt, 2026-09-28). Aim at a spot inside the ring instead (radius 140-180),
+// parented to the belt so it moves with it; radius 8 keeps the camera in among the rocks.
+function beltSpot() {
+    if (!asteroidBelt.__spot) {
+        const spot = new THREE.Object3D();
+        spot.position.set(160, 1.5, 0);
+        asteroidBelt.mesh.add(spot);
+        asteroidBelt.__spot = spot;
+    }
+    return { name: "Main Asteroid Belt", mesh: asteroidBelt.__spot, radius: 8 };
+}
+
 // Resolve any flyable object by name — same search order as flyToByName, but
 // returns the live object (mesh + radius) so the Grand Tour can track it.
 function findFlyableByName(name) {
@@ -1404,9 +1417,7 @@ function findFlyableByName(name) {
         const found = pool.find(o => o && o.name && o.name.toLowerCase() === nameLower);
         if (found && found.mesh) return found;
     }
-    if (asteroidBelt && /asteroid|belt/.test(nameLower)) {
-        return { name: "Main Asteroid Belt", mesh: asteroidBelt.mesh, radius: 50 };
-    }
+    if (asteroidBelt && /asteroid|belt/.test(nameLower)) return beltSpot();
     const uni = window.__universe || [];
     const star = uni.find(o => o && o.name && o.name.toLowerCase() === nameLower);
     if (star && star.mesh) return { name: star.name, mesh: star.mesh, radius: star.radius || 20 };
@@ -1425,7 +1436,15 @@ function flyToByName(name, distanceMultiplier = 3) {
         if (found) { flyToObject(found, distanceMultiplier); return; }
     }
     if (asteroidBelt && /asteroid|belt/.test(nameLower)) {
-        flyToObject({ mesh: asteroidBelt.mesh, radius: 50 }, distanceMultiplier);
+        // Arrive just outside and above the ring, looking along it, so the band of rocks
+        // curves away across the screen (same view as the tour's belt stop).
+        const spot = beltSpot().mesh.getWorldPosition(new THREE.Vector3());
+        const out = spot.clone().setY(0).normalize();
+        const tangent = new THREE.Vector3(-out.z, 0, out.x);
+        const endPos = spot.clone().add(out.multiplyScalar(48)).add(new THREE.Vector3(0, 20, 0)).add(tangent.multiplyScalar(-38));
+        const cam = rendererCore.camera;
+        activeFly = { startTime: performance.now(), startPos: cam.position.clone(), startQuat: cam.quaternion.clone(),
+                      endPos, endLookAt: spot };
         return;
     }
     // Interstellar / exoplanet / galaxy layer registers its objects here (kept out of the
