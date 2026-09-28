@@ -36,7 +36,7 @@ final class TourBuilderUITests: XCTestCase {
         if begin.waitForExistence(timeout: 20) { begin.tap() }
         sleep(20)                                   // engine + textures
 
-        let tour = app.buttons["Grand tour"]        // native TOUR button's accessibility label
+        let tour = app.buttons["Make your tour"]    // native TOUR button
         XCTAssertTrue(tour.waitForExistence(timeout: 30), "TOUR button missing")
         tour.tap()
         XCTAssertTrue(webText(app, containing: "Make your tour").waitForExistence(timeout: 15), "picker did not open")

@@ -26,8 +26,14 @@ final class StoreManager: ObservableObject {
     init() {
         // Fast path so the gate doesn't flash for paid users while StoreKit wakes up.
         // The verified entitlement check below is the real authority.
+        #if AS_NEW_BUYER
+        // Test builds only (OTHER_SWIFT_FLAGS=-DAS_NEW_BUYER): behave like a phone that has
+        // never bought the app, so an owner can see the purchase screen and Redeem a Code.
+        isUnlocked = false
+        #else
         isUnlocked = UserDefaults.standard.bool(forKey: "unlockedForever")
             || StoreManager.codeUnlockStored()
+        #endif
         refreshTrial()
         updatesTask = Task { await listenForTransactions() }
         Task {

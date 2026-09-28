@@ -120,10 +120,14 @@ struct ContentView: View {
                             .frame(width: 80, height: 80)
                             .padding(.top, 24)
                             Spacer().frame(width: 44)
-                            VStack(spacing: 8) {
+                            VStack(alignment: .trailing, spacing: 8) {
                                 menuButton
-                                viewModeButton
-                                tourButton
+                                // TOUR sits beside the view button, not below it: below, it
+                                // landed on top of the first icon of the web dock.
+                                HStack(spacing: 8) {
+                                    tourButton
+                                    viewModeButton
+                                }
                             }
                         }
                         .padding(.horizontal, 16)
@@ -139,8 +143,12 @@ struct ContentView: View {
                                 )
                                 .frame(width: 120, height: 120)
                                 menuButton
-                                viewModeButton
-                                tourButton
+                                // TOUR sits beside the view button, not below it: below, it
+                                // landed on top of the first icon of the web dock.
+                                HStack(spacing: 8) {
+                                    tourButton
+                                    viewModeButton
+                                }
                             }
                         }
                         .padding(.horizontal, 16)
@@ -187,6 +195,16 @@ struct ContentView: View {
                 .allowsHitTesting(!chromeHidden)
 
                 // TRANSPARENT NAVIGATE PANEL
+                // Tapping anywhere outside the panel closes it (it used to stay open until you
+                // picked something, and it covered its own ✕).
+                if showNavigateMenu {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { showNavigateMenu = false } }
+                        .accessibilityLabel("Close the menu")
+                        .accessibilityAddTraits(.isButton)
+                }
                 if showNavigateMenu {
                     HStack {
                         Spacer()
@@ -310,8 +328,10 @@ struct ContentView: View {
                         )
                         .cornerRadius(14)
                         .shadow(color: .black.opacity(0.5), radius: 16, y: 6)
-                        .padding(.top, isLandscape ? 52 : 70)
-                        .padding(.trailing, 12)
+                        // Left of the button rail (16 pt margin + 44 pt buttons + gap), so the ✕
+                        // that closes it is never underneath it; in portrait, below the radar.
+                        .padding(.top, isLandscape ? 52 : 136)
+                        .padding(.trailing, 16 + 44 + 10)
                         .padding(.bottom, isLandscape ? 16 : 140)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
@@ -545,7 +565,7 @@ struct ContentView: View {
             .cornerRadius(10)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Grand tour")
+        .accessibilityLabel("Make your tour")
         .accessibilityHint("Starts or stops the scenic autopilot")
         .accessibilityAddTraits(.isButton)
     }
