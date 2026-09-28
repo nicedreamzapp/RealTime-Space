@@ -1,6 +1,5 @@
 import SwiftUI
 import StoreKit
-import CryptoKit
 import UIKit
 import Security
 import Combine
@@ -90,40 +89,23 @@ final class StoreManager: ObservableObject {
         if !isUnlocked { errorMessage = "No previous purchase found for this Apple Account." }
     }
 
-    // MARK: Unlock codes
-    // These are MATT'S OWN codes, not Apple promo codes. Apple's are unreadable 18-character
-    // strings you cannot choose, and they only redeem through the App Store app — useless for
-    // handing someone a code over the phone or in a forum post. These are short words with one
-    // digit, checked right here, offline, no account needed.
-    //
-    // Stored as SHA-256, and the words themselves are deliberately NOT in this repo — a hash
-    // is one-way, a comment naming the code is not. To mint one:
-    //   echo -n YOURCODE | shasum -a 256
-    // Comparison is case-insensitive and ignores spaces and dashes, so "your code" and
-    // "YOUR-CODE" both work.
-    private static let codeHashes: Set<String> = [
-        "53edfbd29c8559f897047209b58a90e30fae91759a46ec020274001ccd582bcf",  // gift code 1
-        "2f48d108f49087a665c016d1006b60a588fa321fa4e5ef8643b1c4957f199d39",  // gift code 2
-        "c8c8f7fe625a1a98824e4fc4887ca38b8caeb22ad91c4f40d500c3378549597e",  // owner
-    ]
-
-    private static func hash(_ s: String) -> String {
-        SHA256.hash(data: Data(s.utf8)).map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// Returns true and unlocks the app if the typed code matches. Sets errorMessage otherwise.
-    @discardableResult
-    func applyUnlockCode(_ raw: String) -> Bool {
-        let cleaned = raw.uppercased().filter { !$0.isWhitespace && $0 != "-" }
-        guard !cleaned.isEmpty else { return false }
-        guard Self.codeHashes.contains(Self.hash(cleaned)) else {
-            errorMessage = "That code didn't match. Check it and try again."
-            return false
-        }
+    // MARK: Offer codes
+    // Giveaway codes are App Store offer codes on the unlock IAP (custom words set up in
+    // App Store Connect). Our own typed-in codes were rejected under Guideline 3.1.1 on
+    // 2026-09-28: on iOS only the App Store may unlock paid features. A redeemed code arrives
+    // as an ordinary transaction, so listenForTransactions() unlocks the app.
+    func redeemOfferCode() async {
         errorMessage = nil
-        Self.storeCodeUnlock()
-        setUnlocked()
-        return true
+        guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene }).first(where: { $0.activationState == .foregroundActive })
+                ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first
+        else { return }
+        do {
+            try await AppStore.presentOfferCodeRedeemSheet(in: scene)
+            await refreshEntitlement()
+        } catch {
+            errorMessage = "Couldn't open the code sheet. Check your connection and try again."
+        }
     }
 
     private func refreshEntitlement() async {
@@ -157,8 +139,8 @@ final class StoreManager: ObservableObject {
 
     private static let keychainCodeAccount = "codeUnlocked"
 
-    /// A code unlock lives in the Keychain, not just UserDefaults, for the same reason the
-    /// trial date does: deleting and reinstalling the app must not take it away.
+    /// People who unlocked with one of our old typed-in codes (before 1.3.3 build 25) keep it:
+    /// that unlock was saved in the Keychain so a reinstall does not take it away.
     static func codeUnlockStored() -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -168,17 +150,6 @@ final class StoreManager: ObservableObject {
         ]
         var item: CFTypeRef?
         return SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess
-    }
-
-    static func storeCodeUnlock() {
-        let add: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainCodeAccount,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-            kSecValueData as String: Data("1".utf8),
-        ]
-        SecItemAdd(add as CFDictionary, nil)
     }
 
     static func firstLaunchDate() -> Date {
@@ -214,21 +185,6 @@ final class StoreManager: ObservableObject {
 struct UnlockView: View {
     @ObservedObject var store: StoreManager
     var onClose: (() -> Void)?
-
-    // Code entry sits on this screen, not behind a trip to the App Store. Matt, 2026-09-12:
-    // "it should be like the unlock forever, enter code also on the same screen."
-    @State private var codeText = ""
-    @State private var showCodeField = false
-    @State private var codeAccepted = false
-    @FocusState private var codeFocused: Bool
-
-    private func submitCode() {
-        if store.applyUnlockCode(codeText) {
-            codeAccepted = true
-            codeFocused = false
-            onClose?()
-        }
-    }
 
     var body: some View {
         // A single GeometryReader gives the exact screen size. Every layer is framed to
@@ -326,63 +282,16 @@ struct UnlockView: View {
                             .disabled(store.purchasing)
                             .accessibilityLabel("Restore a purchase you already made")
 
-                            if !showCodeField {
-                                Button {
-                                    showCodeField = true
-                                    codeFocused = true
-                                } label: {
-                                    Text("Enter a Code")
-                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(.white.opacity(0.65))
-                                        .underline()
-                                }
-                                .disabled(store.purchasing)
-                                .accessibilityLabel("Enter an unlock code")
+                            Button {
+                                Task { await store.redeemOfferCode() }
+                            } label: {
+                                Text("Redeem a Code")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.65))
+                                    .underline()
                             }
-                        }
-
-                        // The field itself. One short word, typed here, unlocks the app for good.
-                        if showCodeField {
-                            HStack(spacing: 10) {
-                                TextField("", text: $codeText, prompt:
-                                    Text("Your code").foregroundStyle(.white.opacity(0.45)))
-                                    .focused($codeFocused)
-                                    .textInputAutocapitalization(.characters)
-                                    .autocorrectionDisabled()
-                                    .submitLabel(.go)
-                                    .onSubmit { submitCode() }
-                                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.white)
-                                    .multilineTextAlignment(.center)
-                                    .frame(height: 44)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .fill(.white.opacity(0.12))
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .stroke(.white.opacity(0.25), lineWidth: 1)
-                                    )
-                                    .accessibilityLabel("Unlock code")
-
-                                Button {
-                                    submitCode()
-                                } label: {
-                                    Text("Unlock")
-                                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.black)
-                                        .padding(.horizontal, 18)
-                                        .frame(height: 44)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                .fill(.cyan)
-                                        )
-                                }
-                                .disabled(codeText.trimmingCharacters(in: .whitespaces).isEmpty)
-                                .accessibilityLabel("Unlock with this code")
-                            }
-                            .padding(.top, 2)
-                            .transition(.opacity)
+                            .disabled(store.purchasing)
+                            .accessibilityLabel("Redeem an App Store code")
                         }
 
                         if let error = store.errorMessage {
