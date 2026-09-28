@@ -752,7 +752,7 @@
       /* ---- control cluster ---- */
       /* Portrait: below the radar AND the native ⋯ button that now sits under it
          (safe-area top + radar 120 + gap + button 40 ≈ 235pt → start at +240). */
-      .cx-controls{position:absolute;top:calc(env(safe-area-inset-top) + 240px);right:12px;z-index:400;display:flex;flex-direction:column;align-items:flex-end;gap:10px;
+      .cx-controls{position:absolute;top:calc(env(safe-area-inset-top) + 288px);right:12px;z-index:400;display:flex;flex-direction:column;align-items:flex-end;gap:10px;
         font-family:-apple-system,'SF Pro Display',sans-serif;-webkit-user-select:none;transition:opacity .2s;}
       /* Portrait: the icon dock hangs as a VERTICAL column down the right edge,
          under the scan pill (Matt: buttons in a column on the right side). */

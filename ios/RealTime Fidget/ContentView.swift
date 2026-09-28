@@ -122,12 +122,10 @@ struct ContentView: View {
                             Spacer().frame(width: 44)
                             VStack(alignment: .trailing, spacing: 8) {
                                 menuButton
-                                // TOUR sits beside the view button, not below it: below, it
-                                // landed on top of the first icon of the web dock.
-                                HStack(spacing: 8) {
-                                    tourButton
-                                    viewModeButton
-                                }
+                                viewModeButton
+                                // TOUR goes under the view button; the web icon dock below
+                                // starts 48 pt lower to make room (Codex.js .cx-controls top).
+                                tourButton
                             }
                         }
                         .padding(.horizontal, 16)
@@ -143,12 +141,10 @@ struct ContentView: View {
                                 )
                                 .frame(width: 120, height: 120)
                                 menuButton
-                                // TOUR sits beside the view button, not below it: below, it
-                                // landed on top of the first icon of the web dock.
-                                HStack(spacing: 8) {
-                                    tourButton
-                                    viewModeButton
-                                }
+                                viewModeButton
+                                // TOUR goes under the view button; the web icon dock below
+                                // starts 48 pt lower to make room (Codex.js .cx-controls top).
+                                tourButton
                             }
                         }
                         .padding(.horizontal, 16)
