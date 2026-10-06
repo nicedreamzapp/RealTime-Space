@@ -318,12 +318,19 @@ class NavigationArrows {
 
         const halfWidth = window.innerWidth / 2;
         const halfHeight = window.innerHeight / 2;
+        // Right-hand strip kept clear for the native button rail / THRUST cluster. Sized from
+        // the live window (it was a flat 380px, which on a ~440px-wide portrait window left
+        // only 60px of "on screen", so the target bracket could never show and the edge arrow
+        // pinned to the left; on a wide unfolded window it wasted a third of the view).
+        const rightReserve = window.innerWidth > window.innerHeight
+            ? Math.min(380, window.innerWidth * 0.3)
+            : 96;
         const screenX = (targetScreen.x * halfWidth) + halfWidth;
         const screenY = -(targetScreen.y * halfHeight) + halfHeight;
 
         // Check if target is on screen and in front of camera
         const onScreen = targetScreen.z < 1 &&
-                        screenX > 100 && screenX < window.innerWidth - 380 &&
+                        screenX > 100 && screenX < window.innerWidth - rightReserve &&
                         screenY > 100 && screenY < window.innerHeight - 100;
 
         // Update indicator name
@@ -371,7 +378,7 @@ class NavigationArrows {
             // Clamp to screen edges — the bottom ~28% is the native control zone
             // (joystick / speed / THRUST cluster), so the arrow may never enter it
             // or it covers the buttons.
-            edgeX = Math.max(padding, Math.min(window.innerWidth - 380, edgeX));
+            edgeX = Math.max(padding, Math.min(window.innerWidth - rightReserve, edgeX));
             edgeY = Math.max(padding, Math.min(window.innerHeight * 0.72 - padding, edgeY));
 
             // Position indicator

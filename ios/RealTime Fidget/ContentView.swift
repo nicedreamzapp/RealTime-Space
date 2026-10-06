@@ -92,6 +92,9 @@ struct ContentView: View {
         GeometryReader { geo in
             // Landscape gets its own layout: smaller radar, gamepad-style bottom row.
             let isLandscape = geo.size.width > geo.size.height
+            // Roomy = the window's SHORT side has tablet-class room (unfolded iPhone Duo,
+            // iPad mini, a big Stage Manager window). Decided from the window, not the device.
+            let roomy = min(geo.size.width, geo.size.height) >= 600
             ZStack {
                 // GALAXY VIEW - Using WebView for enhanced JavaScript visuals
                 WorkingPortalWebView(
@@ -117,12 +120,12 @@ struct ContentView: View {
                                 galaxyManager: galaxyManager,
                                 navigationController: navigationController
                             )
-                            .frame(width: 80, height: 80)
-                            .padding(.top, 24)
+                            .frame(width: roomy ? 120 : 80, height: roomy ? 120 : 80)
+                            .padding(.top, roomy ? 12 : 24)
                             Spacer().frame(width: 44)
                             VStack(alignment: .trailing, spacing: 8) {
                                 menuButton
-                                viewModeButton
+                                viewModeButton(landscape: isLandscape)
                                 // TOUR goes under the view button; the web icon dock below
                                 // starts 48 pt lower to make room (Codex.js .cx-controls top).
                                 tourButton
@@ -141,7 +144,7 @@ struct ContentView: View {
                                 )
                                 .frame(width: 120, height: 120)
                                 menuButton
-                                viewModeButton
+                                viewModeButton(landscape: isLandscape)
                                 // TOUR goes under the view button; the web icon dock below
                                 // starts 48 pt lower to make room (Codex.js .cx-controls top).
                                 tourButton
@@ -504,8 +507,10 @@ struct ContentView: View {
     // View switcher: HELM (in-cockpit art) → VISOR (clean glass) → CHASE (behind ship).
     // The button PREVIEWS the view you'll get ("→ CHASE"), and HELM is skipped in
     // portrait where the cockpit art can't show — no dead taps either way.
-    private func nextViewMode() -> String {
-        let landscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+    // "landscape" is the shape of THIS window (GeometryReader), not UIScreen.main: on a
+    // foldable, in Split View or Stage Manager the window and the screen differ, and the
+    // web cockpit (Cockpit.js) decides from window.innerWidth/innerHeight the same way.
+    private func nextViewMode(landscape: Bool) -> String {
         let order = landscape ? ["helm", "visor", "chase"] : ["visor", "chase"]
         guard let i = order.firstIndex(of: viewMode) else { return order[0] }
         return order[(i + 1) % order.count]
@@ -515,8 +520,8 @@ struct ContentView: View {
         mode == "chase" ? "airplane" : (mode == "visor" ? "eye" : "person.crop.rectangle")
     }
 
-    private var viewModeButton: some View {
-        let next = nextViewMode()
+    private func viewModeButton(landscape: Bool) -> some View {
+        let next = nextViewMode(landscape: landscape)
         return Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             viewMode = next
@@ -926,20 +931,20 @@ struct SplashView: View {
         ("antenna.radiowaves.left.and.right", "Tap 🛰️ for the live ISS & today's asteroids")
     ]
 
-    private var titleBlock: some View {
-        VStack(spacing: 6) {
+    private func titleBlock(large: Bool) -> some View {
+        VStack(spacing: large ? 10 : 6) {
             Text("RealTime Space")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .font(.system(size: large ? 50 : 34, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
                 .shadow(color: .black.opacity(0.6), radius: 8)
             Text("Explore the real solar system")
-                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .font(.system(size: large ? 20 : 15, weight: .medium, design: .rounded))
                 .foregroundColor(.cyan.opacity(0.9))
         }
     }
 
-    private func howToCard(compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: compact ? 10 : 14) {
+    private func howToCard(compact: Bool, large: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: large ? 16 : (compact ? 10 : 14)) {
             Text("HOW TO PLAY")
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .tracking(2)
@@ -947,17 +952,17 @@ struct SplashView: View {
             ForEach(steps, id: \.1) { step in
                 HStack(spacing: 13) {
                     Image(systemName: step.0)
-                        .font(.system(size: compact ? 14 : 16))
+                        .font(.system(size: large ? 19 : (compact ? 14 : 16)))
                         .foregroundColor(.cyan)
-                        .frame(width: 26)
+                        .frame(width: large ? 30 : 26)
                     Text(step.1)
-                        .font(.system(size: compact ? 13 : 14, weight: .medium))
+                        .font(.system(size: large ? 17 : (compact ? 13 : 14), weight: .medium))
                         .foregroundColor(.white.opacity(0.95))
                     Spacer(minLength: 0)
                 }
             }
         }
-        .padding(compact ? 14 : 18)
+        .padding(large ? 24 : (compact ? 14 : 18))
         .background(
             RoundedRectangle(cornerRadius: 18)
                 .fill(Color(red: 0.03, green: 0.06, blue: 0.12).opacity(0.82))
@@ -983,6 +988,10 @@ struct SplashView: View {
     var body: some View {
         GeometryReader { geo in
             let isLandscape = geo.size.width > geo.size.height
+            // Roomy = tablet-class window (unfolded iPhone Duo, iPad mini, big Stage Manager
+            // window): bigger type, and the text column stops at a readable width instead of
+            // stretching the phone layout edge to edge. Decided from the window, not the device.
+            let roomy = min(geo.size.width, geo.size.height) >= 600
             ZStack {
                 // Opaque backing: nothing from the live scene may show through the art.
                 Color.black
@@ -998,12 +1007,13 @@ struct SplashView: View {
                 if isLandscape {
                     // Landscape: title + button on the left, How-to-Play card on the right —
                     // the portrait stack doesn't fit a short screen.
-                    HStack(spacing: 24) {
+                    HStack(spacing: roomy ? 40 : 24) {
                         VStack(spacing: 0) {
                             Spacer()
-                            titleBlock
+                            titleBlock(large: roomy)
                             Spacer()
                             beginButton
+                                .frame(maxWidth: 440)
                             Text(appBuildString())
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.5))
@@ -1012,27 +1022,35 @@ struct SplashView: View {
                         }
                         .frame(maxWidth: .infinity)
 
-                        ScrollView {
-                            howToCard(compact: true)
+                        if roomy {
+                            // Plenty of height: the full card, vertically centered, no scroller.
+                            howToCard(compact: false, large: true)
+                                .frame(maxWidth: min(geo.size.width * 0.46, 520))
+                        } else {
+                            ScrollView {
+                                howToCard(compact: true)
+                            }
+                            .frame(maxWidth: geo.size.width * 0.46)
+                            .padding(.vertical, 20)
                         }
-                        .frame(maxWidth: geo.size.width * 0.46)
-                        .padding(.vertical, 20)
                     }
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, roomy ? 48 : 28)
                 } else {
                     VStack(spacing: 0) {
-                        titleBlock
-                            .padding(.top, 60)
+                        titleBlock(large: roomy)
+                            .padding(.top, roomy ? 90 : 60)
 
                         Spacer()
 
-                        howToCard(compact: false)
-                            .padding(.horizontal, 22)
+                        VStack(spacing: 0) {
+                            howToCard(compact: false, large: roomy)
 
-                        beginButton
-                            .padding(.horizontal, 22)
-                            .padding(.top, 18)
-                            .padding(.bottom, 10)
+                            beginButton
+                                .padding(.top, 18)
+                                .padding(.bottom, 10)
+                        }
+                        .frame(maxWidth: roomy ? 560 : .infinity)
+                        .padding(.horizontal, 22)
 
                         Text(appBuildString())
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
