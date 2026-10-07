@@ -201,6 +201,9 @@ struct UnlockView: View {
             let w = geo.size.width
             let h = geo.size.height
             let isLandscape = w > h
+            // This view ignores the safe area (full-bleed art), so read the window's side insets
+            // to keep the card and ✕ out of a side camera strip (iPhone Duo folded: 84 pt).
+            let side = keyWindowSafeInsets()
 
             ZStack(alignment: .topTrailing) {
                 // ---- Cinematic full-bleed backdrop ----
@@ -318,7 +321,8 @@ struct UnlockView: View {
                                     .stroke(.white.opacity(0.12), lineWidth: 1)
                             )
                     )
-                    .padding(.horizontal, 20)
+                    .padding(.leading, 20 + side.left)
+                    .padding(.trailing, 20 + side.right)
                     // Center the card horizontally, and vertically fill at least the screen
                     // height so short content sits dead-center (portrait) but can scroll (landscape).
                     .frame(maxWidth: .infinity, minHeight: h)
@@ -335,7 +339,7 @@ struct UnlockView: View {
                             .background(Circle().fill(.black.opacity(0.4)))
                     }
                     .padding(.top, isLandscape ? 12 : 24)
-                    .padding(.trailing, 20)
+                    .padding(.trailing, 20 + side.right)
                 }
             }
             .frame(width: w, height: h)
@@ -345,4 +349,14 @@ struct UnlockView: View {
             if unlocked { onClose?() }
         }
     }
+}
+
+/// Safe-area insets of the app's key window. For views that sit under `.ignoresSafeArea()`
+/// (their own GeometryReader then reports zero insets) but still need to keep content out of
+/// a side sensor strip. Re-read whenever the enclosing GeometryReader re-lays out.
+func keyWindowSafeInsets() -> UIEdgeInsets {
+    UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .flatMap { $0.windows }
+        .first { $0.isKeyWindow }?.safeAreaInsets ?? .zero
 }

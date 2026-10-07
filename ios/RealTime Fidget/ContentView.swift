@@ -992,6 +992,9 @@ struct SplashView: View {
             // window): bigger type, and the text column stops at a readable width instead of
             // stretching the phone layout edge to edge. Decided from the window, not the device.
             let roomy = min(geo.size.width, geo.size.height) >= 600
+            // The splash ignores the safe area (full-bleed art); keep the text column out of a
+            // side camera strip (iPhone Duo folded upright: 84 pt on the right). 0 on iPhones.
+            let side = keyWindowSafeInsets()
             ZStack {
                 // Opaque backing: nothing from the live scene may show through the art.
                 Color.black
@@ -1057,6 +1060,8 @@ struct SplashView: View {
                             .foregroundColor(.white.opacity(0.5))
                             .padding(.bottom, 28)
                     }
+                    .padding(.leading, side.left)
+                    .padding(.trailing, side.right)
                 }
             }
         }

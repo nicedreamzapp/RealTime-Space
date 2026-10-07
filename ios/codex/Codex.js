@@ -752,8 +752,10 @@
       /* ---- control cluster ---- */
       /* Portrait: below the radar AND the native ⋯ button that now sits under it
          (safe-area top + radar 120 + gap + button 40 ≈ 235pt → start at +240). */
-      .cx-controls{position:absolute;top:calc(env(safe-area-inset-top) + 288px);right:12px;z-index:400;display:flex;flex-direction:column;align-items:flex-end;gap:10px;
+      .cx-controls{position:absolute;top:calc(env(safe-area-inset-top) + 288px);right:calc(env(safe-area-inset-right, 0px) + 12px);z-index:400;display:flex;flex-direction:column;align-items:flex-end;gap:10px;
         font-family:-apple-system,'SF Pro Display',sans-serif;-webkit-user-select:none;transition:opacity .2s;}
+      /* right: + safe-area-inset-right keeps the dock out of a side camera strip (iPhone Duo
+         folded upright reserves 84 pt on the right); 0 on regular iPhones in portrait. */
       /* Portrait: the icon dock hangs as a VERTICAL column down the right edge,
          under the scan pill (Matt: buttons in a column on the right side). */
       .cx-btnrow{display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
@@ -763,6 +765,12 @@
         .cx-controls{top:max(10px, env(safe-area-inset-top));right:auto;left:50%;
           transform:translateX(-50%);flex-direction:row;align-items:center;gap:8px;}
         .cx-btnrow{flex-direction:row;align-items:center;}
+      }
+      /* Narrow landscape (iPhone Duo folded sideways, 678 pt): centered on the window the row
+         ran under the radar in the top-right corner. Center it between the TIME pill (left,
+         ~100 pt) and the radar block (right, ~290 pt incl. the ⋯ column) instead. */
+      @media (orientation: landscape) and (max-width: 760px){
+        .cx-controls{left:calc(50% - 100px);}
       }
       /* When a card or the Field Guide is open, get the scan/guide buttons out of the way. */
       body.cx-modal-open .cx-controls{opacity:0;pointer-events:none;}

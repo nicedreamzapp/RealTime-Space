@@ -166,7 +166,21 @@ class RendererCore {
     }
 
     setupResizeHandler() {
-        window.addEventListener("resize", () => this.onResize());
+        // WKWebView can fire "resize" before innerWidth/innerHeight settle (rotation, and an
+        // iPhone Duo fold/unfold, which swaps the window shape under the running scene); the
+        // canvas then kept the old shape with a black band. Re-measure once the size settles,
+        // and also watch the root element in case no window resize arrives at all.
+        const settle = () => {
+            this.onResize();
+            clearTimeout(this._resizeT1); clearTimeout(this._resizeT2);
+            this._resizeT1 = setTimeout(() => this.onResize(), 250);
+            this._resizeT2 = setTimeout(() => this.onResize(), 800);
+        };
+        window.addEventListener("resize", settle);
+        if (window.visualViewport) window.visualViewport.addEventListener("resize", settle);
+        if (typeof ResizeObserver !== "undefined") {
+            new ResizeObserver(settle).observe(document.documentElement);
+        }
     }
 
     onResize() {
@@ -174,7 +188,9 @@ class RendererCore {
         
         const width = window.innerWidth;
         const height = window.innerHeight;
-        
+        if (width === this._lastW && height === this._lastH) return;
+        this._lastW = width; this._lastH = height;
+
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
 

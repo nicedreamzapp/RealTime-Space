@@ -178,7 +178,7 @@ class NavigationArrows {
             /* Portrait phones are ~400px wide: 360px from the right pushed "TURN RIGHT"
                off the left edge. Sit it just left of the button column instead. */
             @media (orientation: portrait) {
-                .prompt-right { right: 84px; }
+                .prompt-right { right: calc(env(safe-area-inset-right, 0px) + 84px); } /* + side camera strip (Duo folded) */
                 .prompt-left { left: 24px; }
                 .direction-prompt { white-space: nowrap; }
             }
