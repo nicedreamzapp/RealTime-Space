@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RealTime Space: fly the real solar system</title>
+<meta name="description" content="RealTime Space is a phone app for iPhone, iPad and Android. Fly a ship through a photoreal 3D solar system and out to 8,920 real stars. Free for 60 days, then a one-time $1.99 unlock. No ads, no accounts, no tracking.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+<!-- TODO-VERIFY: canonical URL. The README names this product page; confirm where this file will live. -->
+<link rel="canonical" href="https://nicedreamzwholesale.com/software/realtime-space/">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Nice Dreamz Software">
+<meta property="og:title" content="RealTime Space: fly the real solar system">
+<meta property="og:description" content="Fly a ship through a photoreal 3D solar system and out to 8,920 real stars. iPhone, iPad and Android. Free for 60 days, then $1.99 once.">
+<meta property="og:url" content="https://nicedreamzwholesale.com/software/realtime-space/">
+<meta property="og:image" content="https://raw.githubusercontent.com/nicedreamzapp/RealTime-Space/main/ios/AppStore/screenshots/01_cockpit_saturn.png">
+<meta property="og:image:width" content="2868">
+<meta property="og:image:height" content="1320">
+<meta property="og:image:alt" content="Cockpit view approaching Saturn in RealTime Space">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="RealTime Space: fly the real solar system">
+<meta name="twitter:description" content="Fly a ship through a photoreal 3D solar system and out to 8,920 real stars. iPhone, iPad and Android.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/nicedreamzapp/RealTime-Space/main/ios/AppStore/screenshots/01_cockpit_saturn.png">
+<meta name="twitter:image:alt" content="Cockpit view approaching Saturn in RealTime Space">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "RealTime Space",
+  "description": "A photoreal real-time solar system explorer. Fly a ship through the solar system and out to 8,920 real naked-eye stars, real galaxies, nebulae and exoplanets, rendered live in 3D on your phone.",
+  "applicationCategory": "EducationalApplication",
+  "operatingSystem": "iOS 26.0 or later, iPadOS 26.0 or later, Android 8.0 or later",
+  "softwareVersion": "iOS 1.3.2, Android 1.5",
+  "url": "https://nicedreamzwholesale.com/software/realtime-space/",
+  "downloadUrl": [
+    "https://apps.apple.com/us/app/realtime-space/id6788646103",
+    "https://play.google.com/store/apps/details?id=com.nicedreamz.realtimespace"
+  ],
+  "installUrl": "https://apps.apple.com/us/app/realtime-space/id6788646103",
+  "screenshot": [
+    "https://raw.githubusercontent.com/nicedreamzapp/RealTime-Space/main/ios/AppStore/screenshots/01_cockpit_saturn.png",
+    "https://raw.githubusercontent.com/nicedreamzapp/RealTime-Space/main/ios/AppStore/screenshots/02_cockpit_jupiter.png",
+    "https://raw.githubusercontent.com/nicedreamzapp/RealTime-Space/main/ios/AppStore/screenshots/03_ship_solar_system.png",
+    "https://raw.githubusercontent.com/nicedreamzapp/RealTime-Space/main/ios/AppStore/screenshots/04_ship_mars.png"
+  ],
+  "offers": {
+    "@type": "Offer",
+    "price": "1.99",
+    "priceCurrency": "USD",
+    "description": "Free for 60 days, then a one-time Unlock Forever purchase. Not a subscription."
+  },
+  "author": {
+    "@type": "Person",
+    "name": "Matt Macosko"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Nice Dreamz LLC",
+    "url": "https://nicedreamzwholesale.com/software/",
+    "email": "info@nicedreamzwholesale.com"
+  },
+  "license": "https://opensource.org/licenses/MIT"
+}
+</script>
+
+<style>
+  :root {
+    --bg: #05070d;
+    --bg-2: #0b1020;
+    --card: #10172b;
+    --line: #1f2a46;
+    --text: #e8ecf6;
+    --muted: #a3adc4;
+    --accent: #6fd3ff;
+    --accent-2: #ffb35c;
+    --radius: 14px;
+    --gutter: 16px;
+    --max: 1040px;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow-x: hidden;
+  }
+  img { max-width: 100%; height: auto; display: block; }
+  a { color: var(--accent); }
+  a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 3px; border-radius: 6px; }
+  .wrap { width: 100%; max-width: var(--max); margin: 0 auto; padding: 0 var(--gutter); }
+  .skip { position: absolute; left: -9999px; }
+  .skip:focus { left: var(--gutter); top: 8px; background: var(--card); padding: 8px 12px; z-index: 10; }
+
+  header.hero {
+    padding: 48px 0 32px;
+    background:
+      radial-gradient(120% 80% at 80% 0%, rgba(111,211,255,.14), transparent 60%),
+      radial-gradient(80% 60% at 0% 100%, rgba(255,179,92,.10), transparent 60%),
+      var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  .brand img { width: 56px; height: 56px; border-radius: 13px; }
+  .brand span { font-weight: 700; letter-spacing: .02em; }
+  h1 { font-size: clamp(30px, 8vw, 52px); line-height: 1.08; margin: 0 0 14px; letter-spacing: -.01em; overflow-wrap: anywhere; }
+  .pitch { font-size: clamp(18px, 4.6vw, 22px); color: var(--muted); margin: 0 0 24px; max-width: 40ch; }
+  .price { font-size: 15px; color: var(--muted); margin: 14px 0 0; }
+
+  .badges { display: flex; flex-wrap: wrap; gap: 12px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 10px;
+    min-height: 52px; padding: 8px 18px;
+    background: #000; color: #fff; text-decoration: none;
+    border: 1px solid #3a4560; border-radius: 12px;
+  }
+  .badge:hover { border-color: var(--accent); }
+  .badge svg { width: 24px; height: 24px; flex: none; fill: currentColor; }
+  .badge small { display: block; font-size: 11px; line-height: 1.1; opacity: .8; }
+  .badge strong { display: block; font-size: 18px; line-height: 1.15; }
+
+  section { padding: 44px 0; border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(24px, 6vw, 32px); margin: 0 0 16px; }
+  h3 { font-size: 18px; margin: 0 0 6px; }
+  p { margin: 0 0 14px; }
+  .lead { color: var(--muted); max-width: 62ch; }
+
+  .shots { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 8px; }
+  .shots figure { margin: 0; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .shots figcaption { font-size: 14px; color: var(--muted); padding: 10px 12px; }
+
+  .grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; min-width: 0; }
+  .card p { color: var(--muted); margin: 0; font-size: 16px; }
+
+  .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0 0; }
+  .fact { background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-width: 0; }
+  .fact b { display: block; font-size: 26px; color: var(--accent); line-height: 1.1; }
+  .fact span { font-size: 14px; color: var(--muted); }
+
+  details { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; }
+  summary { cursor: pointer; padding: 14px 16px; font-weight: 600; list-style-position: inside; }
+  details > div { padding: 0 16px 14px; color: var(--muted); }
+
+  ul.plain { padding-left: 1.2em; margin: 0 0 14px; color: var(--muted); }
+  ul.plain li { margin-bottom: 6px; }
+
+  footer { padding: 32px 0 48px; color: var(--muted); font-size: 15px; }
+  footer p { margin-bottom: 8px; }
+
+  @media (min-width: 700px) {
+    header.hero { padding: 72px 0 48px; }
+    .shots { grid-template-columns: 1fr 1fr; }
+    .grid { grid-template-columns: 1fr 1fr; }
+    .facts { grid-template-columns: repeat(4, 1fr); }
+  }
+  @media (min-width: 1000px) {
+    .grid { grid-template-columns: 1fr 1fr 1fr; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .badge { transition: border-color .15s; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="brand">
+      <img src="../ios/RealTime%20Fidget/Assets.xcassets/AppIcon.appiconset/AppIcon.png" alt="" width="56" height="56">
+      <span>RealTime Space</span>
+    </div>
+    <h1>Fly the real solar system on your phone.</h1>
+    <p class="pitch">A photoreal 3D solar system you steer yourself, and past it, 8,920 real stars at their real distances.</p>
+    <div class="badges">
+      <a class="badge" href="https://apps.apple.com/us/app/realtime-space/id6788646103" aria-label="Download RealTime Space on the App Store">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.4 12.6c0-2.4 2-3.6 2.1-3.7-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-1.9-.9-3.2-.8-1.6 0-3.1 1-4 2.4-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.2.8 1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.5-1-2.5-3.9zM14 5.5c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4z"/></svg>
+        <span><small>Download on the</small><strong>App Store</strong></span>
+      </a>
+      <a class="badge" href="https://play.google.com/store/apps/details?id=com.nicedreamz.realtimespace" aria-label="Get RealTime Space on Google Play">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 1.8c-.3.3-.4.7-.4 1.2v18c0 .5.1.9.4 1.2l10.1-10.2L3.6 1.8zm11.4 11.5 2.9 2.9-12 6.9c-.4.2-.8.3-1.1.2l10.2-10zm4.2-3.1c.9.5.9 1.8 0 2.3l-2.6 1.5-3.1-3.1 3.1-3.1 2.6 1.4zM4.9 1.1c.3-.1.7 0 1.1.2l12 6.9-2.9 2.9L4.9 1.1z"/></svg>
+        <span><small>Get it on</small><strong>Google Play</strong></span>
+      </a>
+    </div>
+    <p class="price">Free for 60 days. Then one $1.99 purchase keeps it forever. No subscription, no ads, no accounts.</p>
+  </div>
+</header>
+
+<main id="main">
+
+<section aria-labelledby="what">
+  <div class="wrap">
+    <h2 id="what">What it does</h2>
+    <p class="lead">RealTime Space renders the solar system live in 3D, using NASA imagery for the planets and real orbital data for where they sit. You fly a ship with a joystick and a throttle, hold a button for 100x warp, and go wherever you like: skim the Sun, thread Saturn's rings, watch the real ISS circle Earth, then keep going out to the stars.</p>
+    <p class="lead">Every star in the sky is a real one from the HYG star catalog, placed at its real sky position and distance. Fly far enough and the constellations come apart, because their stars were never close together. Scan anything you reach and you get a card with real numbers, which goes into your Field Guide.</p>
+    <div class="facts" role="list">
+      <div class="fact" role="listitem"><b>8,920</b><span>real naked-eye stars</span></div>
+      <div class="fact" role="listitem"><b>21</b><span>real galaxies in 3D</span></div>
+      <div class="fact" role="listitem"><b>12</b><span>confirmed exoplanets</span></div>
+      <div class="fact" role="listitem"><b>3</b><span>camera views</span></div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="shots">
+  <div class="wrap">
+    <h2 id="shots">Screenshots</h2>
+    <div class="shots">
+      <figure>
+        <img src="../ios/AppStore/screenshots/01_cockpit_saturn.png" width="2868" height="1320" loading="lazy" alt="Cockpit view with Saturn and its rings ahead through the windshield">
+        <figcaption>Helm view, closing on Saturn</figcaption>
+      </figure>
+      <figure>
+        <img src="../ios/AppStore/screenshots/02_cockpit_jupiter.png" width="2868" height="1320" loading="lazy" alt="Cockpit view with Jupiter filling the window">
+        <figcaption>Jupiter from the cockpit</figcaption>
+      </figure>
+      <figure>
+        <img src="../ios/AppStore/screenshots/03_ship_solar_system.png" width="2868" height="1320" loading="lazy" alt="Chase camera behind a silver ship flying through the solar system">
+        <figcaption>Chase view behind the ship</figcaption>
+      </figure>
+      <figure>
+        <img src="../ios/AppStore/screenshots/04_ship_mars.png" width="2868" height="1320" loading="lazy" alt="The ship flying past Mars">
+        <figcaption>Passing Mars</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="features">
+  <div class="wrap">
+    <h2 id="features">What's in it</h2>
+    <div class="grid">
+      <div class="card"><h3>A photoreal solar system</h3><p>All the planets, Pluto, the Sun, the asteroid belt and Halley's Comet. Earth has day, night and cloud layers. Planets cast ring and eclipse shadows, and moons darken when they pass into their planet's shadow.</p></div>
+      <div class="card"><h3>Real moons</h3><p>Our Moon plus Io, Europa, Ganymede, Callisto, Titan with its orange haze, and Enceladus with geyser plumes at its south pole.</p></div>
+      <div class="card"><h3>The real sky in 3D</h3><p>8,920 stars from the HYG v4.1 catalog at true positions and distances, with constellation lines that only line up from near Earth. Fly close to a star and its surface color matches its real color class.</p></div>
+      <div class="card"><h3>Galaxies, nebulae, clusters</h3><p>21 real galaxies built as 3D star clouds you can fly into, six nebulae including the Eagle, Crab and Ring, three globular clusters, and the black hole at the center of the Milky Way.</p></div>
+      <div class="card"><h3>Exoplanets, real and predicted</h3><p>12 confirmed exoplanets such as Proxima b and TRAPPIST-1 e at their host stars. Every other star gets a predicted planetary system based on Kepler statistics, and the app labels those as predicted, not observed.</p></div>
+      <div class="card"><h3>Scan and collect</h3><p>Fly up to something and scan it to get a card with real NASA and JPL figures: size, gravity, day length, temperature. Discoveries fill a Field Guide that stays on your device.</p></div>
+      <div class="card"><h3>Live space data</h3><p>When you're online, a panel shows where the International Space Station is right now and today's near-Earth asteroids from NASA. Offline, it says so and the rest of the app works the same.</p></div>
+      <div class="card"><h3>Three ways to look</h3><p>Helm puts you in the cockpit (landscape), Visor is clear glass, and Chase follows a silver ship from behind. Seven missions give you places to aim for.</p></div>
+      <div class="card"><h3>Grand Tour (iPhone and iPad)</h3><p>One tap and the autopilot flies a 13-stop route, from Earth past every planet to Halley's Comet, the Orion Nebula and Sagittarius A*. Tap anywhere to take the controls back.</p></div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="who">
+  <div class="wrap">
+    <h2 id="who">Who it's for</h2>
+    <p class="lead">Anyone who likes space and wants to move through it instead of reading about it. Kids and parents exploring together, students who want to feel how far apart things really are, people who used to stare at star charts, and anyone who just wants something beautiful to fly around in for ten minutes.</p>
+    <p class="lead">It works offline, has no ads and no sign-up, and asks for no permissions, so it's an easy thing to hand someone.</p>
+  </div>
+</section>
+
+<section aria-labelledby="a11y">
+  <div class="wrap">
+    <h2 id="a11y">Accessibility</h2>
+    <p class="lead">On iPhone and iPad, the flight controls carry VoiceOver labels and hints: the joystick, thrust, warp, stop, fly to nearest planet, the view switcher, the Grand Tour button and the menu. The paywall keeps Restore and Enter a Code on the same screen, so nobody gets sent out to another app and has to find their way back. Grand Tour lets you see the whole route without steering at all.</p>
+    <p class="lead">The universe itself is a visual 3D scene, and we'd rather say that plainly than oversell it. If something gets in your way, email us and tell us what it is.</p>
+    <!-- TODO-VERIFY: Android accessibility. No contentDescription/semantics labels were found in the Android Kotlin UI code, so this page makes no Android screen reader claim. -->
+  </div>
+</section>
+
+<section aria-labelledby="privacy">
+  <div class="wrap">
+    <h2 id="privacy">Privacy</h2>
+    <p class="lead">RealTime Space does not collect, store or share any personal data.</p>
+    <ul class="plain">
+      <li>No accounts, no ads, no analytics, no trackers.</li>
+      <li>No sensitive permissions: no camera, microphone, location or contacts.</li>
+      <li>The planets, star catalogs and sound are all bundled with the app and work offline.</li>
+      <li>When online, the app may fetch public, anonymous data: the ISS position from wheretheiss.at and NASA's near-Earth object feed. Those requests carry nothing about you.</li>
+      <li>Purchases go through Apple or Google. Field Guide progress and the trial start date stay on your device.</li>
+    </ul>
+    <p><a href="https://github.com/nicedreamzapp/RealTime-Space/blob/main/PRIVACY.md">Read the full privacy policy</a></p>
+  </div>
+</section>
+
+<section aria-labelledby="faq">
+  <div class="wrap">
+    <h2 id="faq">FAQ</h2>
+    <details><summary>How much does it cost?</summary><div><p>Everything is free for 60 days. After that, a one-time $1.99 Unlock Forever purchase keeps it. You can buy it during the trial too. It's not a subscription.</p></div></details>
+    <details><summary>Which devices does it run on?</summary><div><p>iPhone and iPad running iOS or iPadOS 26.0 or later, and Android phones running Android 8.0 or later.</p></div></details>
+    <details><summary>Does it need an internet connection?</summary><div><p>No. Everything is bundled with the app. The live ISS and asteroid panel needs a connection, and when you're offline it shows the last good data or a "no signal" message.</p></div></details>
+    <details><summary>Is the astronomy real?</summary><div><p>The planets use NASA imagery and real orbital data. Stars come from the HYG v4.1 catalog. Galaxies, nebulae and the 12 confirmed exoplanets are placed at their real sky positions and distances, with distances compressed so the trip is playable. The planetary systems around other stars are predictions from Kepler statistics, and their scan cards say so.</p></div></details>
+    <details><summary>If I delete and reinstall, does my trial reset?</summary><div><p>On iPhone and iPad, no: the trial start date and any code unlock are kept in the Keychain. Purchases can be restored on either platform with Restore Purchase.</p></div></details>
+    <details><summary>What's an unlock code?</summary><div><p>A short word you type on the paywall that unlocks the app, so it can be given away. Codes are handed out by Nice Dreamz.</p></div></details>
+    <details><summary>Is it the same on iPhone and Android?</summary><div><p>Mostly. Both run the same 3D renderer. The Grand Tour autopilot is on iPhone and iPad only for now, and the two versions are kept in step by hand, so small differences exist.</p></div></details>
+    <details><summary>Is the code open?</summary><div><p>Yes, under the MIT license, at <a href="https://github.com/nicedreamzapp/RealTime-Space">github.com/nicedreamzapp/RealTime-Space</a>.</p></div></details>
+  </div>
+</section>
+
+<section aria-labelledby="credits">
+  <div class="wrap">
+    <h2 id="credits">Built on</h2>
+    <p class="lead">RealTime Space is written by Matt Macosko at Nice Dreamz, with help from Anthropic's Claude Code. It stands on other people's work: <a href="https://github.com/mrdoob/three.js">three.js</a> by Ricardo Cabello and contributors does the WebGL. Planet imagery is from NASA Visible Earth, Solar System Scope (CC BY 4.0) and threex.planets by Jerome Etienne. Stars are from the HYG v4.1 database by astronexus.com (CC BY-SA). Live data comes from wheretheiss.at and NASA's NeoWs API.</p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Questions, bugs, or press? <a href="mailto:info@nicedreamzwholesale.com">info@nicedreamzwholesale.com</a></p>
+    <p><a href="https://nicedreamzwholesale.com/software/">More software from Nice Dreamz</a></p>
+    <p>Nice Dreamz LLC. App Store is a trademark of Apple Inc. Google Play is a trademark of Google LLC.</p>
+  </div>
+</footer>
+</body>
+</html>
