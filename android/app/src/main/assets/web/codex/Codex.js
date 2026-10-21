@@ -744,7 +744,7 @@
       /* ---- control cluster ---- */
       /* Portrait: below the radar AND the native ⋯ button that now sits under it
          (safe-area top + radar 120 + gap + button 40 ≈ 235pt → start at +240). */
-      .cx-controls{position:absolute;top:calc(env(safe-area-inset-top) + 240px);right:12px;z-index:400;display:flex;flex-direction:column;align-items:flex-end;gap:10px;
+      .cx-controls{position:absolute;top:calc(var(--sai-top) + 240px);right:12px;z-index:400;display:flex;flex-direction:column;align-items:flex-end;gap:10px;
         font-family:-apple-system,'SF Pro Display',sans-serif;-webkit-user-select:none;transition:opacity .2s;}
       /* Portrait: the icon dock hangs as a VERTICAL column down the right edge,
          under the scan pill (Matt: buttons in a column on the right side). */
@@ -752,7 +752,7 @@
       /* Landscape: the right edge belongs to the native THRUST cluster (and the Dynamic
          Island sits on a side edge), so the scan pill + dock become one row, top-center. */
       @media (orientation: landscape){
-        .cx-controls{top:max(10px, env(safe-area-inset-top));right:auto;left:50%;
+        .cx-controls{top:max(10px, var(--sai-top));right:auto;left:50%;
           transform:translateX(-50%);flex-direction:row;align-items:center;gap:8px;}
         .cx-btnrow{flex-direction:row;align-items:center;}
       }
@@ -760,8 +760,8 @@
       body.cx-modal-open .cx-controls{opacity:0;pointer-events:none;}
       /* Scan pill lives under the TIME 1× pill (top-left), not with the icon dock —
          fixed positioning pulls it out of the .cx-controls flex column. */
-      .cx-scan{position:fixed;top:calc(max(18px, env(safe-area-inset-top)) + 46px);
-        left:max(18px, env(safe-area-inset-left));z-index:410;
+      .cx-scan{position:fixed;top:calc(max(18px, var(--sai-top)) + 46px);
+        left:max(18px, var(--sai-left));z-index:410;
         overflow:hidden;min-width:188px;height:42px;border-radius:21px;cursor:pointer;
         border:1px solid rgba(120,200,255,0.25);color:rgba(160,210,255,0.55);
         background:linear-gradient(135deg,rgba(10,22,40,0.7),rgba(6,12,24,0.85));

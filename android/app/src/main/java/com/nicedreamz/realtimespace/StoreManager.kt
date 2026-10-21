@@ -6,6 +6,7 @@ import java.security.MessageDigest
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -245,6 +246,7 @@ fun PaywallOverlay(store: StoreManager, visible: Boolean = store.locked, onClose
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xF2000005))
+            .safeDrawingPadding()
             .padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally

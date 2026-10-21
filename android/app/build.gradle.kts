@@ -14,8 +14,8 @@ android {
         applicationId = "com.nicedreamz.realtimespace"
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.9"
+        versionCode = 13
+        versionName = "1.10"
     }
 
     signingConfigs {
@@ -82,6 +82,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.webkit:webkit:1.11.0")
+    // Play flagged androidx.fragment as outdated: it only arrives transitively (1.1.0, via
+    // Play Billing -> play-services-base). Pin the current stable so the old one never ships.
+    implementation("androidx.fragment:fragment:1.9.1")
     implementation("com.android.billingclient:billing-ktx:8.0.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

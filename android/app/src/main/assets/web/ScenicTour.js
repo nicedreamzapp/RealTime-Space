@@ -240,7 +240,7 @@ class ScenicTour {
         const style = document.createElement('style');
         style.textContent = `
             .st-chip {
-                position: fixed; top: calc(env(safe-area-inset-top, 12px) + 8px);
+                position: fixed; top: calc(var(--sai-top, 12px) + 8px);
                 left: 50%; transform: translateX(-50%) translateY(-70px);
                 display: flex; align-items: center; gap: 10px;
                 padding: 7px 10px 7px 14px; border-radius: 20px;
@@ -262,7 +262,7 @@ class ScenicTour {
             }
             .st-chip button:active { background: rgba(90, 140, 210, 0.6); }
             .st-card {
-                position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 16px) + 84px);
+                position: fixed; left: 50%; bottom: calc(var(--sai-bottom, 16px) + 84px);
                 transform: translateX(-50%) translateY(14px);
                 text-align: center; z-index: 10035; pointer-events: none;
                 font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;

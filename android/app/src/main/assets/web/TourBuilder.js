@@ -560,7 +560,7 @@
         .tb-picker { position: fixed; inset: 0; z-index: 10060; background: rgba(0, 4, 12, 0.55);
           display: none; align-items: center; justify-content: center; }
         .tb-picker.show { display: flex; }
-        .tb-sheet { width: min(640px, calc(100vw - 20px)); max-height: calc(100vh - 20px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+        .tb-sheet { width: min(640px, calc(100vw - 20px)); max-height: calc(100vh - 20px - var(--sai-top, 0px) - var(--sai-bottom, 0px));
           display: flex; flex-direction: column; border-radius: 20px; overflow: hidden;
           background: rgba(10, 18, 34, 0.94); border: 1px solid rgba(120, 180, 255, 0.3);
           backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); color: #e8f2ff; }
@@ -599,11 +599,11 @@
         .tb-star { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 12px; font-weight: 600; color: #e8f2ff;
           text-align: center; line-height: 1.2; text-shadow: 0 1px 4px #000, 0 0 2px #000; }
         .tb-star b { display: block; font-weight: 800; font-size: 11px; }
-        .tb-fly { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 14px); transform: translateX(-50%);
+        .tb-fly { position: absolute; left: 50%; top: calc(var(--sai-top, 0px) + 14px); transform: translateX(-50%);
           padding: 10px 18px; border-radius: 22px; background: rgba(8, 14, 26, .7); color: #dceaff; font-size: 16px;
           white-space: nowrap; opacity: 0; transition: opacity .4s; pointer-events: none; }
         .tb-fly.show { opacity: 1; }
-        .tb-card { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 10px);
+        .tb-card { position: absolute; left: 50%; top: calc(var(--sai-top, 0px) + 10px);
           width: min(560px, calc(100vw - 20px)); box-sizing: border-box; transform: translate(-50%, -130%);
           transition: transform .45s cubic-bezier(.2,.9,.25,1); padding: 14px 16px 12px; border-radius: 18px;
           background: rgba(8, 14, 28, .88); border: 1.5px solid var(--c); border-left-width: 6px;
@@ -617,7 +617,7 @@
         .tb-pills i { font-style: normal; color: #9fbde2; font-weight: 500; margin-right: 6px; }
         .tb-fact { font-size: 16px; line-height: 1.4; margin-top: 10px; color: #e6efff; }
         .tb-tap { margin-top: 10px; font-size: 14px; font-weight: 700; color: var(--c); text-align: right; }
-        .tb-bar { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); transform: translateX(-50%);
+        .tb-bar { position: absolute; left: 50%; bottom: calc(var(--sai-bottom, 0px) + 14px); transform: translateX(-50%);
           display: flex; align-items: center; gap: 12px; padding: 6px; border-radius: 30px; background: rgba(8, 14, 26, .72);
           border: 1px solid rgba(120,180,255,.3); }
         .tb-bar button { min-height: 48px; padding: 0 16px; border-radius: 24px; border: 1px solid rgba(120,180,255,.4);

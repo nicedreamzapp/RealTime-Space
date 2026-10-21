@@ -947,7 +947,7 @@ function createTimeControl() {
     timePillEl.setAttribute('role', 'button');
     timePillEl.setAttribute('aria-label', 'Time speed, 1 times. Tap to speed up time');
     timePillEl.style.cssText = `
-        position: absolute; top: max(18px, env(safe-area-inset-top)); left: max(18px, env(safe-area-inset-left)); z-index: 120;
+        position: absolute; top: max(18px, var(--sai-top)); left: max(18px, var(--sai-left)); z-index: 120;
         padding: 6px 13px; border-radius: 14px;
         background: rgba(12, 16, 28, 0.55);
         border: 1px solid rgba(140, 200, 255, 0.22);

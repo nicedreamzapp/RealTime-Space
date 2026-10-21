@@ -10,6 +10,7 @@
          and collides with the native radar/menu/view-mode column. Push it down in portrait so
          the native rail and the web dock form one clean, non-overlapping right-edge column. -->
     <style>
+      :root { --sai-top: 0px; --sai-right: 0px; --sai-bottom: 0px; --sai-left: 0px; }
       @media (orientation: portrait) { .cx-controls { top: 344px !important; } }
     </style>
     <!-- ANDROID PORT bridge shim: emulate the iOS WKWebView message handlers so the
@@ -35,6 +36,13 @@
         window.webkit.messageHandlers.iosHandler = { postMessage: send };
         window.webkit.messageHandlers.logging = { postMessage: logfwd };
         window.__SPACE_BRIDGE_READY__ = true;
+        // Real system-bar + cutout insets from MainActivity.pushInsets (CSS px). The web files
+        // use var(--sai-*) where iOS uses env(safe-area-inset-*), which WebView reports as 0.
+        window.__rtsSetInsets = function(t, r, b, l){
+            var s = document.documentElement.style;
+            s.setProperty('--sai-top', t + 'px'); s.setProperty('--sai-right', r + 'px');
+            s.setProperty('--sai-bottom', b + 'px'); s.setProperty('--sai-left', l + 'px');
+        };
     })();
     </script>
     <style>
