@@ -1,6 +1,6 @@
-// Cockpit.js — Matt's AI-generated cockpit interior as a LANDSCAPE overlay.
+// Cockpit.js — Matt's cockpit interior art as a LANDSCAPE overlay.
 //
-// The art (his Grok cockpit panorama, codex/cosmos/cockpit_land.png) has its three
+// The art (his cockpit panorama, codex/cosmos/cockpit_land.png) has its three
 // window openings cut to true transparency, so the live 3D universe shows through
 // the windshield while the glowing consoles and struts frame it. Landscape-only:
 // the portrait art had the pilot chair blocking the forward view, so portrait
