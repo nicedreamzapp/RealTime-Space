@@ -91,6 +91,7 @@ class BlackHole {
         const geometry = new THREE.TorusGeometry(photonRadius, 0.02, 16, 100);
 
         const material = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
             color: 0xffffff,
             transparent: true,
             opacity: 0.3,

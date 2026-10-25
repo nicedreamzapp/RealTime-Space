@@ -253,8 +253,8 @@
           <div class="cx-statgrid">
             ${stat('Diameter', data.radiusKm ? F.km(data.radiusKm * 2) : '—')}
             ${stat('Gravity', F.gravity(data.gravity))}
-            ${stat('Day', F.duration(data.dayHours))}
-            ${stat('Year', F.duration(data.yearDays ? data.yearDays * 24 : null))}
+            ${stat('Day length', F.duration(data.dayHours))}
+            ${stat('Trip around Sun', F.duration(data.yearDays ? data.yearDays * 24 : null))}
             ${stat('Mean temp', F.temp(data.tempC))}
             ${stat(data.distanceLabel ? 'Distance' : 'From Sun', data.distanceLabel || F.distance(data.distanceAU))}
             ${stat('Moons', F.moons(data.moons))}
@@ -594,10 +594,12 @@
     // ===========================================================================
     openDestinations() {
       const GROUPS = [
+        { title: 'Autopilot', items: [{ n: '__tour__', i: '🎬', label: 'Grand Tour — sit back, see everything' }] },
         { title: 'The Star', items: [{ n: 'Sun', i: '☀️' }] },
         { title: 'Planets', items: [
           { n: 'Mercury', i: '🌑' }, { n: 'Venus', i: '🟡' }, { n: 'Earth', i: '🌍' }, { n: 'Mars', i: '🔴' },
-          { n: 'Jupiter', i: '🟠' }, { n: 'Saturn', i: '🪐' }, { n: 'Uranus', i: '🔵' }, { n: 'Neptune', i: '🔵' } ] },
+          { n: 'Jupiter', i: '🟠' }, { n: 'Saturn', i: '🪐' }, { n: 'Uranus', i: '🔵' }, { n: 'Neptune', i: '🔵' },
+          { n: 'Pluto', i: '🤍', label: 'Pluto · dwarf planet' } ] },
         { title: 'Moons', items: [
           { n: 'Moon', i: '🌕', label: 'The Moon' }, { n: 'Io', i: '🌋' }, { n: 'Europa', i: '🧊' },
           { n: 'Ganymede', i: '🌑' }, { n: 'Callisto', i: '⚪' }, { n: 'Titan', i: '🟠' }, { n: 'Enceladus', i: '❄️' } ] },
@@ -642,7 +644,13 @@
       this.destEl.querySelectorAll('.cx-dest-cell').forEach(btn => {
         btn.onclick = () => {
           this._haptic('light');
-          this._flyTo(btn.getAttribute('data-fly'));
+          const dest = btn.getAttribute('data-fly');
+          if (dest === '__tour__') {
+            closeDest();
+            try { window.galaxyExplorer?.startScenicTour?.(); } catch (e) {}
+            return;
+          }
+          this._flyTo(dest);
           closeDest();
         };
       });

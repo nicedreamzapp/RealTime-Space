@@ -188,6 +188,9 @@ class WebBridge(
         call("window.galaxyExplorer&&window.galaxyExplorer.setMaxSpeed&&window.galaxyExplorer.setMaxSpeed($v)")
     fun setViewMode(mode: String) =
         call("window.galaxyExplorer&&window.galaxyExplorer.setViewMode&&window.galaxyExplorer.setViewMode('$mode')")
+
+    fun toggleScenicTour() =
+        call("window.galaxyExplorer&&window.galaxyExplorer.toggleScenicTour&&window.galaxyExplorer.toggleScenicTour()")
     fun flyToByName(name: String) =
         call("window.galaxyExplorer&&window.galaxyExplorer.flyToByName&&window.galaxyExplorer.flyToByName('${name.replace("'", "\\'")}')")
     fun flyToNearestPlanet() =

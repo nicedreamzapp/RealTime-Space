@@ -14,13 +14,19 @@ class RendererCore {
         // Detect device capabilities
         this.isMobile = window.innerWidth < 768;
         this.isHighEnd = window.devicePixelRatio >= 3; // iPhone Pro/Pro Max
+        // Native app (WKWebView / Android WebView) vs plain desktop browser — the
+        // desktop GPU can afford quality the phone pipeline deliberately gives up.
+        this.isNativeApp = !!(window.webkit?.messageHandlers?.iosHandler || window.AndroidBridge);
         // Cap at 2x: on a ~460ppi phone display 2x is already retina-sharp, while 3x
         // pushes ~2.25x the pixels through the multi-pass cinematic pipeline for no
         // visible gain — the single biggest framerate cost on Pro Max.
-        // ANDROID PORT: entry-level mobile GPUs (e.g. PowerVR GE8320) hang when pushing
-        // the full cinematic pipeline at native DPR. Cap at 1x here.
-        this.maxPixelRatio = 1;
+        this.maxPixelRatio = 2;
         this.pixelRatio = Math.min(window.devicePixelRatio, this.maxPixelRatio);
+        if (!this.isNativeApp) {
+            // Desktop browser: supersample 1x monitors to 1.5x — visibly crisper
+            // stars and ring edges, cheap on any discrete/Apple-silicon GPU.
+            this.pixelRatio = Math.min(Math.max(window.devicePixelRatio, 1.5), this.maxPixelRatio);
+        }
 
         this.initScene();
         this.initCamera();
@@ -64,7 +70,7 @@ class RendererCore {
     initRenderer() {
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
-            antialias: false,  // ANDROID PORT: MSAA too costly on entry-level mobile GPUs
+            antialias: true,  // Always use AA for crisp stars
             alpha: false,
             powerPreference: "high-performance",
             stencil: true,  // Enable for post-processing effects
@@ -79,11 +85,10 @@ class RendererCore {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(this.pixelRatio);
 
-        // Enhanced shadows — DISABLED on Android port (PCFSoft shadow passes hang
-        // entry-level mobile GPUs like the PowerVR GE8320).
-        this.renderer.shadowMap.enabled = false;
+        // Enhanced shadows
+        this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        this.renderer.shadowMap.autoUpdate = false;
+        this.renderer.shadowMap.autoUpdate = true;
 
         // HDR-like output with cinematic tone mapping
         // Use outputColorSpace for Three.js r152+ (fallback to outputEncoding for older)

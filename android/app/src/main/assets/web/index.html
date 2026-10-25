@@ -4,39 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Galaxy Explorer</title>
-    <!-- ANDROID PORT: the WebView renders edge-to-edge under the status bar and reports
-         env(safe-area-inset-top)=0, so the web icon dock (.cx-controls, default top:240px)
-         sits ~24dp higher than the native Compose rail (which respects the status-bar inset)
-         and collides with the native radar/menu/view-mode column. Push it down in portrait so
-         the native rail and the web dock form one clean, non-overlapping right-edge column. -->
-    <style>
-      @media (orientation: portrait) { .cx-controls { top: 296px !important; } }
-    </style>
-    <!-- ANDROID PORT bridge shim: emulate the iOS WKWebView message handlers so the
-         UNMODIFIED web bundle's window.webkit.messageHandlers.*.postMessage() calls reach
-         the native @JavascriptInterface (window.AndroidBridge). Must run before any engine
-         script, so it lives first in <head>. -->
-    <script>
-    (function(){
-        function send(m){
-            try {
-                var s = (typeof m === 'string') ? m : JSON.stringify(m);
-                if (window.AndroidBridge && window.AndroidBridge.postMessage) window.AndroidBridge.postMessage(s);
-            } catch(e){}
-        }
-        function logfwd(m){
-            try {
-                var s = (typeof m === 'string') ? m : JSON.stringify(m);
-                if (window.AndroidBridge && window.AndroidBridge.log) window.AndroidBridge.log(s);
-            } catch(e){}
-        }
-        window.webkit = window.webkit || {};
-        window.webkit.messageHandlers = window.webkit.messageHandlers || {};
-        window.webkit.messageHandlers.iosHandler = { postMessage: send };
-        window.webkit.messageHandlers.logging = { postMessage: logfwd };
-        window.__SPACE_BRIDGE_READY__ = true;
-    })();
-    </script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -199,16 +166,6 @@
          offline and can't be killed by a flaky network. The bundle sets a complete
          window.THREE (core + EffectComposer/RenderPass/ShaderPass/UnrealBloomPass/
          GammaCorrectionShader). Regenerate with esbuild if the addon set changes. -->
-    <script>
-        // Surface uncaught errors/rejections to native console (onConsoleMessage) so a
-        // silent init failure can't hide behind a black screen.
-        window.addEventListener('error', function(e){
-            console.error('WINDOW_ERROR: ' + (e.message||'') + ' @ ' + (e.filename||'') + ':' + (e.lineno||'') + (e.error&&e.error.stack?('\n'+e.error.stack):''));
-        });
-        window.addEventListener('unhandledrejection', function(e){
-            console.error('UNHANDLED_REJECTION: ' + (e.reason && (e.reason.stack||e.reason.message) || e.reason));
-        });
-    </script>
     <script src="textures/lib/three.bundle.js"></script>
     <script>
         // Post-processing (bloom/god-rays/LUT) is ON. It used to render black on iOS
@@ -217,7 +174,7 @@
         // first composed frames come out black. So bloom can never leave a black screen —
         // worst case it silently reverts to the old direct path. Set this to true to force
         // the direct path manually (e.g. for debugging).
-        window.__FORCE_DIRECT__ = true;
+        window.__FORCE_DIRECT__ = false;
         // Boot guard: if the THREE bundle somehow failed to load, say so loudly instead
         // of leaving a silent black screen (the old CDN failure mode).
         if (!window.THREE || !window.THREE.EffectComposer) {
@@ -264,9 +221,10 @@
             'BlackHole.js',
             'WarpEffect.js',
             'VolumetricNebula.js',
+            'ScenicTour.js',
             'main.js'
         ];
-        const APP_VERSION = '2026-07-06a'; // bump to bust browser cache after edits
+        const APP_VERSION = '2026-07-30s'; // bump to bust browser cache after edits
         // Query-string cache busting is for http dev serving only — file:// URLs
         // inside the app bundle don't cache and may not tolerate query params.
         const bust = location.protocol.startsWith('http') ? '?v=' + APP_VERSION : '';

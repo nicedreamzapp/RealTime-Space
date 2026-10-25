@@ -85,7 +85,10 @@ class Planet {
         this.hasIceCaps = config.hasIceCaps || (this.planetType === "rocky" && Math.random() > 0.4);
         this.hasCities = config.hasCities || false; // Night-side city lights
         this.oceanLevel = config.oceanLevel || 0.4;
-        this.axialTilt = config.axialTilt || Math.random() * 0.5; // Radians
+        // Real planets pass their true tilt; procedural worlds keep a random one.
+        // (This random fallback + no data from planetData was why Saturn's ring
+        // angle changed every launch.)
+        this.axialTilt = config.axialTilt !== undefined ? config.axialTilt : Math.random() * 0.5; // Radians
         this.magneticFieldStrength = config.magneticFieldStrength || (this.hasAurora ? 0.5 + Math.random() * 0.5 : 0);
         this.texturePack = config.texturePack || null;
 
@@ -596,18 +599,18 @@ class Planet {
     // Real-texture registry. Paths are relative to index.html in the app bundle.
     static get TEXTURE_REGISTRY() {
         return {
-            mercury: { color: 'textures/mercury/mercury_color.jpg',  bump: 'textures/mercury/mercury_bump.jpg',  bumpScale: 0.05, roughness: 0.95, metalness: 0.0 },
-            venus:   { color: 'textures/venus/venus_color.jpg',      bump: 'textures/venus/venus_bump.jpg',      bumpScale: 0.04, roughness: 0.85, metalness: 0.0 },
-            mars:    { color: 'textures/mars/mars_color_1k.jpg',     bump: 'textures/mars/mars_bump_1k.jpg',     bumpScale: 0.06, roughness: 0.92, metalness: 0.0 },
+            mercury: { color: 'textures/mercury/mercury_4k.jpg',  bump: 'textures/mercury/mercury_bump.jpg',  bumpScale: 0.05, roughness: 0.95, metalness: 0.0 },
+            venus:   { color: 'textures/venus/venus_4k.jpg',      bump: 'textures/venus/venus_bump.jpg',      bumpScale: 0.04, roughness: 0.85, metalness: 0.0 },
+            mars:    { color: 'textures/mars/mars_4k.jpg',     bump: 'textures/mars/mars_bump_1k.jpg',     bumpScale: 0.06, roughness: 0.92, metalness: 0.0 },
             jupiter: { color: 'textures/jupiter/jupiter_4k.jpg',     bump: null,                                  bumpScale: 0,    roughness: 0.6,  metalness: 0.0 },
             saturn:  { color: 'textures/saturn/saturn_4k.jpg',       bump: null,                                  bumpScale: 0,    roughness: 0.6,  metalness: 0.0,
                        ringColor: 'textures/saturn/saturn_ring_alpha.png', ringPattern: null,
                        ringInner: 1.24, ringOuter: 2.27, ringShadow: true },
-            uranus:  { color: 'textures/uranus/uranus_2k.jpg',       bump: null,                                  bumpScale: 0,    roughness: 0.5,  metalness: 0.0,
+            uranus:  { color: 'textures/uranus/uranus_2k_enh.jpg',   bump: null,                                  bumpScale: 0,    roughness: 0.5,  metalness: 0.0,
                        ringColor: 'textures/uranus/uranus_ring_color.jpg', ringPattern: 'textures/uranus/uranus_ring_trans.gif',
                        ringInner: 1.6, ringOuter: 2.0 },
-            neptune: { color: 'textures/neptune/neptune_2k.jpg',     bump: null,                                  bumpScale: 0,    roughness: 0.5,  metalness: 0.0 },
-            moon:    { color: 'textures/moon/moon_color_1k.jpg',     bump: 'textures/moon/moon_bump_1k.jpg',     bumpScale: 0.06, roughness: 0.95, metalness: 0.0 },
+            neptune: { color: 'textures/neptune/neptune_2k_enh.jpg', bump: null,                                  bumpScale: 0,    roughness: 0.5,  metalness: 0.0 },
+            moon:    { color: 'textures/moon/moon_4k.jpg',     bump: 'textures/moon/moon_bump_1k.jpg',     bumpScale: 0.06, roughness: 0.95, metalness: 0.0 },
             pluto:   { color: 'textures/pluto/pluto_color_1k.jpg',   bump: 'textures/pluto/pluto_bump_1k.jpg',   bumpScale: 0.04, roughness: 0.9,  metalness: 0.0 }
         };
     }
@@ -730,18 +733,31 @@ class Planet {
         const ringMat = new THREE.ShaderMaterial({
             uniforms: ringUniforms,
             vertexShader: `
+                #include <common>
+                #include <logdepthbuf_pars_vertex>
                 varying vec2 vUv;
                 varying vec3 vWorldPos;
                 varying vec3 vWorldNormal;
+                varying vec3 vPlanetCenterW;
                 void main() {
                     vUv = uv;
                     vec4 wp = modelMatrix * vec4(position, 1.0);
                     vWorldPos = wp.xyz;
+                    vPlanetCenterW = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
                     vWorldNormal = normalize(mat3(modelMatrix) * vec3(0.0, 0.0, 1.0));
                     gl_Position = projectionMatrix * viewMatrix * wp;
+                    #include <logdepthbuf_vertex>
                 }
             `,
             fragmentShader: `
+                // Log-depth chunks are REQUIRED: the renderer uses a logarithmic
+                // depth buffer, and a custom shader without them writes depth on a
+                // different scale than every built-in material. Result: the ring
+                // always LOST the depth test against the planet, so the near side
+                // of the ring never rendered in front of the disc — rings looked
+                // pasted BEHIND the planet from every angle.
+                #include <common>
+                #include <logdepthbuf_pars_fragment>
                 uniform sampler2D uMap;
                 uniform sampler2D uAlphaMap;
                 uniform float uUseAlphaMap;
@@ -753,6 +769,7 @@ class Planet {
                 varying vec2 vUv;
                 varying vec3 vWorldPos;
                 varying vec3 vWorldNormal;
+                varying vec3 vPlanetCenterW;
 
                 // Soft shadow of the planet's disc on the ring plane
                 float planetShadow(vec3 P) {
@@ -771,6 +788,27 @@ class Planet {
                 }
 
                 void main() {
+                    #include <logdepthbuf_fragment>
+                    // MANUAL planet occlusion. The depth buffer proved unreliable
+                    // between this custom shader and the planet (log-depth scale
+                    // mismatch hid the ring's near side behind the disc from every
+                    // angle). So the ring decides for itself: ray from camera to
+                    // this fragment — if it enters the planet sphere first, the
+                    // fragment is behind the planet. depthTest is OFF for this
+                    // material; this test is the only occlusion, and it is exact.
+                    {
+                        vec3 rd = vWorldPos - cameraPosition;
+                        float tFrag = length(rd);
+                        rd /= tFrag;
+                        vec3 oc = cameraPosition - vPlanetCenterW;
+                        float b = dot(oc, rd);
+                        float cc = dot(oc, oc) - uPlanetRadius * uPlanetRadius;
+                        float disc = b * b - cc;
+                        if (disc > 0.0) {
+                            float tHit = -b - sqrt(disc);
+                            if (tHit > 0.0 && tHit < tFrag) discard;
+                        }
+                    }
                     vec4 c = texture2D(uMap, vUv);
                     float alpha = c.a;
                     if (uUseAlphaMap > 0.5) {
@@ -800,11 +838,15 @@ class Planet {
             `,
             transparent: true,
             side: THREE.DoubleSide,
-            depthWrite: false
+            depthWrite: false,
+            depthTest: false   // occlusion handled in-shader (see fragment)
         });
 
         this.rings = new THREE.Mesh(ringGeo, ringMat);
-        this.rings.rotation.x = Math.PI / 2 + 0.4; // Tilted rings (Saturn)
+        // Flat in the EQUATORIAL plane — the planet mesh carries the real axial
+        // tilt now. The old '+ 0.4' fake-tilt hack left the rings skewed ~23°
+        // off the planet's equator once true tilts landed.
+        this.rings.rotation.x = Math.PI / 2;
         this._ringLightUniforms = ringUniforms;
         this.mesh.add(this.rings);
     }
@@ -1272,71 +1314,56 @@ class Planet {
         const atmosphereGeometry = new THREE.SphereGeometry(this.radius * 1.22, 64, 64);
         const atmosphereMaterial = new THREE.ShaderMaterial({
             uniforms: this.uniforms.atmosphere,
+            // REWRITTEN 2026-07-30: the old Rayleigh/Mie shader measured "altitude" as
+            // distance from the WORLD ORIGIN (the Sun), so density underflowed to zero
+            // for every planet — and its arithmetic produced NaN fragments on real GPUs,
+            // which rasterize as an opaque BLACK RING around every atmosphere planet
+            // (the "black donut" bug). This is a simple, provably-finite limb glow:
+            // every term is clamped, nothing can go negative, NaN is impossible.
             vertexShader: `
+                #include <common>
+                #include <logdepthbuf_pars_vertex>
                 varying vec3 vWorldPosition;
                 varying vec3 vNormal;
+                varying vec3 vCenter;
 
                 void main() {
                     vec4 worldPos = modelMatrix * vec4(position, 1.0);
                     vWorldPosition = worldPos.xyz;
+                    vCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
                     vNormal = normalize(normalMatrix * normal);
                     gl_Position = projectionMatrix * viewMatrix * worldPos;
+                    #include <logdepthbuf_vertex>
                 }
             `,
             fragmentShader: `
-                uniform vec3 sunPosition;
-                uniform float planetRadius;
-                uniform float atmosphereRadius;
-                uniform vec3 rayleighCoeff;
-                uniform float mieCoeff;
-                uniform float mieG;
-                uniform float sunIntensity;
+                #include <common>
+                #include <logdepthbuf_pars_fragment>
                 uniform vec3 atmosphereColor;
 
                 varying vec3 vWorldPosition;
                 varying vec3 vNormal;
-
-                const float PI = 3.14159265359;
-                const int NUM_SAMPLES = 8;
-                const int NUM_SAMPLES_LIGHT = 4;
-
-                float rayleighPhase(float cosTheta) {
-                    return 3.0 / (16.0 * PI) * (1.0 + cosTheta * cosTheta);
-                }
-
-                float miePhase(float cosTheta, float g) {
-                    float g2 = g * g;
-                    return 3.0 / (8.0 * PI) * ((1.0 - g2) * (1.0 + cosTheta * cosTheta)) /
-                           (pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5) * (2.0 + g2));
-                }
+                varying vec3 vCenter;
 
                 void main() {
+                    #include <logdepthbuf_fragment>
                     vec3 viewDir = normalize(cameraPosition - vWorldPosition);
-                    vec3 sunDir = normalize(sunPosition);
+                    vec3 n = normalize(vNormal);
 
-                    // Fresnel-like effect for atmosphere edge
-                    // Wider, softer rim (lower power = the glow reaches further in from the edge).
-                    float fresnel = pow(1.0 - max(0.0, dot(viewDir, vNormal)), 2.3);
+                    // Limb rim: strongest at the silhouette, fades inward. abs() covers
+                    // the BackSide-flipped normals; clamp guards float error (pow of a
+                    // negative is NaN = the old black-ring bug).
+                    float rim = clamp(1.0 - abs(dot(viewDir, n)), 0.0, 1.0);
+                    float fresnel = pow(rim, 6.0);   // tight limb hug — 2.3 read as a fat halo
 
-                    // Scattering calculation
-                    float cosTheta = dot(viewDir, sunDir);
-                    float rayleigh = rayleighPhase(cosTheta);
-                    float mie = miePhase(cosTheta, mieG);
+                    // The Sun sits at the world origin: light the day-side limb more,
+                    // keep a faint night-side rim so the planet still reads in shadow.
+                    vec3 sunDir = normalize(-vCenter);
+                    vec3 up = normalize(vWorldPosition - vCenter);
+                    float dayside = 0.3 + 0.7 * clamp(dot(up, sunDir) * 0.5 + 0.5, 0.0, 1.0);
 
-                    // Atmospheric density at this point
-                    float altitude = (length(vWorldPosition) - planetRadius) / (atmosphereRadius - planetRadius);
-                    float density = exp(-altitude * 4.0) * atmosphereRadius;
-
-                    // Final color
-                    vec3 rayleighColor = atmosphereColor * rayleighCoeff / 22.4 * rayleigh;
-                    vec3 mieColor = vec3(1.0) * mie * 0.1;
-
-                    vec3 scatter = (rayleighColor + mieColor) * sunIntensity * density * 0.015;
-
-                    float alpha = fresnel * 1.0 * density;
-                    alpha = clamp(alpha, 0.0, 0.75);
-
-                    gl_FragColor = vec4(scatter + atmosphereColor * fresnel * 0.95, alpha);
+                    float alpha = clamp(fresnel * dayside * 0.35, 0.0, 0.6);
+                    gl_FragColor = vec4(atmosphereColor * dayside, alpha);
                 }
             `,
             transparent: true,
@@ -1498,7 +1525,7 @@ class Planet {
         });
 
         this.rings = new THREE.Mesh(ringGeo, ringMat);
-        this.rings.rotation.x = Math.PI / 2 + 0.4; // Tilted rings
+        this.rings.rotation.x = Math.PI / 2; // equatorial — mesh carries the real tilt
         this.mesh.add(this.rings);
     }
 

@@ -384,7 +384,7 @@ class Star {
         let sunMap = null;
         if (this.texturePack === 'sun') {
             sunMap = new THREE.TextureLoader().load(
-                'textures/sun/sun_2k.jpg',
+                'textures/sun/sun_4k.jpg',
                 () => console.log('☀️  Sun texture loaded (Solar System Scope 2K)'),
                 undefined,
                 (err) => console.warn('Sun texture load failed:', err)

@@ -9,6 +9,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +47,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import android.content.res.Configuration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -76,6 +81,7 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge) {
                 RadarView(state, sizeDp = if (landscape) 92 else 120)
                 MenuButton(showPanel) { showPanel = !showPanel }
                 ViewModeButton(bridge)
+                TourButton(bridge)
             }
 
             // ---------- NAVIGATE / SETTINGS PANEL ----------
@@ -118,7 +124,10 @@ private fun MenuButton(open: Boolean, onClick: () -> Unit) {
     Box(
         Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(PanelBg)
             .border(1.dp, CyanBorder, RoundedCornerShape(10.dp))
-            .clickable { onClick() },
+            .clickable(role = Role.Button) { onClick() }
+            .semantics(mergeDescendants = true) {
+                contentDescription = if (open) "Close the menu" else "Menu"
+            },
         contentAlignment = Alignment.Center
     ) { Text(if (open) "✕" else "⋯", color = Cyan, fontSize = 20.sp, fontWeight = FontWeight.Medium) }
 }
@@ -132,17 +141,19 @@ private fun ThrustCluster(state: SpaceState, bridge: WebBridge) {
                 Modifier.width(40.dp).height(34.dp).clip(RoundedCornerShape(12.dp))
                     .background(SpaceGreen.copy(alpha = 0.12f))
                     .border(1.dp, SpaceGreen.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
-                    .clickable { bridge.flyToNearestPlanet(); bridge.haptic("light") },
+                    .clickable(role = Role.Button) { bridge.flyToNearestPlanet(); bridge.haptic("light") }
+                    .semantics(mergeDescendants = true) { contentDescription = "Fly to the nearest planet" },
                 contentAlignment = Alignment.Center
             ) { Text("➤", color = SpaceGreen, fontSize = 15.sp, modifier = Modifier.rotate(-45f)) }
             Box(
                 Modifier.width(40.dp).height(26.dp).clip(RoundedCornerShape(8.dp))
                     .background(SpaceRed.copy(alpha = 0.10f))
                     .border(1.dp, SpaceRed.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
-                    .clickable {
+                    .clickable(role = Role.Button) {
                         state.rotX = 0f; state.rotY = 0f; state.isThrusting = false
                         bridge.sendNavUpdate(); bridge.haptic("heavy")
-                    },
+                    }
+                    .semantics(mergeDescendants = true) { contentDescription = "Stop the ship" },
                 contentAlignment = Alignment.Center
             ) { Text("STOP", color = SpaceRed.copy(alpha = 0.9f), fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = Mono) }
         }
@@ -166,15 +177,39 @@ private fun ViewModeButton(bridge: WebBridge) {
     Box(
         Modifier.width(50.dp).height(40.dp).clip(RoundedCornerShape(10.dp)).background(PanelBg)
             .border(1.dp, CyanBorder, RoundedCornerShape(10.dp))
-            .clickable {
+            .clickable(role = Role.Button) {
                 idx = (idx + 1) % modes.size
                 bridge.setViewMode(modes[idx]); bridge.haptic("light")
+            }
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Camera view"
+                stateDescription = "Switch to $next"
             },
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(icon, fontSize = 15.sp)
             Text("→ ${next.uppercase()}", color = Cyan, fontSize = 7.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+        }
+    }
+}
+
+@Composable
+private fun TourButton(bridge: WebBridge) {
+    // GRAND TOUR — scenic autopilot toggle, mirrors the iOS rail button.
+    Box(
+        Modifier.width(50.dp).height(40.dp).clip(RoundedCornerShape(10.dp)).background(PanelBg)
+            .border(1.dp, CyanBorder, RoundedCornerShape(10.dp))
+            .clickable(role = Role.Button) { bridge.toggleScenicTour(); bridge.haptic("light") }
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Grand tour"
+                stateDescription = "Starts or stops the scenic autopilot"
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("✨", fontSize = 15.sp)
+            Text("TOUR", color = Cyan, fontSize = 7.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
         }
     }
 }
@@ -189,7 +224,11 @@ private fun WarpButton(state: SpaceState, bridge: WebBridge) {
             .holdGesture(
                 onPress = { warping = true; state.isThrusting = true; bridge.setWarpDrive(true); bridge.sendNavUpdate(); bridge.haptic("heavy") },
                 onRelease = { warping = false; state.isThrusting = false; bridge.setWarpDrive(false); bridge.sendNavUpdate() }
-            ),
+            )
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Warp drive, 100 times speed. Hold to engage"
+                stateDescription = if (warping) "Engaged" else "Off"
+            },
         contentAlignment = Alignment.Center
     ) { Text("⚡ 100×", color = if (warping) Color.Black else WarpPurple, fontSize = 11.sp, fontWeight = FontWeight.Black, fontFamily = Mono) }
 }
@@ -205,7 +244,11 @@ private fun ThrustButton(state: SpaceState, bridge: WebBridge) {
             .holdGesture(
                 onPress = { pressed = true; state.isThrusting = true; bridge.sendNavUpdate(); bridge.haptic("light") },
                 onRelease = { pressed = false; state.isThrusting = false; bridge.sendNavUpdate() }
-            ),
+            )
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Thrust. Hold to accelerate"
+                stateDescription = if (pressed) "Thrusting" else "Idle"
+            },
         contentAlignment = Alignment.Center
     ) {
         Box(Modifier.fillMaxSize().background(accent.copy(alpha = 0.12f), RoundedCornerShape(18.dp)))
@@ -227,6 +270,7 @@ private fun Joystick(state: SpaceState, bridge: WebBridge) {
     Box(
         Modifier.size(padDp).clip(CircleShape).background(JoystickBg)
             .border(1.dp, CyanBorder, CircleShape)
+            .semantics { contentDescription = "Flight joystick. Drag to steer the ship" }
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown()
@@ -279,6 +323,10 @@ private fun SpeedPill(state: SpaceState, bridge: WebBridge) {
             valueRange = 15f..250f,
             colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan, inactiveTrackColor = CyanFaint),
             modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
+                .semantics {
+                    contentDescription = "Maximum speed"
+                    stateDescription = "${state.maxSpeed.toInt()}"
+                }
         )
         Text("${state.maxSpeed.toInt()}", color = Cyan.copy(alpha = 0.85f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = Mono)
     }
@@ -300,14 +348,21 @@ private fun NavigatePanel(state: SpaceState, bridge: WebBridge) {
         Slider(
             value = state.lutIntensity, onValueChange = { state.lutIntensity = it },
             onValueChangeFinished = { bridge.setLUTIntensity(state.lutIntensity) }, valueRange = 0f..1f,
-            colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan, inactiveTrackColor = CyanFaint)
+            colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan, inactiveTrackColor = CyanFaint),
+            modifier = Modifier.semantics {
+                contentDescription = "Filmic look intensity"
+                stateDescription = "${(state.lutIntensity * 100).roundToInt()} percent"
+            }
         )
         Spacer(Modifier.height(2.dp))
         SectionHeader("FLY TO")
-        listOf("Sun", "Earth", "Mars", "Jupiter", "Saturn", "ISS", "Sirius").forEach { name ->
+        listOf("Sun", "Earth", "Mars", "Jupiter", "Saturn", "Pluto", "ISS", "Sirius").forEach { name ->
             Text(
                 "→  $name", color = Cyan.copy(alpha = 0.9f), fontSize = 11.sp, fontFamily = Mono, fontWeight = FontWeight.Medium,
-                modifier = Modifier.fillMaxWidth().clickable { bridge.flyToByName(name); bridge.haptic("light") }.padding(vertical = 4.dp)
+                modifier = Modifier.fillMaxWidth()
+                    .clickable(role = Role.Button, onClickLabel = "Fly there") { bridge.flyToByName(name); bridge.haptic("light") }
+                    .padding(vertical = 4.dp)
+                    .semantics { contentDescription = "Fly to $name" }
             )
         }
     }
@@ -319,10 +374,18 @@ private fun SectionHeader(t: String) =
 
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    // The label and the switch were two separate stops, so TalkBack read
+    // "Orbit Lines" and then an unnamed switch. One toggleable row fixes it.
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, onValueChange = onChange, role = Role.Switch)
+            .semantics(mergeDescendants = true) { contentDescription = label },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(label, color = Cyan.copy(alpha = 0.85f), fontSize = 11.sp, fontFamily = Mono, modifier = Modifier.weight(1f))
         Switch(
-            checked = checked, onCheckedChange = onChange,
+            checked = checked, onCheckedChange = null,
             colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Cyan, uncheckedTrackColor = PanelBg)
         )
     }

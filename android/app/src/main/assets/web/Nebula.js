@@ -93,7 +93,8 @@ class Nebula {
             tertiaryColor: { value: new THREE.Color(this.tertiaryColor) },
             nebulaRadius: { value: this.radius },
             density: { value: 0.5 },
-            seed: { value: this.seed }
+            seed: { value: this.seed },
+            uFade: { value: 1.0 }   // distance fade — set from update()
         };
 
         const material = new THREE.ShaderMaterial({
@@ -118,6 +119,7 @@ class Nebula {
                 uniform float nebulaRadius;
                 uniform float density;
                 uniform float seed;
+                uniform float uFade;
 
                 varying vec3 vWorldPosition;
                 varying vec3 vLocalPosition;
@@ -277,7 +279,7 @@ class Nebula {
                     // Apply exposure and tone mapping
                     accumColor = 1.0 - exp(-accumColor * 1.5);
 
-                    gl_FragColor = vec4(accumColor, accumAlpha * 0.8);
+                    gl_FragColor = vec4(accumColor * uFade, accumAlpha * 0.8 * uFade);
                 }
             `,
             transparent: true,
@@ -504,9 +506,12 @@ class Nebula {
                 pillarGeo.computeVertexNormals();
 
                 const pillarMat = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
                     color: layer === 0 ? 0x0a0505 : 0x150808,
                     transparent: true,
-                    opacity: layer === 0 ? 0.9 : 0.3,
+                    // 0.9 made the low-poly pillar facets read as hard black shards;
+                    // softer layers blend into dust instead
+                    opacity: layer === 0 ? 0.45 : 0.2,
                     side: layer === 0 ? THREE.FrontSide : THREE.BackSide
                 });
 
@@ -551,7 +556,8 @@ class Nebula {
         const haloMat = new THREE.ShaderMaterial({
             uniforms: {
                 color: { value: new THREE.Color(this.primaryColor) },
-                time: { value: 0 }
+                time: { value: 0 },
+                uFade: { value: 1.0 }
             },
             vertexShader: `
                 varying vec3 vNormal;
@@ -563,12 +569,16 @@ class Nebula {
             fragmentShader: `
                 uniform vec3 color;
                 uniform float time;
+                uniform float uFade;
                 varying vec3 vNormal;
 
                 void main() {
-                    float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.0);
+                    // clamp is load-bearing: pow of a negative is undefined in GLSL
+                    // (NaN → opaque black on mobile GPUs, same family as the planet
+                    // atmosphere "black donut" bug)
+                    float intensity = pow(clamp(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0, 1.0), 3.0);
                     float flicker = 1.0 + sin(time * 0.5) * 0.05;
-                    gl_FragColor = vec4(color * intensity * flicker, intensity * 0.15);
+                    gl_FragColor = vec4(color * intensity * flicker * uFade, intensity * 0.15 * uFade);
                 }
             `,
             transparent: true,
@@ -709,6 +719,34 @@ class Nebula {
         if (this.volumeUniforms && camera) {
             this.volumeUniforms.time.value = this.time;
             this.volumeUniforms.cameraPos.value.copy(camera.position);
+        }
+
+        // Distance fade — from across the system a nebula should be a faint
+        // watercolor smudge, not a saturated ball outshining the planets.
+        // Full glory returns as you actually fly to it.
+        if (camera) {
+            const R = this.radius || 300;
+            const d = this.mesh.position.distanceTo(camera.position);
+            let fade = 1.25 - (d - 4 * R) / (14 * R);
+            fade = Math.max(0.22, Math.min(1.0, fade));
+            fade = Math.round(fade * 20) / 20;          // quantize: skip no-op traversals
+            if (this._fade !== fade) {
+                this._fade = fade;
+                // ShaderMaterials (volume cloud + halo) ignore .opacity — they take
+                // the fade through their uFade uniform instead.
+                if (this.volumeUniforms?.uFade) this.volumeUniforms.uFade.value = fade;
+                if (this.halo?.material?.uniforms?.uFade) this.halo.material.uniforms.uFade.value = fade;
+                this.mesh.traverse(c => {
+                    const m = c.material;
+                    if (!m || !m.transparent || m.uniforms) return;
+                    if (m.userData._baseOpacity === undefined && typeof m.opacity === 'number') {
+                        m.userData._baseOpacity = m.opacity;
+                    }
+                    if (m.userData._baseOpacity !== undefined) {
+                        m.opacity = m.userData._baseOpacity * fade;
+                    }
+                });
+            }
         }
 
         // Slowly rotate cloud layers

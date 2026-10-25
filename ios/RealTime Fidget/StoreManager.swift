@@ -1,5 +1,6 @@
 import SwiftUI
 import StoreKit
+import UIKit
 import Security
 import Combine
 
@@ -85,6 +86,23 @@ final class StoreManager: ObservableObject {
         try? await AppStore.sync()
         await refreshEntitlement()
         if !isUnlocked { errorMessage = "No previous purchase found for this Apple Account." }
+    }
+
+    /// Opens Apple's own redeem sheet on top of the app, so a code can be entered
+    /// without leaving for the App Store. The sheet handles the keyboard and VoiceOver
+    /// itself; when the code lands, listenForTransactions() picks it up and unlocks.
+    func redeemCode() async {
+        errorMessage = nil
+        guard let scene = UIApplication.shared.connectedScenes
+            .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else {
+            errorMessage = "Couldn't open the redeem sheet. Try again in a moment."
+            return
+        }
+        do {
+            try await AppStore.presentOfferCodeRedeemSheet(in: scene)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func refreshEntitlement() async {
@@ -229,15 +247,34 @@ struct UnlockView: View {
                             .foregroundStyle(.white.opacity(0.6))
                             .multilineTextAlignment(.center)
 
-                        Button {
-                            Task { await store.restore() }
-                        } label: {
-                            Text("Restore Purchase")
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.65))
-                                .underline()
+                        // Restore and Redeem sit together, both reachable from the paywall
+                        // itself. Sending someone out to the App Store app to type a code is
+                        // bad for everyone and worse with VoiceOver: you lose your place, and
+                        // you have to find your way back. Matt, 2026-09-12: "it should be like
+                        // the unlock forever, enter code also on the same screen."
+                        HStack(spacing: 22) {
+                            Button {
+                                Task { await store.restore() }
+                            } label: {
+                                Text("Restore Purchase")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.65))
+                                    .underline()
+                            }
+                            .disabled(store.purchasing)
+                            .accessibilityLabel("Restore a purchase you already made")
+
+                            Button {
+                                Task { await store.redeemCode() }
+                            } label: {
+                                Text("Redeem a Code")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.65))
+                                    .underline()
+                            }
+                            .disabled(store.purchasing)
+                            .accessibilityLabel("Redeem a code to unlock the app")
                         }
-                        .disabled(store.purchasing)
 
                         if let error = store.errorMessage {
                             Text(error)

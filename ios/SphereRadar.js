@@ -82,6 +82,7 @@ class SphereRadar {
         // Outer shell - fine wireframe
         const outerGeo = new THREE.IcosahedronGeometry(50, 4);
         const outerMat = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
             color: 0x00aaff,
             wireframe: true,
             transparent: true,
@@ -143,6 +144,7 @@ class SphereRadar {
         // Inner glow core
         const coreGeo = new THREE.SphereGeometry(5, 32, 32);
         const coreMat = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
             color: 0x00ff88,
             transparent: true,
             opacity: 0.3,
@@ -319,6 +321,7 @@ class SphereRadar {
 
             const ringGeo = new THREE.BufferGeometry().setFromPoints(points);
             const ringMat = new THREE.LineBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
                 color: ringColors[i],
                 transparent: true,
                 opacity: 0.2 + (i * 0.05)
@@ -338,6 +341,7 @@ class SphereRadar {
             }
             const arcGeo = new THREE.BufferGeometry().setFromPoints(arcPoints);
             const arcMat = new THREE.LineBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
                 color: ringColors[i],
                 transparent: true,
                 opacity: 0.1
@@ -349,6 +353,7 @@ class SphereRadar {
 
     _createAxisLines() {
         const axisMat = new THREE.LineBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
             color: 0x00ffff,
             transparent: true,
             opacity: 0.15
@@ -385,6 +390,7 @@ class SphereRadar {
         // Glow aura
         const glowGeo = new THREE.SphereGeometry(5, 16, 16);
         const glowMat = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
             color: 0x00ff88,
             transparent: true,
             opacity: 0.2,
@@ -396,6 +402,7 @@ class SphereRadar {
         // Outer pulse ring
         const pulseGeo = new THREE.RingGeometry(6, 7, 32);
         const pulseMat = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
             color: 0x00ff88,
             transparent: true,
             opacity: 0.3,
@@ -472,6 +479,7 @@ class SphereRadar {
                 new THREE.Vector3(0, 45, 0)
             ]);
             const trailMat = new THREE.LineBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
                 color: 0x00ffff,
                 transparent: true,
                 opacity: 0.3 / i
@@ -650,6 +658,7 @@ class SphereRadar {
             // Ring at this distance
             const ringGeo = new THREE.TorusGeometry(markerRadius, 0.15, 8, 64);
             const ringMat = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
                 color: layer.color,
                 transparent: true,
                 opacity: 0.3,
@@ -663,6 +672,7 @@ class SphereRadar {
             // Vertical ring for 3D perception
             const vRingGeo = new THREE.TorusGeometry(markerRadius, 0.1, 8, 64);
             const vRingMat = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
                 color: layer.color,
                 transparent: true,
                 opacity: 0.15,
@@ -751,6 +761,7 @@ class SphereRadar {
         if (!marker) {
             const markerGeo = new THREE.SphereGeometry(1, 12, 12);
             const markerMat = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
                 color: markerColor,
                 transparent: true,
                 opacity: 0.9
@@ -760,6 +771,7 @@ class SphereRadar {
             // Inner glow
             const glowGeo = new THREE.SphereGeometry(1.8, 8, 8);
             const glowMat = new THREE.MeshBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
                 color: markerColor,
                 transparent: true,
                 opacity: 0.3,

@@ -123,7 +123,7 @@
         }
         const ring = new THREE.Line(
           new THREE.BufferGeometry().setFromPoints(ringPts),
-          new THREE.LineBasicMaterial({ color: 0x3a5a7a, transparent: true, opacity: 0.25 })
+          new THREE.LineBasicMaterial({ depthWrite: false, color: 0x3a5a7a, transparent: true, opacity: 0.25 })
         );
         this.group.add(ring);
         this.planets.push(m);
