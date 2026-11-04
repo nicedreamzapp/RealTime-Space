@@ -14,8 +14,8 @@ android {
         applicationId = "com.nicedreamz.realtimespace"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.11"
+        versionCode = 15
+        versionName = "1.12"
     }
 
     signingConfigs {

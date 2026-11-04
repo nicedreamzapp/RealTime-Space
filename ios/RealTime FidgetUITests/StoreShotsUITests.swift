@@ -126,4 +126,37 @@ final class StoreShotsUITests: XCTestCase {
         }
     }
 
+    /// Fly To proof: frames after arriving at Earth (fastest-moving big target), at 1x for 65 s,
+    /// then at 1000x for 65 s. FOLLOW_TAG names the files (before/after).
+    @MainActor
+    func testFollowAfterFlyTo() throws {
+        let tag = ProcessInfo.processInfo.environment["FOLLOW_TAG"].flatMap { $0.isEmpty ? nil : $0 } ?? "run"
+        let target = ProcessInfo.processInfo.environment["FOLLOW_TARGET"].flatMap { $0.isEmpty ? nil : $0 } ?? "Earth"
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-noRating", "-silent"]
+        app.launch()
+        let begin = app.buttons["Begin Exploring"]
+        if begin.waitForExistence(timeout: 25) { begin.tap() }
+        sleep(10)
+        let cam = app.buttons["Camera view"]; if cam.exists { cam.tap(); sleep(2) }      // visor
+        let menu = app.buttons["Menu"]; if menu.waitForExistence(timeout: 5) { menu.tap(); sleep(2) }
+        app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Fly To Anywhere")).firstMatch.tap(); sleep(2)
+        let item = app.buttons.matching(NSPredicate(format: "label ENDSWITH[c] %@", target)).firstMatch
+        _ = app.buttons["Done"].waitForExistence(timeout: 8); sleep(1)
+        let list = app.collectionViews.firstMatch; var tries = 0
+        while !(item.exists && item.isHittable) && tries < 12 {
+            list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)).press(forDuration: 0.05, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)))
+            sleep(1); tries += 1
+        }
+        XCTAssertTrue(item.isHittable, "no \(target)"); item.tap()
+        var t: UInt32 = 0
+        for mark: UInt32 in [3, 20, 40, 65] { sleep(mark - t); t = mark; save("follow_\(tag)_1x_\(String(format: "%02d", mark))s") }
+        let time = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Time speed")).firstMatch
+        for _ in 0..<3 { if time.exists { time.tap(); sleep(1) } }                            // 10x, 100x, 1000x
+        t = 0
+        for mark: UInt32 in [5, 20, 40, 65] { sleep(mark - t); t = mark; save("follow_\(tag)_1000x_\(String(format: "%02d", mark))s") }
+        app.terminate()
+    }
+
 }

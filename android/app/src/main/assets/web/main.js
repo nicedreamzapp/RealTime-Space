@@ -34,6 +34,10 @@ let volumetricNebulae = [];
 
 let planetHighlights = [];
 let activeFly = null;
+// After a Fly To lands on a planet or moon the camera rides along with it (planets orbit the Sun
+// in a few minutes at 1x, so a fixed camera lost Earth within seconds). Cleared by thrust, warp,
+// a tour, or the next Fly To. { mesh, last: Vector3 }
+let followTarget = null;
 let scenicTour = null;
 
 let showPlanetLabels = true;
@@ -825,10 +829,28 @@ function createUpdateSystems() {
         {
             name: "FlyTo",
             update: (dt) => {
+                // Ride along with the planet/moon we arrived at: move the camera by the target's
+                // own motion this frame, so it stays where it was framed (looking around still works).
+                if (!activeFly && followTarget) {
+                    const np = navPhysics;
+                    if (np && (np.isThrusting || np.isBoosting || (np.velocity && np.velocity.length() > 0.5))) {
+                        followTarget = null;
+                    } else if (followTarget.mesh) {
+                        const cur = followTarget.mesh.getWorldPosition(new THREE.Vector3());
+                        rendererCore.camera.position.add(cur.clone().sub(followTarget.last));
+                        followTarget.last.copy(cur);
+                    }
+                }
                 if (!activeFly) return;
 
                 const now = performance.now();
                 const elapsed = (now - activeFly.startTime) / 1200;
+                // Moving target: aim at where it is NOW, not where it was when the flight began.
+                if (activeFly.target && activeFly.target.mesh) {
+                    const tp = activeFly.target.mesh.getWorldPosition(new THREE.Vector3());
+                    activeFly.endLookAt = tp;
+                    activeFly.endPos = tp.clone().add(activeFly.offset);
+                }
                 const t = Math.min(elapsed, 1);
 
                 // easeInOutCubic
@@ -849,6 +871,10 @@ function createUpdateSystems() {
                 if (t >= 1) {
                     const arrived = activeFly;
                     activeFly = null;
+                    if (arrived.target && arrived.target.mesh) {
+                        followTarget = { mesh: arrived.target.mesh,
+                                         last: arrived.target.mesh.getWorldPosition(new THREE.Vector3()) };
+                    }
                     // A flight that ends at a planet or moon is the app's success moment:
                     // native counts these for the occasional store rating request.
                     if (arrived && (arrived.kind === 'planet' || arrived.kind === 'moon')) {
@@ -1385,8 +1411,14 @@ function flyToObject(obj, distanceMultiplier = 3) {
         endLookAt: objPos,
         // Remembered so arrival at a planet or moon can count as a completed flight.
         kind: obj.type || null,
-        name: obj.name || null
+        name: obj.name || null,
+        target: obj.mesh ? obj : null,                      // tracked while flying, followed after
+        offset: targetPos.clone().sub(objPos)
     };
+    followTarget = null;
+    // Leftover drift from before the jump would carry the camera off the target on arrival.
+    if (navPhysics?.velocity?.set) navPhysics.velocity.set(0, 0, 0);
+    if (navPhysics?.angularVelocity?.set) navPhysics.angularVelocity.set(0, 0, 0);
 }
 
 // The belt's own mesh is centred on the Sun, so flying "to the belt" used to fly to the Sun
@@ -1441,6 +1473,7 @@ function flyToByName(name, distanceMultiplier = 3) {
         const cam = rendererCore.camera;
         activeFly = { startTime: performance.now(), startPos: cam.position.clone(), startQuat: cam.quaternion.clone(),
                       endPos, endLookAt: spot };
+        followTarget = null;
         return;
     }
     // Interstellar / exoplanet / galaxy layer registers its objects here (kept out of the
@@ -2114,6 +2147,7 @@ function exposeFlyToAPI() {
                 findByName: findFlyableByName,
                 onStart: () => {
                     activeFly = null;                       // a queued fly-to would fight the tour
+                    followTarget = null;
                     if (navPhysics?.velocity?.set) navPhysics.velocity.set(0, 0, 0);
                 },
                 onStop: () => {
