@@ -40,7 +40,7 @@ final class AuditWalkUITests: XCTestCase {
     @MainActor
     func testWalkPortrait() throws {
         XCUIDevice.shared.orientation = .portrait
-        let app = XCUIApplication()
+        let app = XCUIApplication(); app.launchArguments += ["-silent", "-noRating"]
         launch(app)
         snap(app, "p01-main"); dump(app, "p01-main")
 
@@ -97,7 +97,7 @@ final class AuditWalkUITests: XCTestCase {
 
     @MainActor
     func testWalkLandscape() throws {
-        let app = XCUIApplication()
+        let app = XCUIApplication(); app.launchArguments += ["-silent", "-noRating"]
         launch(app)
         XCUIDevice.shared.orientation = .landscapeLeft
         sleep(10); snap(app, "l01-main"); dump(app, "l01-main")

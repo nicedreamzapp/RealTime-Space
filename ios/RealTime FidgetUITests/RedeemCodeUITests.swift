@@ -15,7 +15,7 @@ final class RedeemCodeUITests: XCTestCase {
 
     @MainActor
     func testRedeemCodeReachableWhenLocked() throws {
-        let app = XCUIApplication()
+        let app = XCUIApplication(); app.launchArguments += ["-silent", "-noRating"]
         app.launch()
         let begin = app.buttons["Begin Exploring"]
         if begin.waitForExistence(timeout: 20) { begin.tap() }

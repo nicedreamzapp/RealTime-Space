@@ -79,7 +79,7 @@ final class StoreShotsUITests: XCTestCase {
         attachment.name = "rate-tree.txt"; attachment.lifetime = .keepAlways; add(attachment)
     }
     /// Real user path: Begin, pick the camera view, Menu > Fly To Anywhere > target, wait, shoot.
-    private func flyShot(_ name: String, target: String, viewTaps: Int, settle: UInt32 = 16) {
+    private func flyShot(_ name: String, target: String, viewTaps: Int, settle: UInt32 = 3) {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
         app.launchArguments = ["-noRating", "-silent"]
@@ -115,10 +115,10 @@ final class StoreShotsUITests: XCTestCase {
     @MainActor
     func testStoreShotsUI() throws {
         let list: [(String, String, Int)] = [
-            ("ui_saturn_visor", "Saturn", 1), ("ui_saturn_helm", "Saturn", 0), ("ui_saturn_chase", "Saturn", 2),
-            ("ui_jupiter_visor", "Jupiter", 1), ("ui_jupiter_chase", "Jupiter", 2), ("ui_earth_visor", "Earth", 1),
-            ("ui_earth_chase", "Earth", 2), ("ui_sun_visor", "The Sun", 1), ("ui_mars_visor", "Mars", 1),
-            ("ui_uranus_visor", "Uranus", 1),
+            ("ui_saturn_visor", "Saturn", 1), ("ui_saturn_helm", "Saturn", 0), ("ui_jupiter_visor", "Jupiter", 1),
+            ("ui_jupiter_helm", "Jupiter", 0), ("ui_earth_visor", "Earth", 1), ("ui_uranus_visor", "Uranus", 1),
+            ("ui_mars_visor", "Mars", 1), ("ui_sun_visor", "The Sun", 1), ("ui_moon_visor", "The Moon", 1),
+            ("ui_titan_visor", "Titan", 1),
         ]
         let only = ProcessInfo.processInfo.environment["SHOTS_ONLY"].flatMap { $0.isEmpty ? nil : $0 }
         for (name, target, taps) in list where only == nil || name.contains(only!) {
