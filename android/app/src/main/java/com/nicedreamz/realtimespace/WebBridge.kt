@@ -28,8 +28,13 @@ class WebBridge(
     private val state: SpaceState,
     private val onReady: () -> Unit,
     /** A user flight ended at a planet or moon (main.js flyTo completion). */
-    private val onArrived: () -> Unit = {}
+    private val onArrived: () -> Unit = {},
+    /** {"lowRam":bool,"memClassMB":n,"totalMB":n} for the web texture budget (Planet.js rtsTexBudget). */
+    private val deviceInfoJson: String = "null"
 ) {
+    @JavascriptInterface
+    fun deviceInfo(): String = deviceInfoJson
+
     @Volatile var webView: WebView? = null
     private val main = Handler(Looper.getMainLooper())
     private val http by lazy {

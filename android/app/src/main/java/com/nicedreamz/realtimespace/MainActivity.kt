@@ -71,7 +71,8 @@ class MainActivity : ComponentActivity() {
 
         if (savedInstanceState == null) RatingPrompt.noteLaunch(this)
         if (savedInstanceState == null) handleDeepLink(intent)
-        bridge = WebBridge(vibrator(), state, onReady = { onEngineReady() }, onArrived = { onArrivedAtWorld() })
+        bridge = WebBridge(vibrator(), state, onReady = { onEngineReady() }, onArrived = { onArrivedAtWorld() },
+            deviceInfoJson = deviceInfoJson())
         store = StoreManager(this)
 
         val assetLoader = WebViewAssetLoader.Builder()
@@ -180,6 +181,15 @@ class MainActivity : ComponentActivity() {
         if (paywallOpen || store.locked) return
         if (!RatingPrompt.claimAskIfDue(this)) return
         Handler(Looper.getMainLooper()).postDelayed({ RatingPrompt.launchReview(this) }, 1500)
+    }
+
+    /** Memory facts for the web texture budget: low-RAM flag, per-app heap class, total RAM. */
+    private fun deviceInfoJson(): String {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val mi = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+        val json = "{\"lowRam\":${am.isLowRamDevice},\"memClassMB\":${am.memoryClass},\"totalMB\":${mi.totalMem / (1024 * 1024)}}"
+        Log.i(TAG, "device info: $json")
+        return json
     }
 
     /** JS queued by a deep link that arrived before the web engine was ready. */

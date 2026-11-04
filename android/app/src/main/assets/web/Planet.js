@@ -1,3 +1,39 @@
+// Close-up texture budget for THIS device (Android fork, added 2026-11-04 after two PowerVR GPU stalls on a
+// 3 GB Cricket phone right when Jupiter's 4096x2048 close-up map swapped in). Native reports memory through
+// AndroidBridge.deviceInfo(); low-end or <=4 GB devices keep the bundled 2048 maps (no close-up swap) and no
+// anisotropic filtering. Bigger devices still swap, capped by GL_MAX_TEXTURE_SIZE, decoded off the main thread.
+function rtsTexBudget() {
+    if (window.__rtsTexBudget) return window.__rtsTexBudget;
+    let dev = null;
+    try { dev = JSON.parse(window.AndroidBridge && window.AndroidBridge.deviceInfo ? window.AndroidBridge.deviceInfo() : 'null'); } catch (e) {}
+    const r = (typeof rendererCore !== 'undefined' && rendererCore && rendererCore.renderer) || null;
+    const caps = r && r.capabilities;
+    const maxTex = caps && caps.maxTextureSize ? caps.maxTextureSize : 2048;
+    const maxAniso = caps && caps.getMaxAnisotropy ? caps.getMaxAnisotropy() : 8;
+    const low = !dev || dev.lowRam || dev.totalMB <= 4096 || dev.memClassMB < 256;
+    const b = { maxSize: low ? 2048 : Math.min(maxTex, 8192), aniso: low ? 1 : Math.min(maxAniso, 8), low, dev, maxTex };
+    if (dev && caps) { window.__rtsTexBudget = b; console.log('🧮 texture budget ' + JSON.stringify(b)); }
+    return b;
+}
+window.rtsTexBudget = rtsTexBudget;
+function rtsAniso(want) { return Math.max(1, Math.min(want, rtsTexBudget().aniso)); }
+window.rtsAniso = rtsAniso;
+// Decode a big texture with createImageBitmap (off the main thread), push it to the GPU on its own frame
+// with initTexture, then hand it back. Falls back to TextureLoader where ImageBitmap is missing.
+function rtsLoadStaged(path, onTex, onErr) {
+    const r = (typeof rendererCore !== 'undefined' && rendererCore && rendererCore.renderer) || null;
+    if (typeof createImageBitmap === 'function' && THREE.ImageBitmapLoader) {
+        const l = new THREE.ImageBitmapLoader(); l.setOptions({ imageOrientation: 'flipY' });
+        l.load(path, (bmp) => {
+            const tex = new THREE.Texture(bmp); tex.flipY = false; tex.needsUpdate = true;
+            setTimeout(() => { try { if (r && r.initTexture) r.initTexture(tex); } catch (e) {}
+                requestAnimationFrame(() => onTex(tex)); }, 0);
+        }, undefined, onErr);
+    } else {
+        new THREE.TextureLoader().load(path, onTex, undefined, onErr);
+    }
+}
+
 // Planet.js - HUBBLE/JAMES WEBB quality photorealistic planet rendering
 // Implements true NASA/ESA imaging quality with auroras, volcanic activity, ice caps,
 // realistic atmospheric scattering, and procedural terrain generation
@@ -496,7 +532,7 @@ class Planet {
         const texture = new THREE.CanvasTexture(canvas);
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.ClampToEdgeWrapping;
-        texture.anisotropy = 16;
+        texture.anisotropy = rtsAniso(16);
         return texture;
     }
 
@@ -629,7 +665,7 @@ class Planet {
             (err) => console.warn(`${this.name} color load failed:`, err));
         if (THREE.SRGBColorSpace !== undefined) colorMap.colorSpace = THREE.SRGBColorSpace;
         else if (THREE.sRGBEncoding !== undefined) colorMap.encoding = THREE.sRGBEncoding;
-        colorMap.anisotropy = 16;
+        colorMap.anisotropy = rtsAniso(16);
 
         const matOptions = {
             map: colorMap,
@@ -640,7 +676,7 @@ class Planet {
 
         if (reg.bump) {
             const bumpMap = loader.load(reg.bump);
-            bumpMap.anisotropy = 16;
+            bumpMap.anisotropy = rtsAniso(16);
             matOptions.bumpMap = bumpMap;
             matOptions.bumpScale = reg.bumpScale;
         }
@@ -652,7 +688,7 @@ class Planet {
         let ringShadowUniforms = null;
         if (reg.ringShadow && reg.ringColor) {
             const ringTex = new THREE.TextureLoader().load(reg.ringColor);
-            ringTex.anisotropy = 16;
+            ringTex.anisotropy = rtsAniso(16);
             ringShadowUniforms = {
                 uRingMap: { value: ringTex },
                 uRingCenter: { value: new THREE.Vector3() },
@@ -706,7 +742,7 @@ class Planet {
         const ringColor = loader.load(reg.ringColor);
         if (THREE.SRGBColorSpace !== undefined) ringColor.colorSpace = THREE.SRGBColorSpace;
         else if (THREE.sRGBEncoding !== undefined) ringColor.encoding = THREE.sRGBEncoding;
-        ringColor.anisotropy = 16;
+        ringColor.anisotropy = rtsAniso(16);
 
         const ringUniforms = {
             uMap: { value: ringColor },
@@ -842,9 +878,9 @@ class Planet {
             dayMap.encoding = THREE.sRGBEncoding;
             nightMap.encoding = THREE.sRGBEncoding;
         }
-        dayMap.anisotropy = 16;
-        nightMap.anisotropy = 16;
-        elevMap.anisotropy = 16;
+        dayMap.anisotropy = rtsAniso(16);
+        nightMap.anisotropy = rtsAniso(16);
+        elevMap.anisotropy = rtsAniso(16);
 
         this.uniforms.earth = {
             dayMap: { value: dayMap },
@@ -973,20 +1009,20 @@ class Planet {
         const setSRGB = (tex) => {
             if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
             else if (THREE.sRGBEncoding !== undefined) tex.encoding = THREE.sRGBEncoding;
-            tex.anisotropy = 16;
+            tex.anisotropy = rtsAniso(16);
         };
         if (high) {
             if (this._earthDetail === 'high' || this._earthHiLoading) return;
+            if (rtsTexBudget().maxSize < 8192) return;   // this device keeps the bundled 2048 maps
             this._earthHiLoading = true;
-            const loader = new THREE.TextureLoader();
             let pending = 2, bailed = false;
             const done = () => { if (--pending === 0) { this._earthHiLoading = false;
                 if (!bailed) { this._earthDetail = 'high'; console.log('🌍 Earth → 8K day + night city lights (up close)'); } } };
-            const loadInto = (path, uniform, store) => loader.load(path, (tex) => {
+            const loadInto = (path, uniform, store) => rtsLoadStaged(path, (tex) => {
                 // camera may have already left while loading — bail and dispose
                 if (!this._earthWantsHigh) { tex.dispose(); bailed = true; done(); return; }
                 setSRGB(tex); this[store] = tex; uniform.value = tex; done();
-            }, undefined, () => { bailed = true; done(); });
+            }, () => { bailed = true; done(); });
             loadInto('textures/earth/earth_daymap_hi.jpg', dayU, '_earthHiDay');
             loadInto('textures/earth/earth_nightmap_hi.jpg', nightU, '_earthHiNight');
         } else {
@@ -1013,19 +1049,20 @@ class Planet {
         this._texWantsHigh = high;
         if (high) {
             if (this._texDetail === 'high' || this._texHiLoading) return;
+            if (rtsTexBudget().maxSize < 4096) return;   // this device keeps the bundled 2048 map
             this._texHiLoading = true;
-            new THREE.TextureLoader().load(hiPath, (tex) => {
+            rtsLoadStaged(hiPath, (tex) => {
                 if (!this._texWantsHigh) { tex.dispose(); this._texHiLoading = false; return; }
                 if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
                 else if (THREE.sRGBEncoding !== undefined) tex.encoding = THREE.sRGBEncoding;
-                tex.anisotropy = 16;
+                tex.anisotropy = rtsAniso(16);
                 this._texHiColor = tex;
                 this._texMaterial.map = tex;
                 this._texMaterial.needsUpdate = true;
                 this._texDetail = 'high';
                 this._texHiLoading = false;
                 console.log(`🪐 ${this.name} → 4K real texture (up close)`);
-            }, undefined, () => { this._texHiLoading = false; });
+            }, () => { this._texHiLoading = false; });
         } else {
             if (this._texDetail === 'low') return;
             this._texMaterial.map = this._texLowColor;
@@ -1376,8 +1413,8 @@ class Planet {
             );
             const cloudAlpha = loader.load('textures/earth/earth_clouds_alpha.jpg');
             if (THREE.SRGBColorSpace !== undefined) cloudColor.colorSpace = THREE.SRGBColorSpace;
-            cloudColor.anisotropy = 16;
-            cloudAlpha.anisotropy = 16;
+            cloudColor.anisotropy = rtsAniso(16);
+            cloudAlpha.anisotropy = rtsAniso(16);
 
             const cloudMat = new THREE.MeshLambertMaterial({
                 map: cloudColor,

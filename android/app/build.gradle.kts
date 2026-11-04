@@ -14,7 +14,7 @@ android {
         applicationId = "com.nicedreamz.realtimespace"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
+        versionCode = 17
         versionName = "1.12"
     }
 
