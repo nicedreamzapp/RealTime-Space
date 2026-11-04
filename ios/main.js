@@ -870,7 +870,17 @@ function createUpdateSystems() {
                 rendererCore.camera.quaternion.slerpQuaternions(activeFly.startQuat, targetQuat, easeT);
 
                 if (t >= 1) {
+                    const arrived = activeFly;
                     activeFly = null;
+                    // A flight that ends at a planet or moon is the app's success moment:
+                    // native counts these for the occasional store rating request.
+                    if (arrived && (arrived.kind === 'planet' || arrived.kind === 'moon')) {
+                        try {
+                            window.webkit?.messageHandlers?.iosHandler?.postMessage({
+                                type: 'ARRIVED', kind: arrived.kind, name: arrived.name || ''
+                            });
+                        } catch (e) {}
+                    }
                     // Send haptic feedback to iOS on flyTo completion
                     if (window.webkit?.messageHandlers?.iosHandler) {
                         try {
@@ -1395,7 +1405,10 @@ function flyToObject(obj, distanceMultiplier = 3) {
         startPos: camPos.clone(),
         startQuat: camera.quaternion.clone(),
         endPos: targetPos,
-        endLookAt: objPos
+        endLookAt: objPos,
+        // Remembered so arrival at a planet or moon can count as a completed flight.
+        kind: obj.type || null,
+        name: obj.name || null
     };
 }
 

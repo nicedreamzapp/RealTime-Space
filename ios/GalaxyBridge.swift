@@ -251,6 +251,14 @@ final class GalaxyBridge: NSObject, WKScriptMessageHandler {
             return
         }
 
+        // A user flight just ended at a planet or moon (see main.js flyTo completion).
+        if typeString == "ARRIVED" {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .rtsArrivedAtWorld, object: nil)
+            }
+            return
+        }
+
         if typeString == "HAPTIC",
            let style = body["style"] as? String {
             DispatchQueue.main.async {

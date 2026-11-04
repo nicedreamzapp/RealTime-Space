@@ -26,6 +26,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // Keep screen on during use
         UIApplication.shared.isIdleTimerDisabled = true
+        RatingPrompt.noteLaunch()
         return true
     }
 }

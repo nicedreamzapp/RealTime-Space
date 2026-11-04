@@ -26,7 +26,9 @@ private const val TAG = "RTSpaceBridge"
 class WebBridge(
     private val vibrator: Vibrator?,
     private val state: SpaceState,
-    private val onReady: () -> Unit
+    private val onReady: () -> Unit,
+    /** A user flight ended at a planet or moon (main.js flyTo completion). */
+    private val onArrived: () -> Unit = {}
 ) {
     @Volatile var webView: WebView? = null
     private val main = Handler(Looper.getMainLooper())
@@ -49,6 +51,7 @@ class WebBridge(
                     main.post { onReady() }
                 }
                 "HAPTIC" -> haptic(o.optString("style"))
+                "ARRIVED" -> main.post { onArrived() }
                 "RADAR" -> parseRadar(o)
                 "POSITION_UPDATE" -> {
                     o.optJSONObject("position")?.let { p ->

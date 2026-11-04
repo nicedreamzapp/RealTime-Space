@@ -14,8 +14,8 @@ android {
         applicationId = "com.nicedreamz.realtimespace"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.10"
+        versionCode = 14
+        versionName = "1.11"
     }
 
     signingConfigs {
@@ -86,5 +86,7 @@ dependencies {
     // Play Billing -> play-services-base). Pin the current stable so the old one never ships.
     implementation("androidx.fragment:fragment:1.9.1")
     implementation("com.android.billingclient:billing-ktx:8.0.0")
+    // In-app rating card after a completed flight (RatingPrompt.kt).
+    implementation("com.google.android.play:review-ktx:2.0.2")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

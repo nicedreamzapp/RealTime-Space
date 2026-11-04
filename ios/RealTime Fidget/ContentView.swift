@@ -6,6 +6,7 @@ struct ContentView: View {
     @StateObject private var galaxyManager = GalaxyDataManager()
     @StateObject private var store = StoreManager()
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.requestReview) private var requestReview
     
     @State private var joystickOffset = CGSize.zero
     @State private var isThrustButtonPressed = false
@@ -374,6 +375,15 @@ struct ContentView: View {
             }
             .onChange(of: store.isUnlocked) { _, unlocked in
                 if unlocked { showUnlock = false }
+            }
+            // Rating request: only right after a completed flight to a planet or moon (the
+            // web engine sends ARRIVED), never over the paywall or an open menu/sheet.
+            // RatingPrompt enforces 3+ arrivals, not the first launch, 60 days apart.
+            .onReceive(NotificationCenter.default.publisher(for: .rtsArrivedAtWorld)) { _ in
+                RatingPrompt.recordArrival()
+                let busy = showUnlock || store.locked || showSplash || showCredits || showPlanetPicker || showNavigateMenu
+                guard !busy, RatingPrompt.claimAskIfDue() else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { requestReview() }
             }
             .onAppear {
                 // Send saved cruise speed to JS (best-effort; JS guards if not ready yet)

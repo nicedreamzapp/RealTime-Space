@@ -69,7 +69,8 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
 
-        bridge = WebBridge(vibrator(), state, onReady = { onEngineReady() })
+        if (savedInstanceState == null) RatingPrompt.noteLaunch(this)
+        bridge = WebBridge(vibrator(), state, onReady = { onEngineReady() }, onArrived = { onArrivedAtWorld() })
         store = StoreManager(this)
 
         val assetLoader = WebViewAssetLoader.Builder()
@@ -80,6 +81,7 @@ class MainActivity : ComponentActivity() {
           // Unlock screen opened early from the ⋯ panel (dismissable); auto-closes on purchase.
           var showUnlock by remember { mutableStateOf(false) }
           LaunchedEffect(store.isUnlocked) { if (store.isUnlocked) showUnlock = false }
+          LaunchedEffect(showUnlock) { paywallOpen = showUnlock }
           // The WebView reports env(safe-area-inset-*) = 0, so the web HUD would sit under the
           // status bar / nav bar / cutout. Hand it the real insets (re-sent on every change,
           // including a 180-degree flip that moves the cutout to the other side).
@@ -167,6 +169,18 @@ class MainActivity : ComponentActivity() {
     }
 
     /** READY handshake from the web engine: sync persisted settings + resend current nav state. */
+    /** Paywall sheet opened from the menu (the trial-over gate is store.locked). */
+    private var paywallOpen = false
+
+    /** Rating request: only right after a completed flight to a planet or moon, never over
+     *  the paywall. RatingPrompt enforces 3+ arrivals, not the first launch, 60 days apart. */
+    private fun onArrivedAtWorld() {
+        RatingPrompt.recordArrival(this)
+        if (paywallOpen || store.locked) return
+        if (!RatingPrompt.claimAskIfDue(this)) return
+        Handler(Looper.getMainLooper()).postDelayed({ RatingPrompt.launchReview(this) }, 1500)
+    }
+
     private fun onEngineReady() {
         state.engineReady = true
         bridge.syncInitialSettings()
