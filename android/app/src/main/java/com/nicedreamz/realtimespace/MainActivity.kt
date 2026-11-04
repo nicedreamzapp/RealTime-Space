@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
         }
 
         if (savedInstanceState == null) RatingPrompt.noteLaunch(this)
+        if (savedInstanceState == null) handleDeepLink(intent)
         bridge = WebBridge(vibrator(), state, onReady = { onEngineReady() }, onArrived = { onArrivedAtWorld() })
         store = StoreManager(this)
 
@@ -181,8 +182,30 @@ class MainActivity : ComponentActivity() {
         Handler(Looper.getMainLooper()).postDelayed({ RatingPrompt.launchReview(this) }, 1500)
     }
 
+    /** JS queued by a deep link that arrived before the web engine was ready. */
+    private var pendingDeepLinkJs: String? = null
+
+    /** rtspace:// links (store event cards). rtspace://event/geminids flies toward Gemini (Pollux);
+     *  any other rtspace:// link just opens the app. Same behaviour as iOS. */
+    private fun handleDeepLink(i: android.content.Intent?) {
+        val uri = i?.data ?: return
+        if (uri.scheme?.lowercase() != "rtspace") return
+        val route = ((uri.host ?: "") + (uri.path ?: "")).lowercase()
+        if (route != "event/geminids") return
+        val js = """(function(){var n=0;var iv=setInterval(function(){n++;var ge=window.galaxyExplorer;var u=window.__universe||[];if(ge&&ge.flyToByName&&u.some(function(o){return o&&o.name==='Pollux';})){clearInterval(iv);ge.flyToByName('Pollux');}else if(n>60){clearInterval(iv);}},500);})()"""
+        if (state.engineReady) bridge.runJs(js) else pendingDeepLinkJs = js
+        Log.i(TAG, "deep link: $uri (engine ready=${state.engineReady})")
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDeepLink(intent)
+    }
+
     private fun onEngineReady() {
         state.engineReady = true
+        pendingDeepLinkJs?.let { bridge.runJs(it); pendingDeepLinkJs = null }
         bridge.syncInitialSettings()
         pushInsets()
         bridge.sendNavUpdate() // resend current (held) input so boot-time state isn't lost

@@ -379,6 +379,18 @@ struct ContentView: View {
             // Rating request: only right after a completed flight to a planet or moon (the
             // web engine sends ARRIVED), never over the paywall or an open menu/sheet.
             // RatingPrompt enforces 3+ arrivals, not the first launch, 60 days apart.
+            // rtspace:// deep links (App Store in-app events). rtspace://event/geminids flies toward
+            // Gemini (Pollux, the radiant of the Geminids); any other rtspace:// link just opens the app.
+            .onOpenURL { url in
+                guard url.scheme?.lowercased() == "rtspace" else { return }
+                withAnimation(.easeInOut(duration: 0.3)) { showSplash = false }
+                let route = ((url.host ?? "") + url.path).lowercased()
+                if route == "event/geminids" {
+                    navigationController.runWhenEngineReady("""
+(function(){var n=0;var iv=setInterval(function(){n++;var ge=window.galaxyExplorer;var u=window.__universe||[];if(ge&&ge.flyToByName&&u.some(function(o){return o&&o.name==='Pollux';})){clearInterval(iv);ge.flyToByName('Pollux');}else if(n>60){clearInterval(iv);}},500);})()
+""")
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .rtsArrivedAtWorld)) { _ in
                 RatingPrompt.recordArrival()
                 let busy = showUnlock || store.locked || showSplash || showCredits || showPlanetPicker || showNavigateMenu

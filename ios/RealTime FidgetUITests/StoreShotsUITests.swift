@@ -159,4 +159,46 @@ final class StoreShotsUITests: XCTestCase {
         app.terminate()
     }
 
+    /// rtspace:// deep links: cold launch with rtspace://event/geminids, then a warm open, then plain rtspace://.
+    @MainActor
+    func testDeepLinkGeminids() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-noRating", "-silent"]
+        app.launch(); sleep(5); app.terminate(); sleep(2)        // first launch done, app not running
+        app.open(URL(string: "rtspace://event/geminids")!)        // cold start through the link
+        sleep(40); save("dl_cold_geminids")
+        XCTAssertEqual(app.state, .runningForeground)
+        XCTAssertFalse(app.buttons["Begin Exploring"].exists, "splash still up after the link")
+        let near = app.buttons["Fly to the nearest planet"]; if near.exists { near.tap() }; sleep(8)
+        save("dl_before_warm")
+        app.open(URL(string: "rtspace://event/geminids")!)        // warm: app already running
+        sleep(15); save("dl_warm_geminids")
+        app.open(URL(string: "rtspace://")!)                      // unknown route: just opens
+        sleep(5); save("dl_plain")
+        XCTAssertEqual(app.state, .runningForeground)
+        app.terminate()
+    }
+
+    /// Warm link through the system (no relaunch): the splash is still up from launch, so if the app handles
+    /// the URL in the same process the splash disappears and it flies to Pollux; a relaunch would show the splash again.
+    @MainActor
+    func testDeepLinkWarm() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-noRating", "-silent"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Begin Exploring"].waitForExistence(timeout: 25))
+        sleep(20); save("warm_a_splash")
+        XCUIDevice.shared.system.open(URL(string: "rtspace://event/geminids")!)
+        let sb = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let open = sb.buttons["Open"]; if open.waitForExistence(timeout: 5) { open.tap() }
+        sleep(15); save("warm_b_geminids")
+        XCTAssertFalse(app.buttons["Begin Exploring"].exists, "splash still up: the link did not reach the running app")
+        XCUIDevice.shared.system.open(URL(string: "rtspace://")!)
+        if open.waitForExistence(timeout: 5) { open.tap() }
+        sleep(5); save("warm_c_plain")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
 }

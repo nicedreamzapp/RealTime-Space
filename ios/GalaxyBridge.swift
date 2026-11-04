@@ -247,6 +247,7 @@ final class GalaxyBridge: NSObject, WKScriptMessageHandler {
         if typeString == "READY" {
             DispatchQueue.main.async { [weak self] in
                 self?.resendNavState()
+                self?.navigationController?.markEngineReady()
             }
             return
         }

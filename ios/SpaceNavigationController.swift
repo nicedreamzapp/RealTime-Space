@@ -168,6 +168,23 @@ class SpaceNavigationController: ObservableObject {
         self.webView = webView
     }
     
+    // Deep links can arrive before the web engine has booted (cold launch from rtspace://):
+    // queue their JS until the page sends READY.
+    private(set) var engineReady = false
+    private var pendingScripts: [String] = []
+    func runWhenEngineReady(_ script: String) {
+        DispatchQueue.main.async {
+            if self.engineReady { self.evaluateJavaScript(script) } else { self.pendingScripts.append(script) }
+        }
+    }
+    func markEngineReady() {
+        DispatchQueue.main.async {
+            self.engineReady = true
+            let queued = self.pendingScripts; self.pendingScripts.removeAll()
+            queued.forEach { self.evaluateJavaScript($0) }
+        }
+    }
+
     public func evaluateJavaScript(_ script: String) {
         DispatchQueue.main.async {
             if let webView = self.webView {

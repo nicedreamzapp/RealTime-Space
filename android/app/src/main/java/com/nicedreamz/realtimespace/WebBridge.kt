@@ -172,6 +172,8 @@ class WebBridge(
         }
     }
 
+    fun runJs(js: String) = call(js)
+
     private fun call(js: String) {
         main.post { webView?.evaluateJavascript(js, null) }
     }
