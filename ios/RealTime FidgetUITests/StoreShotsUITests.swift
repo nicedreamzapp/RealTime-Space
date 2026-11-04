@@ -21,7 +21,7 @@ final class StoreShotsUITests: XCTestCase {
     private func shoot(_ name: String, _ args: [String], wait: UInt32 = 34) {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
-        app.launchArguments = args
+        app.launchArguments = args + ["-silent"]
         app.launch()
         sleep(wait)
         save(name)
@@ -54,6 +54,7 @@ final class StoreShotsUITests: XCTestCase {
     func testRatingAfterThirdArrival() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
+        app.launchArguments = ["-silent"]
         // Launch 1: never asks (first launch).
         app.launch()
         let begin = app.buttons["Begin Exploring"]
@@ -77,4 +78,52 @@ final class StoreShotsUITests: XCTestCase {
         let attachment = XCTAttachment(string: XCUIApplication(bundleIdentifier: "com.apple.springboard").debugDescription + "\n----\n" + app.debugDescription)
         attachment.name = "rate-tree.txt"; attachment.lifetime = .keepAlways; add(attachment)
     }
+    /// Real user path: Begin, pick the camera view, Menu > Fly To Anywhere > target, wait, shoot.
+    private func flyShot(_ name: String, target: String, viewTaps: Int, settle: UInt32 = 16) {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-noRating", "-silent"]
+        app.launch()
+        let begin = app.buttons["Begin Exploring"]
+        if begin.waitForExistence(timeout: 25) { begin.tap() }
+        sleep(10)
+        let cam = app.buttons["Camera view"]
+        for _ in 0..<viewTaps where cam.exists { cam.tap(); sleep(2) }
+        let menu = app.buttons["Menu"]
+        if menu.waitForExistence(timeout: 5) { menu.tap(); sleep(2) }
+        let fly = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Fly To Anywhere")).firstMatch
+        if fly.exists { fly.tap(); sleep(2) }
+        let item = app.buttons.matching(NSPredicate(format: "label ENDSWITH[c] %@", target)).firstMatch
+        _ = app.buttons["Done"].waitForExistence(timeout: 8)
+        sleep(1)
+        let list = app.collectionViews.firstMatch
+        var tries = 0
+        while !(item.exists && item.isHittable) && tries < 12 {
+            let from = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+            from.press(forDuration: 0.05, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)))
+            sleep(1); tries += 1
+        }
+        if item.exists && item.isHittable { item.tap() } else {
+            let a = XCTAttachment(string: app.debugDescription); a.name = name + "-tree.txt"; a.lifetime = .keepAlways; add(a)
+            XCTFail("no \(target) in Fly To")
+        }
+        sleep(settle)
+        save(name)
+        app.terminate()
+    }
+
+    @MainActor
+    func testStoreShotsUI() throws {
+        let list: [(String, String, Int)] = [
+            ("ui_saturn_visor", "Saturn", 1), ("ui_saturn_helm", "Saturn", 0), ("ui_saturn_chase", "Saturn", 2),
+            ("ui_jupiter_visor", "Jupiter", 1), ("ui_jupiter_chase", "Jupiter", 2), ("ui_earth_visor", "Earth", 1),
+            ("ui_earth_chase", "Earth", 2), ("ui_sun_visor", "The Sun", 1), ("ui_mars_visor", "Mars", 1),
+            ("ui_uranus_visor", "Uranus", 1),
+        ]
+        let only = ProcessInfo.processInfo.environment["SHOTS_ONLY"].flatMap { $0.isEmpty ? nil : $0 }
+        for (name, target, taps) in list where only == nil || name.contains(only!) {
+            flyShot(name, target: target, viewTaps: taps)
+        }
+    }
+
 }

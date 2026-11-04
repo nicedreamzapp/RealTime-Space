@@ -27,6 +27,7 @@ class AudioEngine {
 
     _ensureContext() {
         if (this.started) return;
+        if (window.__rtsSilent) return;   // native "-silent" launch arg (test runs)
         const AC = window.AudioContext || window.webkitAudioContext;
         if (!AC) return;
         this.ctx = new AC();

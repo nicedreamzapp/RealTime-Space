@@ -182,6 +182,11 @@ struct WorkingPortalWebView: UIViewRepresentable {
         let consoleScriptObj = WKUserScript(source: consoleScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
         userContentController.addUserScript(consoleScriptObj)
         userContentController.add(context.coordinator, name: "logging")
+        // "-silent" (simulator/UI-test runs): keep the procedural WebAudio bed from ever starting.
+        if ProcessInfo.processInfo.arguments.contains("-silent") {
+            userContentController.addUserScript(WKUserScript(source: "window.__rtsSilent = true;",
+                                                             injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
         
         let config = WKWebViewConfiguration()
         config.userContentController = userContentController
