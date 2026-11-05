@@ -201,4 +201,75 @@ final class StoreShotsUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    /// One continuous take for the App Store preview (screen recorded by the host with simctl io recordVideo).
+    /// Writes wall-clock marks so the editor can cut on the real moments. Silent (-silent), no rating sheet.
+    @MainActor
+    func testPreviewTake() throws {
+        let marksPath = "/tmp/rts-shots/take_marks.txt"
+        try? FileManager.default.createDirectory(atPath: "/tmp/rts-shots", withIntermediateDirectories: true)
+        var marks = ""
+        func mark(_ m: String) { marks += String(format: "%.3f %@\n", Date().timeIntervalSince1970, m); try? marks.write(toFile: marksPath, atomically: true, encoding: .utf8) }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-noRating", "-silent"]
+        app.launch(); mark("launch")
+        let begin = app.buttons["Begin Exploring"]
+        if begin.waitForExistence(timeout: 25) { sleep(3); begin.tap() }
+        sleep(10); mark("ready")
+        func flyTo(_ target: String, label: String) {
+            let menu = app.buttons["Menu"]; if menu.waitForExistence(timeout: 5) { mark("\(label)_menu"); menu.tap(); sleep(2) }
+            let fly = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Fly To Anywhere")).firstMatch
+            if fly.exists { mark("\(label)_flyto"); fly.tap(); sleep(2) }
+            let item = app.buttons.matching(NSPredicate(format: "label ENDSWITH[c] %@", target)).firstMatch
+            _ = app.buttons["Done"].waitForExistence(timeout: 8); sleep(1)
+            let list = app.collectionViews.firstMatch; var tries = 0
+            while !(item.exists && item.isHittable) && tries < 14 {
+                list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)).press(forDuration: 0.05, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
+                sleep(1); tries += 1
+            }
+            if item.isHittable { sleep(1); mark("\(label)_pick"); item.tap() }
+        }
+        flyTo("Saturn", label: "saturn"); sleep(8)
+        flyTo("Jupiter", label: "jupiter"); sleep(8)
+        let cam = app.buttons["Camera view"]; if cam.exists { mark("visor"); cam.tap(); sleep(2) }
+        flyTo("Sirius", label: "sirius"); sleep(10)
+        mark("end")
+        app.terminate()
+    }
+
+    /// Memory hold (iPhone SE check): real Fly To to Earth, hold 60 s, then Jupiter, hold 60 s. The host samples footprints.
+    @MainActor
+    func testMemoryHold() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-noRating", "-silent"]
+        app.launch()
+        let begin = app.buttons["Begin Exploring"]
+        if begin.waitForExistence(timeout: 25) { begin.tap() }
+        sleep(8)
+        for target in ["Earth", "Jupiter"] {
+            let menu = app.buttons["Menu"]; if menu.waitForExistence(timeout: 5) { menu.tap(); sleep(2) }
+            app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Fly To Anywhere")).firstMatch.tap(); sleep(2)
+            let item = app.buttons.matching(NSPredicate(format: "label ENDSWITH[c] %@", target)).firstMatch
+            _ = app.buttons["Done"].waitForExistence(timeout: 8); sleep(1)
+            let list = app.collectionViews.firstMatch; var tries = 0
+            while !(item.exists && item.isHittable) && tries < 12 {
+                list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)).press(forDuration: 0.05, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)))
+                sleep(1); tries += 1
+            }
+            item.tap()
+            try? "\(Date().timeIntervalSince1970) \(target)\n".appendLine(to: "/tmp/rts-shots/mem_marks.txt")
+            sleep(60)
+            save("mem_\(target)")
+        }
+        XCTAssertEqual(app.state, .runningForeground, "app was killed (jetsam?)")
+    }
+
+}
+
+private extension String {
+    func appendLine(to path: String) throws {
+        if let h = FileHandle(forWritingAtPath: path) { h.seekToEndOfFile(); h.write(self.data(using: .utf8)!); h.closeFile() }
+        else { try self.write(toFile: path, atomically: true, encoding: .utf8) }
+    }
 }

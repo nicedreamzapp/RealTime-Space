@@ -334,6 +334,19 @@ private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreMana
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
+        // Pay-now option during the free voyage, FIRST in the panel so buyers never scroll for it (mirrors the iOS ⋯ menu). Hidden once owned.
+        if (!store.isUnlocked) {
+            SectionHeader("OWN IT")
+            Text(
+                "✨  Unlock Forever · ${store.price}", color = Color(0xFFFFD86B), fontSize = 11.sp, fontFamily = Mono, fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth().clickable { bridge.haptic("light"); onUnlock() }.padding(vertical = 4.dp)
+            )
+            Text(
+                "${store.daysRemaining} free days left · one time, no subscription",
+                color = Cyan.copy(alpha = 0.6f), fontSize = 9.sp, fontFamily = Mono
+            )
+        }
+        Spacer(Modifier.height(2.dp))
         SectionHeader("DISPLAY")
         ToggleRow("Orbit Lines", state.orbitLines) { state.orbitLines = it; bridge.setOrbitLinesVisible(it) }
         ToggleRow("Labels", state.planetLabels) { state.planetLabels = it; bridge.setPlanetLabelsVisible(it) }
@@ -354,19 +367,6 @@ private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreMana
             Text(
                 "→  $name", color = Cyan.copy(alpha = 0.9f), fontSize = 11.sp, fontFamily = Mono, fontWeight = FontWeight.Medium,
                 modifier = Modifier.fillMaxWidth().clickable { bridge.flyToByName(name); bridge.haptic("light") }.padding(vertical = 4.dp)
-            )
-        }
-        // Pay-now option during the free voyage (mirrors the iOS ⋯ menu). Hidden once owned.
-        if (!store.isUnlocked) {
-            Spacer(Modifier.height(2.dp))
-            SectionHeader("OWN IT")
-            Text(
-                "✨  Unlock Forever · ${store.price}", color = Color(0xFFFFD86B), fontSize = 11.sp, fontFamily = Mono, fontWeight = FontWeight.Bold,
-                modifier = Modifier.fillMaxWidth().clickable { bridge.haptic("light"); onUnlock() }.padding(vertical = 4.dp)
-            )
-            Text(
-                "${store.daysRemaining} free days left · one time, no subscription",
-                color = Cyan.copy(alpha = 0.6f), fontSize = 9.sp, fontFamily = Mono
             )
         }
     }
