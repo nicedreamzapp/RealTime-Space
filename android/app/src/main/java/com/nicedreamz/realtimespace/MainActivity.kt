@@ -72,7 +72,9 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) RatingPrompt.noteLaunch(this)
         if (savedInstanceState == null) handleDeepLink(intent)
         bridge = WebBridge(vibrator(), state, onReady = { onEngineReady() }, onArrived = { onArrivedAtWorld() },
-            deviceInfoJson = deviceInfoJson())
+            deviceInfoJson = deviceInfoJson(),
+            onAmbientHumChanged = { on -> getSharedPreferences("settings", MODE_PRIVATE).edit().putBoolean("ambient_hum", on).apply() })
+        state.ambientHum = getSharedPreferences("settings", MODE_PRIVATE).getBoolean("ambient_hum", false)
         store = StoreManager(this)
 
         val assetLoader = WebViewAssetLoader.Builder()

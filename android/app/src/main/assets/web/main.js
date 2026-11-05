@@ -2192,6 +2192,11 @@ function exposeFlyToAPI() {
     window.galaxyExplorer.setAudioEnabled = function(on) {
         if (audioEngine) audioEngine.setEnabled(on);
     };
+    // "Ambient hum" toggle (off by default; native settings call this)
+    window.galaxyExplorer.setAmbientHum = function(on) {
+        if (audioEngine) audioEngine.setAmbientHum(on);
+        else { try { localStorage.setItem('rts_ambient_hum', on ? '1' : '0'); } catch (e) {} }
+    };
 
     // Mission progress for native UI
     window.galaxyExplorer.getMissions = function() {

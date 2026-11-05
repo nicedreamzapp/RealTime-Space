@@ -18,6 +18,8 @@ struct ContentView: View {
     @State private var lutEnabled = UserDefaults.standard.object(forKey: "lutEnabled") as? Bool ?? false
     @State private var lutIntensity = UserDefaults.standard.object(forKey: "lutIntensity") as? Double ?? 0.5
     @State private var spatialAudioEnabled = UserDefaults.standard.object(forKey: "spatialAudioEnabled") as? Bool ?? false
+    // Constant ambient drone, off by default (also for players who never touched it).
+    @State private var ambientHum = UserDefaults.standard.object(forKey: "ambientHum") as? Bool ?? false
     @State private var cockpitOn = UserDefaults.standard.object(forKey: "cockpitOn") as? Bool ?? true
     // "-shot" launch mode skips the splash for App Store capture. It hides the chrome for
     // clean art frames UNLESS "-keepUI" is also passed (then controls + HUD stay visible).
@@ -307,7 +309,18 @@ struct ContentView: View {
                                     .onChange(of: spatialAudioEnabled) { _, newValue in
                                         UserDefaults.standard.set(newValue, forKey: "spatialAudioEnabled")
                                         AudioManager.shared.soundEnabled = newValue
-                                        if newValue {
+                                        if newValue && ambientHum {
+                                            AudioManager.shared.loadAmbient(named: "space_ambience")
+                                            AudioManager.shared.setAmbientVolume(0.35)
+                                        } else {
+                                            AudioManager.shared.setAmbientVolume(0.0)
+                                        }
+                                    }
+                                toggleRow("Ambient hum", isOn: $ambientHum)
+                                    .onChange(of: ambientHum) { _, newValue in
+                                        UserDefaults.standard.set(newValue, forKey: "ambientHum")
+                                        navigationController.evaluateJavaScript("window.galaxyExplorer?.setAmbientHum?.(\(newValue))")
+                                        if newValue && spatialAudioEnabled {
                                             AudioManager.shared.loadAmbient(named: "space_ambience")
                                             AudioManager.shared.setAmbientVolume(0.35)
                                         } else {
@@ -468,7 +481,9 @@ struct ContentView: View {
                 AudioManager.shared.setAmbientVolume(0.0)
                 AudioManager.shared.start()
                 AudioManager.shared.preloadCommonSFX()
-                if spatialAudioEnabled {
+                // The web engine reads the same setting from its own storage; push the native value once it boots.
+                navigationController.runWhenEngineReady("window.galaxyExplorer?.setAmbientHum?.(\(ambientHum))")
+                if spatialAudioEnabled && ambientHum {
                     AudioManager.shared.loadAmbient(named: "space_ambience")
                     AudioManager.shared.setAmbientVolume(0.35)
                 }

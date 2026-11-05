@@ -30,7 +30,9 @@ class WebBridge(
     /** A user flight ended at a planet or moon (main.js flyTo completion). */
     private val onArrived: () -> Unit = {},
     /** {"lowRam":bool,"memClassMB":n,"totalMB":n} for the web texture budget (Planet.js rtsTexBudget). */
-    private val deviceInfoJson: String = "null"
+    private val deviceInfoJson: String = "null",
+    /** Persist the Ambient hum choice natively (MainActivity prefs). */
+    private val onAmbientHumChanged: (Boolean) -> Unit = {}
 ) {
     @JavascriptInterface
     fun deviceInfo(): String = deviceInfoJson
@@ -219,5 +221,11 @@ class WebBridge(
         setCinematicMode(state.cinematic)
         setLUTEnabled(state.lutEnabled)
         setLUTIntensity(state.lutIntensity)
+        setAmbientHum(state.ambientHum)
+    }
+
+    fun setAmbientHum(on: Boolean) {
+        onAmbientHumChanged(on)
+        call("window.galaxyExplorer&&window.galaxyExplorer.setAmbientHum&&window.galaxyExplorer.setAmbientHum($on)")
     }
 }

@@ -11,6 +11,9 @@ class AudioEngine {
         this.ctx = null;
         this.started = false;
         this.enabled = true;
+        // The constant ambient drone is OFF unless the player turns "Ambient hum" on (Matt 2026-11-04:
+        // "the constant hum plays the whole time"). Event sounds (thrust, sun, black hole) are unchanged.
+        try { this.ambientHum = localStorage.getItem('rts_ambient_hum') === '1'; } catch (e) { this.ambientHum = false; }
         this._nodes = {};
 
         // Lazily create on first user interaction (autoplay policies)
@@ -54,7 +57,9 @@ class AudioEngine {
         const ctx = this.ctx;
 
         this.master = ctx.createGain();
-        this.master.gain.value = 0.32; // quieter, less intrusive background bed
+        // Respect a mute that arrived before the context existed (Sound off by default): building the
+        // graph used to force the master up to 0.32, so the drone played even with Sound off.
+        this.master.gain.value = this.enabled ? 0.32 : 0.0; // quieter, less intrusive background bed
         const limiter = ctx.createDynamicsCompressor();
         limiter.threshold.value = -12;
         limiter.ratio.value = 12;
@@ -63,7 +68,8 @@ class AudioEngine {
 
         // ---- Ambient drone ----
         const ambGain = ctx.createGain();
-        ambGain.gain.value = 0.05;
+        ambGain.gain.value = this.ambientHum ? 0.05 : 0.0;
+        this._nodes.ambGain = ambGain;
         ambGain.connect(this.master);
 
         [55, 55.7, 110.3].forEach((freq, i) => {
@@ -199,6 +205,14 @@ class AudioEngine {
         // Black hole: sub-bass dread inside ~500 units
         const bhAmount = Math.max(0, 1 - (state.blackHoleDistance || 9999) / 500);
         this._nodes.abyssGain.gain.setTargetAtTime(bhAmount * bhAmount * 0.6, t, 0.4);
+    }
+
+    // "Ambient hum" setting (persisted). Fades the drone in or out; events are unaffected.
+    setAmbientHum(on) {
+        this.ambientHum = !!on;
+        try { localStorage.setItem('rts_ambient_hum', on ? '1' : '0'); } catch (e) {}
+        const g = this._nodes && this._nodes.ambGain;
+        if (g && this.ctx) g.gain.setTargetAtTime(on ? 0.05 : 0.0, this.ctx.currentTime, 0.4);
     }
 
     setEnabled(on) {

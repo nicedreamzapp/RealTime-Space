@@ -346,6 +346,9 @@ private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreMana
             colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan, inactiveTrackColor = CyanFaint)
         )
         Spacer(Modifier.height(2.dp))
+        SectionHeader("SOUND")
+        ToggleRow("Ambient hum", state.ambientHum) { state.ambientHum = it; bridge.setAmbientHum(it) }
+        Spacer(Modifier.height(2.dp))
         SectionHeader("FLY TO")
         listOf("Sun", "Earth", "Mars", "Jupiter", "Saturn", "ISS", "Sirius").forEach { name ->
             Text(

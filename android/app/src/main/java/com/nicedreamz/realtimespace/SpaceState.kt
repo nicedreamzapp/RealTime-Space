@@ -45,4 +45,6 @@ class SpaceState {
     var planetLabels by mutableStateOf(true)
     var cinematic by mutableStateOf(false)
     var lutEnabled by mutableStateOf(false)
+    /** Constant ambient drone; off by default (persisted by the web engine and MainActivity prefs). */
+    var ambientHum by mutableStateOf(false)
 }
