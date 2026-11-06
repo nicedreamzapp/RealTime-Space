@@ -37,25 +37,23 @@ class RendererCore {
     }
 
     // ---- WebGL context loss (GPU reset, driver kill, memory pressure on a phone) ----
-    // Lost: preventDefault (asks the browser to restore), the UpdateLoop idles (main.js checks
-    // this.contextLost), and a timer waits for the restore. Restored: three.js rebuilds its GL
-    // state from the scene graph; we drop one RTQuality tier (the GPU just told us it was
-    // over budget), rebuild the post targets and IBL, and re-run the black-frame check.
-    // Never restored within CONTEXT_RESTORE_MS: reload the page once (reloadOnce guards loops).
+    // Lost: preventDefault (asks the browser to restore) and the UpdateLoop idles (main.js
+    // checks this.contextLost). Restored: three.js rebuilds its GL state from the scene graph;
+    // we drop one RTQuality tier for this page only (nothing is persisted), rebuild the post
+    // targets and IBL. Not restored within CONTEXT_RESTORE_MS: reload the page once per
+    // session at low tier (?rtq=low).
     setupContextLossHandler() {
         this.contextLost = false;
         this.contextLossCount = 0;
-        const CONTEXT_RESTORE_MS = 5000;
+        const CONTEXT_RESTORE_MS = 3000;
         this.canvas.addEventListener('webglcontextlost', (e) => {
             e.preventDefault();
             this.contextLost = true;
             this.contextLossCount++;
-            // the next launches start a tier lower until a few clean launches (RTQuality)
-            try { if (window.RTQuality && window.RTQuality.noteGpuFailure) window.RTQuality.noteGpuFailure('WebGL context lost'); } catch (_) {}
             console.warn('⚠️ WebGL context lost — render loop paused, waiting for restore');
             clearTimeout(this._restoreTimer);
             this._restoreTimer = setTimeout(() => {
-                if (this.contextLost) RendererCore.reloadOnce('WebGL context was not restored');
+                if (this.contextLost) RendererCore.reloadOnce('WebGL context was not restored', true);
             }, CONTEXT_RESTORE_MS);
             try { window.dispatchEvent(new CustomEvent('rtglcontext', { detail: { lost: true } })); } catch (_) {}
         }, false);
@@ -70,7 +68,7 @@ class RendererCore {
                 try { window.dispatchEvent(new CustomEvent('rtglcontext', { detail: { lost: false } })); } catch (_) {}
             } catch (err) {
                 console.error('❌ WebGL restore failed:', err);
-                RendererCore.reloadOnce('WebGL restore failed');
+                RendererCore.reloadOnce('WebGL restore failed', true);
             }
         }, false);
     }
@@ -80,12 +78,7 @@ class RendererCore {
         if (!gl || (gl.isContextLost && gl.isContextLost())) throw new Error('context still lost');
         const Q = window.RTQuality;
         if (Q) {
-            const order = ['low', 'medium', 'high'];
-            const i = order.indexOf(Q.tier);
-            if (i > 0) {
-                if (Q._falls) Q._falls[Q.tier] = (Q._falls[Q.tier] || 0) + 2;   // never climb back this session
-                Q.setTier(order[i - 1], { reason: 'WebGL context restored' });
-            }
+            if (Q.dropTierForSession) Q.dropTierForSession('WebGL context restored');
             Q._appliedPR = null;   // force the pixel ratio + composer resize below to run
             Q.apply('context restored');
         }
@@ -103,18 +96,22 @@ class RendererCore {
     }
 
     // Reload the page at most ONCE per session (sessionStorage flag, survives the reload
-    // itself), and record the GPU failure first so the reloaded page starts a tier lower
-    // (RTQuality's persisted cap). A GPU that keeps losing its context stays put on the
-    // second failure instead of looping. Returns true if it reloaded.
-    static reloadOnce(why) {
-        try { if (window.RTQuality && window.RTQuality.noteGpuFailure) window.RTQuality.noteGpuFailure(why); } catch (_) {}
+    // itself). low = reload with ?rtq=low (GPU failures); otherwise the same URL. Nothing is
+    // persisted past the session. Returns true if it reloaded.
+    static reloadOnce(why, low) {
         try {
             const k = 'rt_gl_reloaded';
             if (sessionStorage.getItem(k)) { console.error('❌ ' + why + ' (already reloaded once this session, staying put)'); return false; }
             sessionStorage.setItem(k, String(Date.now()));
         } catch (_) { console.error('❌ ' + why + ' (no session storage, not reloading)'); return false; }
-        console.error('❌ ' + why + ' — reloading the page once');
-        setTimeout(() => location.reload(), 50);
+        console.error('❌ ' + why + ' — reloading the page once' + (low ? ' at low tier' : ''));
+        setTimeout(() => {
+            if (!low) { location.reload(); return; }
+            const u = new URL(location.href);
+            u.searchParams.delete('tier');
+            u.searchParams.set('rtq', 'low');
+            location.replace(u.toString());
+        }, 50);
         return true;
     }
 

@@ -17,7 +17,17 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBars
@@ -37,7 +47,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewAssetLoader
 
 private const val TAG = "RTSpace"
-private const val MAX_RENDERER_DEATHS = 3
 const val ASSET_BASE = "https://appassets.androidplatform.net/assets/web/"
 
 class MainActivity : ComponentActivity() {
@@ -48,11 +57,15 @@ class MainActivity : ComponentActivity() {
     private var webView: WebView? = null
     private var webContainer: android.widget.FrameLayout? = null
     private lateinit var assetLoader: WebViewAssetLoader
-    /** Renderer-process deaths in this activity session. Each rebuilt WebView starts one
-     *  quality tier lower (?rtdrop=N, read by RTQuality.js), waits longer before rebuilding
-     *  (exponential backoff), and after MAX_RENDERER_DEATHS the app shows a plain message
-     *  instead of rebuilding into another black screen. */
-    private var rendererDeaths = 0
+    /** Real renderer crashes (didCrash() == true) in this app session. The first one rebuilds
+     *  the WebView at low tier (?rtq=low); the second shows the native retry message. A renderer
+     *  the system reclaimed for memory (didCrash() == false) is never counted. Memory only. */
+    private var rendererCrashes = 0
+    /** Set after the first real crash: every WebView built after it loads ?rtq=low. */
+    private var forceLowTier = false
+    /** The retry message, drawn by Compose as the LAST child of the root Box so it sits above
+     *  SpaceChrome and the paywall and receives the taps. */
+    private var rendererStopped by mutableStateOf(false)
     /** Latest system-bar + cutout insets in dp (= CSS px): top, right, bottom, left. */
     private var webInsets = floatArrayOf(0f, 0f, 0f, 0f)
 
@@ -131,6 +144,8 @@ class MainActivity : ComponentActivity() {
             // Hard gate after the 60-day free voyage (mirrors iOS StoreManager), or the
             // same screen opened early + dismissable from "Unlock Forever" in the panel.
             PaywallOverlay(store, visible = showUnlock || store.locked, onClose = { showUnlock = false })
+            // Last child: above every native overlay, and it takes the taps.
+            if (rendererStopped) RendererStoppedMessage(onRetry = { retryAfterRendererStop() })
           }
         }
     }
@@ -177,8 +192,7 @@ class MainActivity : ComponentActivity() {
             // Without this override the whole app is killed with it; returning true keeps the
             // app alive, and a fresh WebView reloads the engine in the same spot.
             override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
-                Log.w(TAG, "WebView renderer gone (crashed=${detail?.didCrash()}), rebuilding the WebView")
-                replaceDeadWebView(view)
+                onRendererGone(view, crashed = detail?.didCrash() == true)
                 return true
             }
         }
@@ -190,13 +204,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        loadUrl(ASSET_BASE + "index.html" + if (rendererDeaths > 0) "?rtdrop=$rendererDeaths" else "")
+        loadUrl(ASSET_BASE + "index.html" + if (forceLowTier) "?rtq=low" else "")
     }
 
-    /** Swap a WebView whose renderer died for a new one in the same container, one tier lower
-     *  each time. Backoff doubles per death (0 s, 2 s, ...); the third death in a session shows
-     *  a plain message with a retry instead of looping on a GPU that can't hold the scene. */
-    private fun replaceDeadWebView(dead: WebView) {
+    /** The renderer process is gone. Reclaimed by the system (didCrash() == false): rebuild
+     *  silently at the same tier, not a crash. A real crash: the first rebuilds once at low
+     *  tier, the second shows the retry message instead of looping on a GPU that can't cope. */
+    private fun onRendererGone(dead: WebView, crashed: Boolean) {
         val container = webContainer ?: return
         if (this::bridge.isInitialized) {
             bridge.flight?.stop()
@@ -206,38 +220,24 @@ class MainActivity : ComponentActivity() {
         state.engineReady = false
         container.removeView(dead)
         try { dead.destroy() } catch (_: Exception) {}
-        rendererDeaths++
-        if (rendererDeaths >= MAX_RENDERER_DEATHS) {
-            Log.w(TAG, "renderer died $rendererDeaths times, showing the stop message")
-            showRendererStoppedMessage(container)
-            return
+        if (!crashed) {
+            Log.w(TAG, "WebView renderer reclaimed by the system, rebuilding at the same tier")
+        } else {
+            rendererCrashes++
+            Log.w(TAG, "WebView renderer crashed ($rendererCrashes this session)")
+            if (rendererCrashes >= 2) { rendererStopped = true; return }
+            forceLowTier = true
         }
-        val delay = if (rendererDeaths <= 1) 0L else 1_000L shl (rendererDeaths - 1)   // 0, 2 s, 4 s ...
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (isFinishing || isDestroyed || webView != null) return@postDelayed
-            container.addView(createWebView(this))
-        }, delay)
+        if (!isFinishing && !isDestroyed) container.addView(createWebView(this))
     }
 
-    private fun showRendererStoppedMessage(container: android.widget.FrameLayout) {
-        val msg = android.widget.TextView(this).apply {
-            text = "The 3D view stopped because this phone's graphics kept crashing.\n\nTap to try again with lighter graphics."
-            setTextColor(0xFFE6E9F0.toInt())
-            textSize = 17f
-            gravity = android.view.Gravity.CENTER
-            val p = (32 * resources.displayMetrics.density).toInt()
-            setPadding(p, p, p, p)
-            layoutParams = android.widget.FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            isClickable = true
-            setOnClickListener {
-                container.removeView(this)
-                // one more try, at the lowest tier (rtdrop stays >= 2 so RTQuality starts low)
-                rendererDeaths = MAX_RENDERER_DEATHS - 1
-                if (webView == null) container.addView(createWebView(this@MainActivity))
-            }
-        }
-        container.addView(msg)
+    /** Retry from the message: one more WebView at low tier. A further crash shows it again. */
+    private fun retryAfterRendererStop() {
+        Log.w(TAG, "retry tapped, rebuilding the WebView at low tier")
+        rendererStopped = false
+        forceLowTier = true
+        val container = webContainer ?: return
+        if (webView == null && !isFinishing && !isDestroyed) container.addView(createWebView(this))
     }
 
     override fun onPause() {
@@ -312,5 +312,23 @@ class MainActivity : ComponentActivity() {
         pushInsets()
         bridge.sendNavUpdate() // resend current (held) input so boot-time state isn't lost
         Log.i(TAG, "engine ready — settings synced")
+    }
+}
+
+@Composable
+private fun RendererStoppedMessage(onRetry: () -> Unit) {
+    androidx.compose.foundation.layout.Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF000005))
+            .clickable(onClick = onRetry)
+            .safeDrawingPadding()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            "The 3D view stopped because this phone's graphics crashed.\n\nTap to try again with lighter graphics.",
+            color = Color(0xFFE6E9F0), fontSize = 17.sp, textAlign = TextAlign.Center
+        )
     }
 }

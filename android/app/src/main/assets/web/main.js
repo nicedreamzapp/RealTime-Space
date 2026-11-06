@@ -886,13 +886,15 @@ function composerFrameIsBlack(renderer) {
 // Runtime render watchdog. The boot guard (ComposerRender) only checks the first frames; this
 // runs every 4 s (never per frame) for the whole session:
 //  1. Liveness: the UpdateLoop's rAF tick count must advance while the page is visible.
-//     Three stalled checks in a row (~12 s) means the WebView/GPU hung: reload the page once.
+//     Three stalled checks in a row (~12 s) means the WebView/GPU hung: reload the page once
+//     per session, same tier (a stall writes no cap and drops no tier).
 //  2. Blank output: the exposure meter (CameraOptics) already reads back a 32x16 luminance map
-//     of the scene before post. If a cell is clearly lit there, read only that cell's block of
+//     of the scene before post. If a cell is clearly lit there, read its whole 3x3 block of
 //     the final canvas (a few KB). Black twice in a row means the post chain is blanking a lit
-//     scene: same ladder as the boot guard, 8-bit targets first, then direct rendering.
+//     scene: drop one tier for this page (in memory only), at most once per session; after
+//     that the check stops.
 function startRenderWatchdog() {
-    let lastTicks = -1, stalls = 0, blanks = 0, lastAt = performance.now();
+    let lastTicks = -1, stalls = 0, blanks = 0, dropped = false, lastAt = performance.now();
     setInterval(() => {
         const now = performance.now(), gap = now - lastAt;
         lastAt = now;
@@ -903,11 +905,11 @@ function startRenderWatchdog() {
         }
         const ticks = window.__rtLoopTicks || 0;
         if (lastTicks >= 0 && ticks === lastTicks) {
-            if (++stalls >= 3) { stalls = 0; RendererCore.reloadOnce('render loop stalled'); }
+            if (++stalls >= 3) { stalls = 0; RendererCore.reloadOnce('render loop stalled', false); }
         } else stalls = 0;
         lastTicks = ticks;
 
-        if (!rc.useComposer || !rc.composer || !rc._bloomChecked) { blanks = 0; return; }
+        if (dropped || !rc.useComposer || !rc.composer || !rc._bloomChecked) { blanks = 0; return; }
         // Low tier / safe GPU: no canvas readbacks at all (a readPixels forces a GPU sync).
         const Q = window.RTQuality;
         if (Q && (Q.tier === 'low' || Q.safeGPU)) { blanks = 0; return; }
@@ -927,15 +929,11 @@ function startRenderWatchdog() {
         if (!outputBlockIsBlack(rc.renderer, bi % co.meterW, Math.floor(bi / co.meterW), co.meterW, co.meterH, 1)) { blanks = 0; return; }
         if (++blanks < 2) return;
         blanks = 0;
-        if (rc._hdrTargets !== false && rc.isNativeApp) {
-            composerToLDR(rc);
-            applyPostForTier(rc, 'blank frame');
+        dropped = true;
+        if (Q && Q.dropTierForSession && Q.dropTierForSession('black frame on a lit scene')) {
             rc._bloomChecked = false; rc._bloomWarm = 0;
-            console.warn('⚠️ Watchdog: post chain went black on a lit scene, retrying on 8-bit targets.');
-        } else {
-            rc.useComposer = false; rc._postOK = false; window.__rtHDR = false;
-            console.warn('⚠️ Watchdog: post chain went black on a lit scene, falling back to direct rendering.');
-        }
+            console.warn('⚠️ Watchdog: post chain went black on a lit scene, dropped one tier for this session.');
+        } else console.warn('⚠️ Watchdog: post chain went black on a lit scene (already at the lowest tier).');
     }, 4000);
 }
 

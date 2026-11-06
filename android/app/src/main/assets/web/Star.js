@@ -67,16 +67,19 @@ class Star {
         this.flareElements = [];
 
         // Tier changes at runtime (fps governor, WebGL context restore) swap the photosphere
-        // and corona variants; a restored context lost the baked map, so bake it again.
+        // and corona variants. A lost context takes the baked maps with it: the bake targets
+        // are disposed when the context goes (GL deletes are silent no-ops while it is lost,
+        // so no stale handle is touched after the restore) and again on restore, and the map
+        // is baked from scratch on the restored context.
         this._onTier = () => this._applyTier();
-        this._onGL = (e) => { if (e.detail && e.detail.lost === false) this._resetBake(); };
+        this._onGL = (e) => { if (e.detail) this._resetBake(); };
         window.addEventListener('rtquality', this._onTier);
         window.addEventListener('rtglcontext', this._onGL);
     }
 
     static _wantsLowSun() {
         const Q = window.RTQuality;
-        return !!(Q && (Q.tier === 'low' || Q.safeGPU));
+        return !!(Q && (Q.tier === 'low' || Q.safeGPU || Q.cheapSun));
     }
 
     _applyTier() {
@@ -166,15 +169,25 @@ class Star {
         return this._bakedMat;
     }
 
+    // A restored context lost the baked maps: dispose the old targets (and their quads) and
+    // bake from scratch on the next frames.
     _resetBake() {
-        if (this._bake) {
-            this._bake.row = 0;
-            if (!this._bake.rt) this._bake = null;
-            // three.js rebuilt its GL state on restore, so the targets are re-created on
-            // their next use (disposing them here would delete handles from the dead context)
-            else { this._bake.done = false; this._bake.granDone = false; }
+        this._disposeBake();
+        if (this._bakedUniforms) {
+            this._bakedUniforms.uReady.value = 0;
+            this._bakedUniforms.uMap.value = null;
+            this._bakedUniforms.uGranMap.value = null;
         }
-        if (this._bakedUniforms) this._bakedUniforms.uReady.value = 0;
+    }
+
+    _disposeBake() {
+        const b = this._bake;
+        this._bake = null;
+        if (!b) return;
+        try { if (b.rt) b.rt.dispose(); } catch (_) {}
+        try { if (b.quad) { b.quad.geometry.dispose(); b.quad.material.dispose(); } } catch (_) {}
+        try { if (b.gran) b.gran.dispose(); } catch (_) {}
+        try { if (b.granQuad) { b.granQuad.geometry.dispose(); b.granQuad.material.dispose(); } } catch (_) {}
     }
 
     _bakeStep(renderer) {
@@ -182,11 +195,13 @@ class Star {
         if (b && b.done) return;
         if (!b) {
             const W = 2048, H = 1024;
+            // generateMipmaps stays off while the strips render (three.js would rebuild the
+            // whole 2048x1024 mip chain after every strip); the final strip turns it on once.
             const rt = new THREE.WebGLRenderTarget(W, H, {
                 type: THREE.UnsignedByteType, format: THREE.RGBAFormat,
                 wrapS: THREE.RepeatWrapping, wrapT: THREE.ClampToEdgeWrapping,
                 minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
-                generateMipmaps: true, depthBuffer: false, stencilBuffer: false
+                generateMipmaps: false, depthBuffer: false, stencilBuffer: false
             });
             const mat = new THREE.ShaderMaterial({
                 uniforms: { uSpots: this.surfaceUniforms.uSpots },
@@ -280,13 +295,15 @@ class Star {
         }
         b.rt.scissor.set(0, b.row, b.W, Math.min(b.rows, b.H - b.row));
         b.rt.scissorTest = true;
+        const last = b.row + b.rows >= b.H;
+        b.rt.texture.generateMipmaps = last;   // mip chain built once, after the final strip
         renderer.autoClear = false;
         renderer.setRenderTarget(b.rt);
         renderer.render(b.scene, b.cam);
         renderer.setRenderTarget(prevRT);
         renderer.autoClear = prevAuto;
         b.row += b.rows;
-        if (b.row >= b.H) {
+        if (last) {
             b.done = true;
             const bu = this._getBakedMat().uniforms;
             bu.uMap.value = b.rt.texture;
@@ -647,9 +664,15 @@ class Star {
             }
         }
 
-        if (this._lowSun && rendererCore && rendererCore.renderer && !rendererCore.contextLost) {
+        if (this._lowSun && rendererCore && rendererCore.renderer && !rendererCore.contextLost &&
+            !(this._bake && this._bake.done)) {
+            let failed = false;
             try { this._bakeStep(rendererCore.renderer); }
-            catch (e) { console.warn('Sun bake skipped:', e); this._bake = { done: true }; }
+            catch (e) { failed = true; console.warn('Sun bake skipped:', e); }
+            finally {
+                // a failed bake frees its targets and stays on the plain limb-darkened disk
+                if (failed) { this._disposeBake(); this._bake = { done: true, failed: true }; }
+            }
         }
 
         if (this.core) {
@@ -660,9 +683,7 @@ class Star {
     dispose() {
         window.removeEventListener('rtquality', this._onTier);
         window.removeEventListener('rtglcontext', this._onGL);
-        const bk = this._bake;
-        if (bk && bk.rt) { bk.rt.dispose(); bk.quad.geometry.dispose(); bk.quad.material.dispose(); }
-        if (bk && bk.gran) { bk.gran.dispose(); bk.granQuad.geometry.dispose(); bk.granQuad.material.dispose(); }
+        this._disposeBake();
         if (this._fullMat) this._fullMat.dispose();
         if (this._bakedMat) this._bakedMat.dispose();
         if (this.mesh) {
