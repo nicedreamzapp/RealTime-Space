@@ -29,7 +29,8 @@ class CameraOptics {
     static TIERS = {
         high:   { meterEvery: 4,  ghosts: 6, ca: 0.0007, grain: 0.010, spikeScale: 1.0 },
         medium: { meterEvery: 8,  ghosts: 4, ca: 0.0005, grain: 0.009, spikeScale: 0.9 },
-        low:    { meterEvery: 16, ghosts: 2, ca: 0.0,    grain: 0.0,   spikeScale: 0.75 }
+        // low: no star spikes (an extra additive sprite per bright star), no lens extras
+        low:    { meterEvery: 16, ghosts: 2, ca: 0.0,    grain: 0.0,   spikeScale: 0.0 }
     };
 
     // Shared GLSL: JWST point-spread spikes. dpx = pixel offset from the source,
@@ -360,6 +361,9 @@ class CameraOptics {
 
     _meter(renderer, readBuffer) {
         if (!this.prefs.autoExposure) return;
+        // Safe-GPU path (PowerVR / entry Mali): never read the GPU back, not even through a
+        // pixel-pack buffer and fence; exposure holds where it is.
+        if (window.RTQuality && window.RTQuality.safeGPU) return;
         this._frame++;
         const gl = renderer.getContext();
         if (this._pending) this._poll(gl);
@@ -423,7 +427,7 @@ class CameraOptics {
 
     _applyStarfield() {
         if (this.starfield && this.starfield.setSpikes) {
-            this.starfield.setSpikes(this.prefs.spikes, this.cfg.spikeScale);
+            this.starfield.setSpikes(this.prefs.spikes && this.cfg.spikeScale > 0, this.cfg.spikeScale);
         }
     }
 
@@ -505,7 +509,8 @@ class CameraOptics {
             }
         }
         u.uSunAmt.value = sunAmt;
-        lp.enabled = caOn || grainOn || sunAmt > 0.001;
+        // low tier: no spike / flare / ghost pass
+        lp.enabled = this.tierName !== 'low' && (caOn || grainOn || sunAmt > 0.001);
     }
 
     // ---------- toggles ----------

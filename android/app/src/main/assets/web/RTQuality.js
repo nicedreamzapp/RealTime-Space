@@ -46,13 +46,64 @@
     const MIN_HOLD_MS = 8000;
     const MAX_FALLS_BEFORE_BAN = 2;
 
+    // ---- GPU class (WEBGL_debug_renderer_info) ----
+    // PowerVR (Imagination) and the entry Mali parts hang on per-pixel noise and big fills
+    // (the Cricket's GE8320 froze the app for 10 s with the Sun filling the screen). They get
+    // the safe path whatever their RAM: low tier, locked, no GPU readbacks, cheap Sun.
+    const SAFE_GPU_RE = /PowerVR|Imagination|\bIMG\b|Mali-(?:[34]\d\d|T\d{3}|G31|G51|G52)\b/i;
+    function gpuRenderer() {
+        try {
+            const c = document.createElement('canvas');
+            c.width = c.height = 1;
+            const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+            if (!gl) return '';
+            const ext = gl.getExtension('WEBGL_debug_renderer_info');
+            const r = String((ext && gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || '');
+            const lose = gl.getExtension('WEBGL_lose_context');
+            if (lose) lose.loseContext();   // give the probe context back right away
+            return r;
+        } catch (_) { return ''; }
+    }
+    const GPU = gpuRenderer();
+    const SAFE_GPU = SAFE_GPU_RE.test(GPU);
+
+    // ---- persisted GPU-failure cap ----
+    // A lost WebGL context, a GPU reload or a renderer-process death (the Android app passes
+    // ?rtdrop=N into the rebuilt WebView) caps the start tier one step below where it failed,
+    // in localStorage so the next launch starts lower too. The cap decays: every launch that
+    // runs CLEAN_MS without losing the context counts as clean, and CLEAN_LAUNCHES clean
+    // launches in a row remove it.
+    const CAP_KEY = 'rt_tier_cap', CLEAN_MS = 60000, CLEAN_LAUNCHES = 3;
+    function readCap() {
+        try { const c = JSON.parse(localStorage.getItem(CAP_KEY) || 'null'); return c && PRESETS[c.tier] ? c : null; }
+        catch (_) { return null; }
+    }
+    function writeCap(c) { try { if (c) localStorage.setItem(CAP_KEY, JSON.stringify(c)); else localStorage.removeItem(CAP_KEY); } catch (_) {} }
+    function minTier(a, b) { return TIERS[Math.min(TIERS.indexOf(a), TIERS.indexOf(b))]; }
+
     function deviceStartTier() {
         try {
             const sp = new URLSearchParams(location.search);
             const q = sp.get('rtq') || sp.get('tier');   // debug override, the only one in the app
             if (q && PRESETS[q]) return { tier: q, lock: true, why: 'url' };
         } catch (_) {}
+        if (SAFE_GPU) return { tier: 'low', lock: true, why: 'safe GPU path (' + GPU + ')' };
+        const base = deviceHintTier();
+        let tier = base.tier, why = base.why;
+        // Renderer died in this app session (Android): drop one tier per death.
+        let drop = 0;
+        try { drop = Math.max(0, parseInt(new URLSearchParams(location.search).get('rtdrop') || '0', 10) || 0); } catch (_) {}
+        if (drop > 0) {
+            const t = TIERS[Math.max(0, TIERS.indexOf(tier) - drop)];
+            writeCap({ tier: t, clean: 0, why: 'renderer died x' + drop });
+            if (t !== tier) { tier = t; why += ', renderer died x' + drop; }
+        }
+        const cap = readCap();
+        if (cap && TIERS.indexOf(cap.tier) < TIERS.indexOf(tier)) { tier = cap.tier; why += ', capped after a GPU failure'; }
+        return { tier, why, cap: cap ? cap.tier : null };
+    }
 
+    function deviceHintTier() {
         const d = window.__RT_DEVICE;
         if (d && typeof d === 'object') {
             const mem = Number(d.memGB) || 0;
@@ -94,6 +145,20 @@
         locked: !!start.lock,
         startReason: start.why,
         PRESETS,
+        gpu: GPU,
+        // PowerVR / entry Mali: low tier locked, and every GPU readback (exposure meter, black
+        // frame checks) is skipped, the Sun uses its baked photosphere, frames are capped at 30.
+        safeGPU: SAFE_GPU,
+
+        // A GPU failure (context lost, reload, renderer death): cap future launches one tier
+        // below the tier that failed, and reset the clean-launch count.
+        noteGpuFailure(why) {
+            const i = TIERS.indexOf(this.tier);
+            const t = TIERS[Math.max(0, i - 1)];
+            const c = readCap();
+            writeCap({ tier: c ? minTier(c.tier, t) : t, clean: 0, why: String(why || 'gpu') });
+            this._gpuFailed = true;
+        },
 
         _rc: null,
         _changedAt: 0,
@@ -294,6 +359,17 @@
             } catch (_) {}
         }
     };
+
+    // A tier we were capped at after a GPU failure is the ceiling for this session.
+    if (start.cap) for (let i = TIERS.indexOf(start.cap) + 1; i < TIERS.length; i++) RTQuality._falls[TIERS[i]] = MAX_FALLS_BEFORE_BAN;
+    // Clean-launch decay of the cap.
+    setTimeout(() => {
+        if (RTQuality._gpuFailed) return;
+        const c = readCap();
+        if (!c) return;
+        c.clean = (c.clean || 0) + 1;
+        writeCap(c.clean >= CLEAN_LAUNCHES ? null : c);
+    }, CLEAN_MS);
 
     window.RTQuality = RTQuality;
     console.log(`🎚️ RTQuality start tier: ${RTQuality.tier} (${start.why})${RTQuality.locked ? ' [locked]' : ''}`);

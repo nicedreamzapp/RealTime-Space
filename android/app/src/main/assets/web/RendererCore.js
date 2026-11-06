@@ -50,6 +50,8 @@ class RendererCore {
             e.preventDefault();
             this.contextLost = true;
             this.contextLossCount++;
+            // the next launches start a tier lower until a few clean launches (RTQuality)
+            try { if (window.RTQuality && window.RTQuality.noteGpuFailure) window.RTQuality.noteGpuFailure('WebGL context lost'); } catch (_) {}
             console.warn('⚠️ WebGL context lost — render loop paused, waiting for restore');
             clearTimeout(this._restoreTimer);
             this._restoreTimer = setTimeout(() => {
@@ -100,15 +102,17 @@ class RendererCore {
         this._bloomChecked = false; this._bloomWarm = 0;
     }
 
-    // Reload the page, at most once a minute (sessionStorage stamp), so a GPU that can't hold a
-    // context never turns into a reload loop. Returns true if it reloaded.
+    // Reload the page at most ONCE per session (sessionStorage flag, survives the reload
+    // itself), and record the GPU failure first so the reloaded page starts a tier lower
+    // (RTQuality's persisted cap). A GPU that keeps losing its context stays put on the
+    // second failure instead of looping. Returns true if it reloaded.
     static reloadOnce(why) {
+        try { if (window.RTQuality && window.RTQuality.noteGpuFailure) window.RTQuality.noteGpuFailure(why); } catch (_) {}
         try {
-            const k = 'rt_gl_reload_at', now = Date.now();
-            const last = Number(sessionStorage.getItem(k) || 0);
-            if (now - last < 60000) { console.error('❌ ' + why + ' (already reloaded once, staying put)'); return false; }
-            sessionStorage.setItem(k, String(now));
-        } catch (_) {}
+            const k = 'rt_gl_reloaded';
+            if (sessionStorage.getItem(k)) { console.error('❌ ' + why + ' (already reloaded once this session, staying put)'); return false; }
+            sessionStorage.setItem(k, String(Date.now()));
+        } catch (_) { console.error('❌ ' + why + ' (no session storage, not reloading)'); return false; }
         console.error('❌ ' + why + ' — reloading the page once');
         setTimeout(() => location.reload(), 50);
         return true;
@@ -151,11 +155,16 @@ class RendererCore {
             powerPreference: "high-performance",
             stencil: true,  // Enable for post-processing effects
             depth: true,
-            preserveDrawingBuffer: true,  // iOS WKWebView: needed so the drawing buffer
-                                          // actually composites to screen (otherwise the
-                                          // frame renders but the layer shows black)
+            // iOS WKWebView needed this so the drawing buffer composites to screen. On a
+            // tile-based GPU it costs a full-frame copy back into the tiles every frame, so the
+            // safe-GPU path (PowerVR / entry Mali, direct rendering, no canvas readbacks) drops it.
+            preserveDrawingBuffer: !(window.RTQuality && window.RTQuality.safeGPU),
             logarithmicDepthBuffer: true  // Better depth precision for vast scales
         });
+
+        // Safe-GPU path: no glGetShader/ProgramParameter round trips after each compile (each
+        // one waits for the driver); shader errors are caught by the headless test pass instead.
+        if (window.RTQuality && window.RTQuality.safeGPU) this.renderer.debug.checkShaderErrors = false;
 
         // Size and quality - push it higher
         this.renderer.setSize(window.innerWidth, window.innerHeight);

@@ -118,6 +118,14 @@ class UpdateLoop {
                 return;
             }
 
+            // Safe-GPU path (PowerVR / entry Mali): at most ~30 frames a second, so the GPU
+            // never has a queue of frames behind a slow one (the Cricket's stall).
+            if (window.RTQuality && window.RTQuality.safeGPU && this.lastTime &&
+                currentTime - this.lastTime < 30) {
+                requestAnimationFrame(this.loop);
+                return;
+            }
+
             // Calculate delta time with high precision
             if (this.lastTime === 0) this.lastTime = currentTime;
             const rawDelta = currentTime - this.lastTime;

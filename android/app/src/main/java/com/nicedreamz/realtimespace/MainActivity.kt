@@ -37,6 +37,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewAssetLoader
 
 private const val TAG = "RTSpace"
+private const val MAX_RENDERER_DEATHS = 3
 const val ASSET_BASE = "https://appassets.androidplatform.net/assets/web/"
 
 class MainActivity : ComponentActivity() {
@@ -47,8 +48,11 @@ class MainActivity : ComponentActivity() {
     private var webView: WebView? = null
     private var webContainer: android.widget.FrameLayout? = null
     private lateinit var assetLoader: WebViewAssetLoader
-    /** Uptime of recent renderer-process deaths, to back off if the renderer keeps dying. */
-    private val rendererDeaths = ArrayDeque<Long>()
+    /** Renderer-process deaths in this activity session. Each rebuilt WebView starts one
+     *  quality tier lower (?rtdrop=N, read by RTQuality.js), waits longer before rebuilding
+     *  (exponential backoff), and after MAX_RENDERER_DEATHS the app shows a plain message
+     *  instead of rebuilding into another black screen. */
+    private var rendererDeaths = 0
     /** Latest system-bar + cutout insets in dp (= CSS px): top, right, bottom, left. */
     private var webInsets = floatArrayOf(0f, 0f, 0f, 0f)
 
@@ -186,12 +190,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        loadUrl(ASSET_BASE + "index.html")
+        loadUrl(ASSET_BASE + "index.html" + if (rendererDeaths > 0) "?rtdrop=$rendererDeaths" else "")
     }
 
-    /** Swap a WebView whose renderer died for a new one in the same container. Backs off to a
-     *  5 s delay if it has died 3+ times in the last minute, so a renderer that can't survive
-     *  never becomes a tight crash loop. */
+    /** Swap a WebView whose renderer died for a new one in the same container, one tier lower
+     *  each time. Backoff doubles per death (0 s, 2 s, ...); the third death in a session shows
+     *  a plain message with a retry instead of looping on a GPU that can't hold the scene. */
     private fun replaceDeadWebView(dead: WebView) {
         val container = webContainer ?: return
         if (this::bridge.isInitialized) {
@@ -202,14 +206,38 @@ class MainActivity : ComponentActivity() {
         state.engineReady = false
         container.removeView(dead)
         try { dead.destroy() } catch (_: Exception) {}
-        val now = android.os.SystemClock.uptimeMillis()
-        rendererDeaths.addLast(now)
-        while (rendererDeaths.isNotEmpty() && now - rendererDeaths.first() > 60_000) rendererDeaths.removeFirst()
-        val delay = if (rendererDeaths.size >= 3) 5_000L else 0L
+        rendererDeaths++
+        if (rendererDeaths >= MAX_RENDERER_DEATHS) {
+            Log.w(TAG, "renderer died $rendererDeaths times, showing the stop message")
+            showRendererStoppedMessage(container)
+            return
+        }
+        val delay = if (rendererDeaths <= 1) 0L else 1_000L shl (rendererDeaths - 1)   // 0, 2 s, 4 s ...
         Handler(Looper.getMainLooper()).postDelayed({
             if (isFinishing || isDestroyed || webView != null) return@postDelayed
             container.addView(createWebView(this))
         }, delay)
+    }
+
+    private fun showRendererStoppedMessage(container: android.widget.FrameLayout) {
+        val msg = android.widget.TextView(this).apply {
+            text = "The 3D view stopped because this phone's graphics kept crashing.\n\nTap to try again with lighter graphics."
+            setTextColor(0xFFE6E9F0.toInt())
+            textSize = 17f
+            gravity = android.view.Gravity.CENTER
+            val p = (32 * resources.displayMetrics.density).toInt()
+            setPadding(p, p, p, p)
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            isClickable = true
+            setOnClickListener {
+                container.removeView(this)
+                // one more try, at the lowest tier (rtdrop stays >= 2 so RTQuality starts low)
+                rendererDeaths = MAX_RENDERER_DEATHS - 1
+                if (webView == null) container.addView(createWebView(this@MainActivity))
+            }
+        }
+        container.addView(msg)
     }
 
     override fun onPause() {

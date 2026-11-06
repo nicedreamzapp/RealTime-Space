@@ -865,6 +865,7 @@ function composerToLDR(rc) {
 // failed on this device and we must fall back to direct rendering. The scene always has a
 // Milky-Way background, so a WORKING frame is never all-black here — only the bug is.
 function composerFrameIsBlack(renderer) {
+    if (window.RTQuality && window.RTQuality.safeGPU) return false;   // no readbacks on the safe-GPU path
     try {
         const gl = renderer.getContext();
         const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
@@ -907,13 +908,23 @@ function startRenderWatchdog() {
         lastTicks = ticks;
 
         if (!rc.useComposer || !rc.composer || !rc._bloomChecked) { blanks = 0; return; }
+        // Low tier / safe GPU: no canvas readbacks at all (a readPixels forces a GPU sync).
+        const Q = window.RTQuality;
+        if (Q && (Q.tier === 'low' || Q.safeGPU)) { blanks = 0; return; }
+        // The meter reads the frame BEFORE the black-hole lens pass. With the lens on, the lit
+        // cell it found may be bent somewhere else (or into the shadow) in the output, so the
+        // comparison means nothing: skip the check while the hole is on screen.
+        if (typeof BlackHole !== 'undefined' && BlackHole.lensPass && BlackHole.lensPass.enabled) { blanks = 0; return; }
         const co = window.cameraFX;
         if (!co || !co.meterBuf || !co.prefs || !co.prefs.autoExposure || !(co.meterLum > 0)) return;
         const b = co.meterBuf, n = co.meterW * co.meterH;
         let best = 0, bi = -1;
         for (let i = 0; i < n; i++) if (b[i * 4] > best) { best = b[i * 4]; bi = i; }
         if (best < 32) { blanks = 0; return; }       // nothing clearly lit (cell mean < ~0.5)
-        if (!outputBlockIsBlack(rc.renderer, bi % co.meterW, Math.floor(bi / co.meterW), co.meterW, co.meterH)) { blanks = 0; return; }
+        // The meter result is a few frames old: read the lit cell AND its 8 neighbours, so a
+        // fast turn that moved the bright object one cell over never reads as a black frame.
+        // Only a whole black 3x3 block under a clearly lit cell counts.
+        if (!outputBlockIsBlack(rc.renderer, bi % co.meterW, Math.floor(bi / co.meterW), co.meterW, co.meterH, 1)) { blanks = 0; return; }
         if (++blanks < 2) return;
         blanks = 0;
         if (rc._hdrTargets !== false && rc.isNativeApp) {
@@ -930,13 +941,18 @@ function startRenderWatchdog() {
 
 // Reads one meter cell's block of the final canvas (drawing buffer is preserved, so this is
 // valid between frames). True only if every pixel in it is black.
-function outputBlockIsBlack(renderer, cx, cy, mw, mh) {
+function outputBlockIsBlack(renderer, cx, cy, mw, mh, pad) {
     try {
         const gl = renderer.getContext();
         const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
         if (!W || !H) return false;
-        const bw = Math.max(1, Math.floor(W / mw)), bh = Math.max(1, Math.floor(H / mh));
-        const x0 = Math.min(W - bw, Math.floor(cx * W / mw)), y0 = Math.min(H - bh, Math.floor(cy * H / mh));
+        const attrs = gl.getContextAttributes && gl.getContextAttributes();
+        if (attrs && !attrs.preserveDrawingBuffer) return false;   // canvas is cleared between frames: can't tell
+        pad = pad || 0;
+        const c0x = Math.max(0, cx - pad), c1x = Math.min(mw - 1, cx + pad);
+        const c0y = Math.max(0, cy - pad), c1y = Math.min(mh - 1, cy + pad);
+        const x0 = Math.floor(c0x * W / mw), y0 = Math.floor(c0y * H / mh);
+        const bw = Math.max(1, Math.floor((c1x + 1) * W / mw) - x0), bh = Math.max(1, Math.floor((c1y + 1) * H / mh) - y0);
         const buf = new Uint8Array(bw * bh * 4);
         const prev = gl.getParameter(gl.FRAMEBUFFER_BINDING);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
