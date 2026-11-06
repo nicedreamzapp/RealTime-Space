@@ -92,8 +92,11 @@
                 if (sp && sp.mesh && sp.mesh.visible) consider(sp.mesh.position, sp.mesh.scale.x);
             } catch (_) {}
             // (R/d)^3 is already steep; a square root keeps the last radius or two before the
-            // surface from being all the same, and the 0.03 floor drops the faint edge.
-            return best < 0.03 ? 0 : Math.min(1, Math.sqrt(best));
+            // surface from being all the same. The faint edge fades in: zero at 0.03, the full
+            // square-root curve from 0.09 on, smoothstep between (it used to jump 0 -> 0.17).
+            if (best <= 0.03) return 0;
+            const f = Math.min(1, (best - 0.03) / 0.06);
+            return Math.min(1, Math.sqrt(best)) * f * f * (3 - 2 * f);
         },
 
         update(dt) {
