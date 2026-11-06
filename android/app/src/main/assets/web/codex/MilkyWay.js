@@ -12,7 +12,8 @@
 (function () {
   'use strict';
 
-  const N = 55000;
+  // Low tier / safe GPU: half the points, each 1.3x wider (same band glow, half the vertices).
+  const LOWF = () => (window.rtsLowGPU && window.rtsLowGPU()) ? 0.5 : 1;
 
   // J2000 equatorial unit vector from RA (hours) / Dec (deg), in scene axes (Y up).
   function dir(raH, decDeg) {
@@ -30,6 +31,7 @@
       const gx = new THREE.Vector3().crossVectors(ngp, gc).normalize();
       const gy = ngp, gz = gc;
 
+      const N = Math.round(55000 * LOWF()), sizeK = LOWF() < 1 ? 1.3 : 1;
       const pos = new Float32Array(N * 3);
       const col = new Float32Array(N * 3);
       const siz = new Float32Array(N);
@@ -71,7 +73,7 @@
           col[i * 3 + 1] = (blue ? 0.82 : 0.93) * 0.5 * w;
           col[i * 3 + 2] = (blue ? 1.00 : 0.80) * 0.5 * w;
         }
-        siz[i] = 0.8 + Math.random() * 1.4;
+        siz[i] = (0.8 + Math.random() * 1.4) * sizeK;
       }
 
       const g = new THREE.BufferGeometry();

@@ -18,15 +18,220 @@ function rtsTexBudget() {
 window.rtsTexBudget = rtsTexBudget;
 function rtsAniso(want) { return Math.max(1, Math.min(want, rtsTexBudget().aniso)); }
 window.rtsAniso = rtsAniso;
+// One global texture-upload queue for the low tier and the safe GPU path (PowerVR / entry Mali).
+// Every texture that arrives from the network or disk (rtsLoadStaged below, and every
+// THREE.TextureLoader load, patched below) waits here and is pushed to the GPU by the UpdateLoop:
+// none in the first 2 s after the loop starts, none while the loop is held (native panel
+// animating or scrolling, app paused), and at most one every 3 frames, so no single frame
+// carries a stack of uploads. Medium and high upload as soon as a texture arrives, as before.
+const RTTexQueue = {
+    q: [], frame: 0, lastFrame: -1e9, t0: 0,
+    active() { const Q = window.RTQuality; return !!(Q && (Q.safeGPU || Q.tier === 'low')); },
+    start() { this.t0 = performance.now(); },
+    push(fn) { if (this.active()) this.q.push(fn); else fn(); },
+    pump(paused) {
+        this.frame++;
+        if (!paused && this.frame % 20 === 0 && window.RTLod) window.RTLod.tick();
+        if (!this.q.length) return;
+        if (!this.active()) { while (this.q.length) this._run(this.q.shift()); return; }   // tier climbed: flush
+        if (paused || !this.t0 || performance.now() - this.t0 < 2000 || this.frame - this.lastFrame < 3) return;
+        this.lastFrame = this.frame;
+        this._run(this.q.shift());
+    },
+    _run(fn) { try { fn(); } catch (e) { console.warn('texture upload failed:', e); } }
+};
+window.RTTexQueue = RTTexQueue;
+function rtsLowGPU() { return RTTexQueue.active(); }
+window.rtsLowGPU = rtsLowGPU;
+// Low tier / safe GPU texture memory budget (GL memory on a 3 GB PowerVR phone was ~490 MB):
+// every image texture is capped at 1024 px wide (planets were 2048x1024, 11 MB each with
+// mips), and big 2D canvases (labels, moon surfaces) are drawn at full size and then copied
+// into a smaller canvas, with the big one released, before they become textures.
+const RT_LOW_TEX_MAX = 1024;
+// Low tier cap per texture. The Sun's, planets' and the Moon's colour maps ("hero" maps) load
+// at 512 px and RTLod (below) re-decodes the nearest body's maps at 1024 px while you are close
+// to it; bump / elevation maps are held to 256 px and every other image to 512 px.
+const RT_HERO_RE = /textures\/(sun|mercury|venus|earth|mars|jupiter|saturn|uranus|neptune|pluto|moon)\//;
+function rtsIsHero(url) { const u = String(url || ''); return RT_HERO_RE.test(u) && !/bump|elev|normal|spec|rough/i.test(u); }
+function rtsLowCapFor(url) {
+    const u = String(url || '');
+    if (/bump|elev|normal|spec|rough/i.test(u)) return 256;
+    return 512;
+}
+// Low tier: every 2D canvas is a CPU canvas (willReadFrequently). Chrome keeps accelerated 2D
+// canvases as GPU textures for as long as they live, and every label / moon surface canvas
+// stays alive as its texture's image (~25 MB of GL memory on the Cricket).
+(function patchCanvas2D() {
+    const stock = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type, opts) {
+        if (type === '2d' && rtsLowGPU()) opts = Object.assign({ willReadFrequently: true }, opts || {});
+        return stock.call(this, type, opts);
+    };
+})();
+// Low tier: the body the camera is close to (within 12 radii, the nearest one) gets its hero
+// maps re-decoded at 1024 px as new textures swapped into its own materials; leaving it swaps the
+// 512 px maps back and frees the big ones. One body at a time, uploads through RTTexQueue.
+const RTLod = {
+    cur: null,   // { obj, swaps: [{ holder, key, lo, hi }] }
+    _p: new THREE.Vector3(),
+    tick() {
+        if (!rtsLowGPU() || typeof objects === 'undefined' || typeof rendererCore === 'undefined' || !rendererCore.camera) return;
+        const cam = rendererCore.camera.position;
+        let best = null, bestD = 12;
+        for (const o of objects) {
+            if (!o || !o.mesh || !(o.radius > 0)) continue;
+            o.mesh.getWorldPosition(this._p);
+            const d = cam.distanceTo(this._p) / o.radius;
+            if (d < bestD) { bestD = d; best = o; }
+        }
+        if (this.cur && this.cur.obj === best) return;
+        if (this.cur) this._release();
+        if (best) this._acquire(best);
+    },
+    _slots(root) {
+        const out = [];
+        root.traverse((n) => {
+            const ms = Array.isArray(n.material) ? n.material : [n.material];
+            for (const m of ms) {
+                if (!m) continue;
+                for (const k of ['map', 'emissiveMap']) if (m[k] && m[k].userData && m[k].userData.rtsHeroSrc) out.push({ holder: m, key: k, mat: m });
+                if (m.uniforms) for (const k in m.uniforms) {
+                    const v = m.uniforms[k] && m.uniforms[k].value;
+                    if (v && v.isTexture && v.userData && v.userData.rtsHeroSrc) out.push({ holder: m.uniforms[k], key: 'value', mat: m });
+                }
+            }
+        });
+        return out;
+    },
+    _acquire(obj) {
+        const cur = this.cur = { obj, swaps: [] };
+        for (const sl of this._slots(obj.mesh)) {
+            const lo = sl.holder[sl.key], src = lo.userData.rtsHeroSrc;
+            new THREE.ImageLoader().load(src, (img) => {
+                if (this.cur !== cur || typeof createImageBitmap !== 'function') return;
+                const w = img.width, h = img.height, W = Math.min(RT_LOW_TEX_MAX, w);
+                createImageBitmap(img, { resizeWidth: W, resizeHeight: Math.max(1, Math.round(h * W / w)), resizeQuality: 'high',
+                    imageOrientation: lo.userData.rtsFlip ? 'flipY' : 'none', premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+                    .then((bmp) => RTTexQueue.push(() => {
+                        if (this.cur !== cur || sl.holder[sl.key] !== lo) { try { bmp.close(); } catch (_) {} return; }
+                        const hi = lo.clone();
+                        hi.source = new THREE.Source(bmp);
+                        hi.flipY = false;
+                        hi.needsUpdate = true;
+                        sl.holder[sl.key] = hi;
+                        if (sl.key !== 'value') sl.mat.needsUpdate = true;
+                        cur.swaps.push({ holder: sl.holder, key: sl.key, mat: sl.mat, lo, hi });
+                        rtsUploadNow(hi);
+                    }), () => {});
+            });
+        }
+    },
+    _release() {
+        for (const sw of this.cur.swaps) {
+            if (sw.holder[sw.key] === sw.hi) { sw.holder[sw.key] = sw.lo; if (sw.key !== 'value') sw.mat.needsUpdate = true; }
+            try { sw.hi.dispose(); } catch (_) {}
+            try { sw.hi.source.data.close(); } catch (_) {}
+        }
+        this.cur = null;
+    }
+};
+window.RTLod = RTLod;
+// Low tier / safe GPU: spheres are built with half the segments each way (planets 256x128 ->
+// 128x64, a quarter of the triangles; a quarter of the segments showed facets on Earth's
+// shells). The scene drew ~900k triangles a frame, which on PowerVR is both GPU time and
+// parameter-buffer memory.
+(function patchSphereGeometry() {
+    const Stock = THREE.SphereGeometry;
+    class RtsSphereGeometry extends Stock {
+        constructor(radius, w = 32, h = 16, ...rest) {
+            if (rtsLowGPU()) {
+                w = Math.max(8, Math.round(w / 2));
+                h = Math.max(6, Math.round(h / 2));
+            }
+            super(radius, w, h, ...rest);
+        }
+    }
+    THREE.SphereGeometry = RtsSphereGeometry;
+})();
+function rtsShrinkCanvas(c, f) {
+    if (!rtsLowGPU() || !c || !(f > 0 && f < 1)) return c;
+    const s = document.createElement('canvas');
+    s.width = Math.max(1, Math.round(c.width * f)); s.height = Math.max(1, Math.round(c.height * f));
+    const g = s.getContext('2d');
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(c, 0, 0, s.width, s.height);
+    c.width = 0; c.height = 0;   // release the full-size backing store
+    return s;
+}
+window.rtsShrinkCanvas = rtsShrinkCanvas;
+// Low tier: an image wider than RT_LOW_TEX_MAX comes back as a smaller ImageBitmap, flipped
+// in the decoder (texture.flipY is ignored for ImageBitmaps), unpremultiplied and with no
+// colour-space conversion, which is how three.js uploads an <img>. done(img, flipped).
+function rtsCapImage(img, flipY, done, cap) {
+    cap = cap || RT_LOW_TEX_MAX;
+    const w = img && (img.width || img.naturalWidth), h = img && (img.height || img.naturalHeight);
+    if (!w || w <= cap || typeof createImageBitmap !== 'function') { done(img, false); return; }
+    const W = cap, H = Math.max(1, Math.round(h * W / w));
+    createImageBitmap(img, { resizeWidth: W, resizeHeight: H, resizeQuality: 'high',
+        imageOrientation: flipY ? 'flipY' : 'none', premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+        .then((bmp) => done(bmp, flipY), () => done(img, false));
+}
+function rtsUploadNow(tex) {
+    const r = (typeof rendererCore !== 'undefined' && rendererCore && rendererCore.renderer) || null;
+    try { if (r && r.initTexture && !(rendererCore && rendererCore.contextLost)) r.initTexture(tex); } catch (e) {}
+}
+// Low tier / safe GPU: THREE.TextureLoader decodes the image off the upload frame
+// (HTMLImageElement.decode) and hands the texture to the queue, which sets the image, runs the
+// caller's onLoad (where it sets colour space, wrapping...) and uploads it, all on one frame.
+// The texture object is returned at once, exactly like the stock loader.
+(function patchTextureLoader() {
+    const stock = THREE.TextureLoader.prototype.load;
+    const shared = new Map();   // deep-sky / exoplanet maps: one texture per file on this path
+    THREE.TextureLoader.prototype.load = function (url, onLoad, onProgress, onError) {
+        if (!RTTexQueue.active()) return stock.call(this, url, onLoad, onProgress, onError);
+        const share = /\/cosmos\//.test(String(url));
+        if (share && shared.has(url)) {
+            const e = shared.get(url);
+            if (e.ready) { if (onLoad) setTimeout(() => onLoad(e.texture), 0); } else if (onLoad) e.cbs.push(onLoad);
+            return e.texture;
+        }
+        const texture = new THREE.Texture();
+        let entry = null;
+        if (share) { entry = { texture, ready: false, cbs: [] }; shared.set(url, entry); }
+        const loader = new THREE.ImageLoader(this.manager);
+        loader.setCrossOrigin(this.crossOrigin);
+        loader.setPath(this.path);
+        loader.load(url, (image) => {
+            const queue = () => rtsCapImage(image, texture.flipY, (img, flipped) => RTTexQueue.push(() => {
+                if (rtsIsHero(url)) texture.userData.rtsHeroSrc = url, texture.userData.rtsFlip = texture.flipY;
+                texture.image = img;
+                if (flipped) texture.flipY = false;   // already flipped by the decoder
+                texture.needsUpdate = true;
+                if (onLoad) onLoad(texture);
+                if (entry) { entry.ready = true; entry.cbs.forEach((cb) => { try { cb(texture); } catch (e) { console.warn(e); } }); entry.cbs = []; }
+                rtsUploadNow(texture);
+            }), rtsLowCapFor(url));
+            if (image && image.decode) image.decode().then(queue, queue); else queue();
+        }, onProgress, onError);
+        return texture;
+    };
+})();
 // Decode a big texture with createImageBitmap (off the main thread), push it to the GPU on its own frame
 // with initTexture, then hand it back. Falls back to TextureLoader where ImageBitmap is missing.
+// Low tier / safe GPU: the upload goes through RTTexQueue.
 function rtsLoadStaged(path, onTex, onErr) {
-    const r = (typeof rendererCore !== 'undefined' && rendererCore && rendererCore.renderer) || null;
     if (typeof createImageBitmap === 'function' && THREE.ImageBitmapLoader) {
         const l = new THREE.ImageBitmapLoader(); l.setOptions({ imageOrientation: 'flipY' });
         l.load(path, (bmp) => {
             const tex = new THREE.Texture(bmp); tex.flipY = false; tex.needsUpdate = true;
-            setTimeout(() => { try { if (r && r.initTexture) r.initTexture(tex); } catch (e) {}
+            if (RTTexQueue.active()) {
+                // already flipped by the decoder: no flip again when capping the size
+                if (rtsIsHero(path)) { tex.userData.rtsHeroSrc = path; tex.userData.rtsFlip = true; }
+                rtsCapImage(bmp, false, (img) => { if (img !== bmp) { tex.image = img; try { bmp.close(); } catch (_) {} }
+                    RTTexQueue.push(() => { onTex(tex); rtsUploadNow(tex); }); }, rtsLowCapFor(path));
+                return;
+            }
+            setTimeout(() => { rtsUploadNow(tex);
                 requestAnimationFrame(() => onTex(tex)); }, 0);
         }, undefined, onErr);
     } else {
@@ -705,7 +910,7 @@ class Planet {
             }
         }
 
-        const cityTexture = new THREE.CanvasTexture(canvas);
+        const cityTexture = new THREE.CanvasTexture(rtsShrinkCanvas(canvas, 0.5));   // half size on low tier
         cityTexture.wrapS = THREE.RepeatWrapping;
 
         const cityMat = new THREE.ShaderMaterial({
@@ -858,7 +1063,7 @@ class Planet {
         }
 
         ctx.putImageData(imageData, 0, 0);
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = new THREE.CanvasTexture(rtsShrinkCanvas(canvas, 0.5));   // half size on low tier
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.ClampToEdgeWrapping;
         texture.anisotropy = rtsAniso(16);
@@ -908,7 +1113,7 @@ class Planet {
         }
 
         ctx.putImageData(imageData, 0, 0);
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = new THREE.CanvasTexture(rtsShrinkCanvas(canvas, 0.5));   // half size on low tier
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.ClampToEdgeWrapping;
         return texture;
@@ -953,7 +1158,7 @@ class Planet {
         }
 
         ctx.putImageData(imageData, 0, 0);
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = new THREE.CanvasTexture(rtsShrinkCanvas(canvas, 0.5));   // half size on low tier
         texture.wrapS = THREE.RepeatWrapping;
         return texture;
     }
@@ -1765,7 +1970,7 @@ class Planet {
         }
 
         ctx.putImageData(imageData, 0, 0);
-        const texture = new THREE.CanvasTexture(canvas);
+        const texture = new THREE.CanvasTexture(rtsShrinkCanvas(canvas, 0.5));   // half size on low tier
         texture.wrapS = THREE.RepeatWrapping;
 
         const material = new THREE.MeshStandardMaterial({
@@ -2000,7 +2205,7 @@ class Planet {
         }
 
         ctx.putImageData(imageData, 0, 0);
-        const cloudTexture = new THREE.CanvasTexture(canvas);
+        const cloudTexture = new THREE.CanvasTexture(rtsShrinkCanvas(canvas, 0.5));   // half size on low tier
         cloudTexture.wrapS = THREE.RepeatWrapping;
 
         this.cloudUniforms = {

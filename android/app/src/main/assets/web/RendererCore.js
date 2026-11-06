@@ -199,6 +199,18 @@ class RendererCore {
     }
 
     initEnvironmentMap() {
+        // Low tier and the safe GPU path (PowerVR / entry Mali): no PMREM. Building it is a
+        // chain of render-to-texture blur passes into a half-float cube target, one of the
+        // biggest single GPU jobs and GL allocations at boot on a 3-4 GB phone. The panorama
+        // is a dark sky (its mean linear radiance is ~0.0004), so the image-based light it
+        // gives the planets is far below what the tone map shows; nothing visible is lost.
+        const Q = window.RTQuality;
+        if (Q && (Q.safeGPU || Q.tier === 'low')) {
+            this.scene.environment = null;
+            this.scene.background = null;   // as the IBL path does: the sky is real stars only
+            console.log("✨ Milky Way IBL skipped (low tier / safe GPU)");
+            return;
+        }
         // Real 8K Milky Way panorama (Solar System Scope, CC BY 4.0) — now used ONLY for
         // PMREM image-based lighting. It is no longer the visible sky (see below).
         const loader = new THREE.TextureLoader();

@@ -152,7 +152,7 @@
       g.fillStyle = '#eaf2ff'; g.fillText(name, 480, 78);
       g.font = '400 54px -apple-system, sans-serif';
       g.fillStyle = 'rgba(150,200,255,0.85)'; g.fillText(sub, 480, 168);
-      const t = new THREE.CanvasTexture(c);
+      const t = new THREE.CanvasTexture(window.rtsShrinkCanvas ? window.rtsShrinkCanvas(c, 0.375) : c);   // 3/8 size on low tier
       t.anisotropy = 4;
       return t;
     }

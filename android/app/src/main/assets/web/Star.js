@@ -188,11 +188,45 @@ class Star {
         try { if (b.quad) { b.quad.geometry.dispose(); b.quad.material.dispose(); } } catch (_) {}
         try { if (b.gran) b.gran.dispose(); } catch (_) {}
         try { if (b.granQuad) { b.granQuad.geometry.dispose(); b.granQuad.material.dispose(); } } catch (_) {}
+        // the shipped maps (low tier / safe GPU) are textures, not targets
+        if (b.asset && this._bakedUniforms) {
+            for (const k of ['uMap', 'uGranMap']) {
+                const t = this._bakedUniforms[k].value;
+                if (t && t.dispose) { try { t.dispose(); } catch (_) {} }
+            }
+        }
+    }
+
+    // Low tier and the safe GPU path never render to a texture: the two maps the bake would
+    // make were rendered once offline from this same bake shader (headless Chromium, the
+    // Sun's own spot seed) and ship as textures/sun/sun_photosphere_1k.jpg (the 2048x1024
+    // map downsampled to 1024x512) and sun_granulation_512.jpg (the 512x512 tiling cells).
+    // Both are data, not colour (r: intensity, g: network, b: plage), so no sRGB decode.
+    static _useBakedAsset() {
+        const Q = window.RTQuality;
+        return !!(Q && (Q.safeGPU || Q.tier === 'low'));
+    }
+
+    _loadBakedAsset() {
+        this._bake = { done: true, asset: true };
+        const bu = this._getBakedMat().uniforms;
+        const load = (path, wrapT, onTex) => new THREE.TextureLoader().load(path, (t) => {
+            t.wrapS = THREE.RepeatWrapping; t.wrapT = wrapT;
+            t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+            t.generateMipmaps = true;
+            onTex(t);
+        }, undefined, (e) => console.warn('Sun map load failed:', path, e));
+        // RTTexQueue (Planet.js) uploads each one on its own frame on this path
+        load('textures/sun/sun_granulation_512.jpg', THREE.RepeatWrapping, (t) => { bu.uGranMap.value = t; });
+        load('textures/sun/sun_photosphere_1k.jpg', THREE.ClampToEdgeWrapping, (t) => {
+            bu.uMap.value = t; bu.uReady.value = 1;
+        });
     }
 
     _bakeStep(renderer) {
         let b = this._bake;
         if (b && b.done) return;
+        if (Star._useBakedAsset()) { this._disposeBake(); this._loadBakedAsset(); return; }
         if (!b) {
             const W = 2048, H = 1024;
             // generateMipmaps stays off while the strips render (three.js would rebuild the

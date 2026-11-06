@@ -2,6 +2,7 @@ package com.nicedreamz.realtimespace
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -36,6 +38,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 private val Mono = FontFamily.Monospace
 
@@ -73,6 +78,25 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
     // Android Back / back-gesture closes the panel instead of quitting the app.
     BackHandler(enabled = showPanel) { showPanel = false }
 
+    // Hold the web 3D loop while the panel opens, closes, animates or scrolls, and release it
+    // ~300 ms after the last of those ends. On PowerVR every native frame waits on the WebView's
+    // GL work in the same RenderThread chain, so one long WebGL frame during a scroll used to
+    // freeze the UI thread into an ANR; with the loop held the GPU is idle while native draws.
+    val panelScroll = rememberScrollState()
+    val panelVis = remember { MutableTransitionState(false) }
+    panelVis.targetState = showPanel
+    var toggling by remember { mutableStateOf(false) }
+    LaunchedEffect(showPanel) { toggling = true; withFrameNanos { }; withFrameNanos { }; toggling = false }
+    val chromeBusy = toggling || (!state.lowGpu && !panelVis.isIdle) || panelScroll.isScrollInProgress
+    LaunchedEffect(chromeBusy) {
+        if (chromeBusy) bridge.holdLoop("chrome", true)
+        else { delay(300); bridge.holdLoop("chrome", false) }
+    }
+    // Low tier / safe GPU: the panel stays composed and is moved on and off screen, with no
+    // slide or fade. Composing it on each ⋯ tap took ~400 ms of UI thread plus ~250 ms of
+    // recording on the Cricket (two Davey frames on every open).
+    val lowGpu = state.lowGpu
+
     AnimatedVisibility(visible = !state.chromeHidden, enter = fadeIn(), exit = fadeOut()) {
         // safeDrawingPadding keeps every control clear of the status bar, nav bar AND display
         // cutout on all four edges — critical in landscape where the nav bar / notch is on a side.
@@ -86,8 +110,17 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
             }
 
             // ---------- NAVIGATE / SETTINGS PANEL (drawn BEFORE the rail so the rail stays on top) ----------
-            AnimatedVisibility(
-                visible = showPanel,
+            if (lowGpu) {
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(
+                        top = 8.dp,
+                        end = (12 + radarDp + 8).dp,
+                        bottom = if (landscape) 100.dp else 150.dp
+                    )
+                        .offset { IntOffset(if (showPanel) 0 else 100_000, 0) }
+                ) { NavigatePanel(state, bridge, store, panelScroll, onUnlock = { showPanel = false; onUnlock() }) }
+            } else AnimatedVisibility(
+                visibleState = panelVis,
                 modifier = Modifier.align(Alignment.TopEnd).padding(
                     top = 8.dp,
                     end = (12 + radarDp + 8).dp,
@@ -95,7 +128,7 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
                 ),
                 enter = slideInHorizontally { it } + fadeIn(),
                 exit = slideOutHorizontally { it } + fadeOut()
-            ) { NavigatePanel(state, bridge, store, onUnlock = { showPanel = false; onUnlock() }) }
+            ) { NavigatePanel(state, bridge, store, panelScroll, onUnlock = { showPanel = false; onUnlock() }) }
 
             // ---------- TOP-RIGHT RAIL: radar, menu, view-mode ----------
             Column(
@@ -326,11 +359,11 @@ private fun SpeedPill(state: SpaceState, bridge: WebBridge) {
 }
 
 @Composable
-private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnlock: () -> Unit) {
+private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreManager, scroll: ScrollState, onUnlock: () -> Unit) {
     Column(
         Modifier.width(210.dp).clip(RoundedCornerShape(14.dp)).background(PanelFill)
             .border(1.dp, CyanBorder, RoundedCornerShape(14.dp))
-            .verticalScroll(rememberScrollState())   // never taller than the space above the console
+            .verticalScroll(scroll)   // never taller than the space above the console
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {

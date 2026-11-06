@@ -98,6 +98,7 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("settings", MODE_PRIVATE)
         state.ambientHum = prefs.getBoolean("ambient_hum", false)
         state.haptics = prefs.getBoolean("haptics", true)
+        state.lowGpu = lowRamTier()
         val vib = vibrator()
         val flight = FlightHaptics(this, vib).also { it.enabled = state.haptics }
         bridge = WebBridge(vib, state, onReady = { onEngineReady() }, onArrived = { onArrivedAtWorld() },
@@ -253,11 +254,23 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         if (this::bridge.isInitialized) bridge.flight?.stop()
+        // Hold the 3D loop, then stop the WebView's rendering and JS timers while the activity
+        // is in the background (the JS call runs before the timers stop).
+        webView?.let { wv ->
+            wv.evaluateJavascript("window.rtsHold&&window.rtsHold('app',true)", null)
+            wv.onPause()
+            wv.pauseTimers()
+        }
     }
 
     override fun onResume() {
         super.onResume()
         if (this::store.isInitialized) store.refreshTrial()
+        webView?.let { wv ->
+            wv.resumeTimers()
+            wv.onResume()
+            wv.evaluateJavascript("window.rtsHold&&window.rtsHold('app',false)", null)
+        }
     }
 
     /** index.html turns these into --sai-top/right/bottom/left, used wherever iOS uses env(). */
@@ -277,6 +290,14 @@ class MainActivity : ComponentActivity() {
         if (paywallOpen || store.locked) return
         if (!RatingPrompt.claimAskIfDue(this)) return
         Handler(Looper.getMainLooper()).postDelayed({ RatingPrompt.launchReview(this) }, 1500)
+    }
+
+    /** RTQuality.js's RAM rule for the Android low tier (low-RAM device or <= 4.2 GB). The web
+     *  engine corrects it (QUALITY message) once it knows the GPU. */
+    private fun lowRamTier(): Boolean {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val mi = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+        return am.isLowRamDevice || mi.totalMem / (1024.0 * 1024 * 1024) <= 4.2
     }
 
     /** Memory facts for the web texture budget: low-RAM flag, per-app heap class, total RAM. */

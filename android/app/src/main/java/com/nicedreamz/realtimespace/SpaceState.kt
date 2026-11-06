@@ -32,6 +32,10 @@ class SpaceState {
     var chromeHidden by mutableStateOf(false)
     var position: Triple<Double, Double, Double> = Triple(0.0, 0.0, 0.0)
     var engineReady by mutableStateOf(false)
+    /** Low tier or the safe GPU path (PowerVR / entry Mali), from the web engine's QUALITY
+     *  message; MainActivity seeds it from the same RAM rule RTQuality.js uses. The ⋯ panel
+     *  drops its slide and fade on it. */
+    var lowGpu by mutableStateOf(false)
 
     // ---- Native -> web (flight input, driven by Tier 3 UI) ----
     var rotX = 0f   // pitch  (-1..1)

@@ -83,6 +83,10 @@ class WebBridge(
                     main.post { state.chromeHidden = hidden }
                     Log.d(TAG, "CHROME hidden=$hidden")
                 }
+                "QUALITY" -> {
+                    val low = o.optBoolean("low")
+                    main.post { state.lowGpu = low }
+                }
                 "FETCH" -> doFetch(o.optString("url"), o.optString("reqId"))
                 "PHOTO" -> Log.d(TAG, "PHOTO capture received (share TODO)")
                 "AUDIO" -> { /* Web Audio is procedural on the web side; native no-op */ }
@@ -229,6 +233,10 @@ class WebBridge(
         call("window.galaxyExplorer&&window.galaxyExplorer.setWarpDrive&&window.galaxyExplorer.setWarpDrive($b)")
     fun capturePhoto(scale: Float = 1.5f) =
         call("window.galaxyExplorer&&window.galaxyExplorer.capturePhoto&&window.galaxyExplorer.capturePhoto($scale)")
+    /** Hold or release the web 3D loop for one reason (UpdateLoop.hold): no updates, draws or
+     *  texture uploads while any hold is on. Posted to the main thread like every call. */
+    fun holdLoop(reason: String, on: Boolean) =
+        call("window.rtsHold&&window.rtsHold('$reason',$on)")
     fun pauseExploration() = call("window.pauseExploration&&window.pauseExploration()")
     fun resumeExploration() = call("window.resumeExploration&&window.resumeExploration()")
 

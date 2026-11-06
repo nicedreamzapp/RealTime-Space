@@ -1489,6 +1489,12 @@ function cycleTimeScale() {
 }
 
 function initRadar() {
+    // The 3D sphere radar is a second WebGL context drawn on every animation frame into a
+    // container index.html hides (the native radar is fed by the RADAR message below). Low tier
+    // and the safe GPU path skip it: on the PowerVR Cricket it was a ~450 ms GPU job every ~2.4 s
+    // that ran even while the main loop was held.
+    const Q = window.RTQuality;
+    if (Q && (Q.safeGPU || Q.tier === 'low')) return;
     if (typeof SphereRadar !== 'undefined') {
         radar = new SphereRadar('radar-container');
     }
@@ -2566,7 +2572,8 @@ function createPlanetHighlights() {
         ctx.fillText(obj.name, 384, 96);
         const textFrac = Math.min(1, ctx.measureText(obj.name).width / 768);
 
-        const texture = new THREE.CanvasTexture(canvas);
+        // low tier / safe GPU: 3/8-size label texture (the label is a few dozen pixels tall)
+        const texture = new THREE.CanvasTexture(window.rtsShrinkCanvas ? window.rtsShrinkCanvas(canvas, 0.375) : canvas);
         texture.anisotropy = 4;
         const spriteMat = new THREE.SpriteMaterial({
             map: texture,

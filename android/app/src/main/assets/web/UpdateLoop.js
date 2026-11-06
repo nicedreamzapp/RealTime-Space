@@ -27,6 +27,12 @@ class UpdateLoop {
         // State
         this.isRunning = false;
         this.isPaused = false;
+        // Reasons the loop is held (Android: 'chrome' while the native panel animates or
+        // scrolls, 'app' while the activity is paused). The loop runs again when none are left.
+        this._holds = new Set();
+        // Frames still to skip after a long frame on the low / safe GPU path.
+        this._skip = 0;
+        window.rtsHold = (reason, on) => this.hold(reason, on);
 
         // Performance monitoring
         this.performanceStats = {
@@ -81,6 +87,24 @@ class UpdateLoop {
         };
 
         console.log("▶️ UpdateLoop started");
+        if (window.RTTexQueue) window.RTTexQueue.start();
+        // Tell native whether this page is on the low / safe GPU path (it drops the panel's
+        // slide and fade there), now and whenever the tier changes.
+        // Low / safe GPU also turns off every CSS backdrop-filter blur (html.rt-lowgpu): each
+        // one re-blurs whatever is under it on every composited frame, which cost the Cricket
+        // ~50 ms of WebView compositing per frame.
+        const post = () => { try { const Q = window.RTQuality;
+            const low = !!(Q && (Q.safeGPU || Q.tier === 'low'));
+            if (!document.getElementById('rt-lowgpu-css')) {
+                const st = document.createElement('style'); st.id = 'rt-lowgpu-css';
+                st.textContent = 'html.rt-lowgpu *, html.rt-lowgpu *::before, html.rt-lowgpu *::after' +
+                    ' { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }';
+                document.head.appendChild(st);
+            }
+            document.documentElement.classList.toggle('rt-lowgpu', low);
+            if (window.AndroidBridge && Q) window.AndroidBridge.postMessage(JSON.stringify({ type: 'QUALITY', low }));
+        } catch (_) {} };
+        post(); window.addEventListener('rtquality', post);
         requestAnimationFrame(this.loop);
     }
 
@@ -91,8 +115,17 @@ class UpdateLoop {
     }
 
     pause() {
+        if (this.isPaused) return;
         this.isPaused = true;
         console.log("⏸️ UpdateLoop paused");
+    }
+
+    // Hold or release the loop for one reason. While any hold is on, no system updates, no
+    // draws and no texture uploads run, so the GPU is idle while native views redraw (on
+    // PowerVR a busy WebGL queue made every native panel frame wait on the GPU).
+    hold(reason, on) {
+        if (on) this._holds.add(reason); else this._holds.delete(reason);
+        if (this._holds.size) this.pause(); else this.resume();
     }
 
     resume() {
@@ -118,10 +151,30 @@ class UpdateLoop {
                 return;
             }
 
-            // Safe-GPU path (PowerVR / entry Mali): at most ~30 frames a second, so the GPU
-            // never has a queue of frames behind a slow one (the Cricket's stall).
-            if (window.RTQuality && window.RTQuality.safeGPU && this.lastTime &&
+            // Safe-GPU path (PowerVR / entry Mali) and Android low tier: at most ~30 frames a
+            // second, so the GPU never has a queue of frames behind a slow one (the Cricket's stall).
+            const Q = window.RTQuality;
+            const lowGPU = !!(Q && (Q.safeGPU || Q.tier === 'low'));
+            if (lowGPU && (Q.safeGPU || window.AndroidBridge) && this.lastTime &&
                 currentTime - this.lastTime < 30) {
+                requestAnimationFrame(this.loop);
+                return;
+            }
+
+            // Low / safe GPU: a frame over 250 ms means the GPU is backed up. Draw nothing for
+            // the next 10 frames so the queue drains (no readbacks needed to see it), and drop
+            // a tier if there is one below.
+            if (this._skip > 0) {
+                this._skip--;
+                this.lastTime = currentTime;
+                requestAnimationFrame(this.loop);
+                return;
+            }
+            if (lowGPU && !this.isPaused && this.lastTime && currentTime - this.lastTime > 250) {
+                console.warn('🐢 long frame ' + Math.round(currentTime - this.lastTime) + ' ms: skipping 10 frames');
+                this._skip = 10;
+                this.lastTime = currentTime;
+                if (Q.dropTierForSession) Q.dropTierForSession('long frame');
                 requestAnimationFrame(this.loop);
                 return;
             }
@@ -143,6 +196,10 @@ class UpdateLoop {
             // Update performance stats
             this.updatePerformanceStats(rawDelta);
             if (this.autoQuality && !this.isPaused && window.RTQuality) window.RTQuality.sample(rawDelta);
+
+            // one queued texture upload at most (Planet.js RTTexQueue: none while paused,
+            // none in the first 2 s, at most one every 3 frames)
+            if (window.RTTexQueue) window.RTTexQueue.pump(this.isPaused);
 
             if (!this.isPaused) {
                 this.totalTime += this.deltaTime;
