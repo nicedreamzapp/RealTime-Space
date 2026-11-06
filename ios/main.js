@@ -177,6 +177,13 @@ function initGalaxy() {
                 const renderPass = new RenderPass(rendererCore.scene, rendererCore.camera);
                 composer.addPass(renderPass);
 
+                // Black hole gravitational lensing: bends the rendered scene (before bloom)
+                // around Sagittarius A*. Idle (disabled) unless the hole is on screen.
+                if (typeof BlackHole !== 'undefined' && BlackHole.createLensPass) {
+                    const lensPass = BlackHole.createLensPass();
+                    if (lensPass) composer.addPass(lensPass);
+                }
+
                 // Add bloom pass if available - subtle, realistic bloom for stars
                 if (typeof UnrealBloomPass !== 'undefined') {
                     const bloomPass = new UnrealBloomPass(
@@ -772,7 +779,7 @@ function createUpdateSystems() {
         {
             name: "BlackHoles",
             update: (dt) => {
-                blackHoles?.forEach(bh => bh.update(dt));
+                blackHoles?.forEach(bh => bh.update(dt, rendererCore?.camera, rendererCore));
             }
         },
         {
@@ -1421,7 +1428,8 @@ function flyToObject(obj, distanceMultiplier = 3) {
     if (dir.lengthSq() === 0) dir.set(0, 0, 1);
 
     // Desired distance to stay from object
-    const dist = (obj.radius || 10) * distanceMultiplier;
+    // Black holes carry their own arrival distance (radius is rs; 3 rs would park inside the disk).
+    const dist = obj.flyDistance || (obj.radius || 10) * distanceMultiplier;
 
     // Target camera position offset back along direction
     const targetPos = objPos.clone().add(dir.multiplyScalar(dist));
