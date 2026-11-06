@@ -386,6 +386,7 @@ function initGalaxy() {
                 }
 
                 rendererCore.composer = composer;
+                try { if (window.Visor) window.Visor.attach(composer, rendererCore); } catch (e) { console.warn('Visor attach failed:', e); } // [unreal/visor] canopy glass pass, self-inserts before gamma
                 rendererCore.useComposer = true;
                 // TEMP: force direct rendering (bypass composer) for black-screen isolation.
                 if (window.__FORCE_DIRECT__) rendererCore.useComposer = false;
