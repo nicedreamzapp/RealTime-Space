@@ -4,10 +4,13 @@
 //  - rumble: a continuous low buzz whose strength follows ship speed. Speed is measured
 //    against the cruise top speed; warp (up to 100x) adds on a log scale so it keeps
 //    building without slamming to max. Thrusting adds a small push on top.
-//  - swell: depth in the nearest star's or black hole's gravity well. Gravitational
-//    potential goes as 1/r, so the swell is (reference radius / distance), 1 at the
-//    surface (the Sun's photosphere, a close-up star's sphere, a black hole's photon
-//    sphere at 1.5 Schwarzschild radii) and fading to nothing far away.
+//  - swell: the tidal pull of the nearest star or black hole, felt only close to it. A ship
+//    in free fall feels no steady gravity, only the tide (the difference in pull across the
+//    hull), which goes as M/r^3. Relative to the surface (the Sun's photosphere, a close-up
+//    star's sphere, a black hole's photon sphere at 1.5 Schwarzschild radii) that is
+//    (R/d)^3: 1 at the surface, 1/8 at two radii, and zero from about three radii out (a
+//    smooth fade over 2.5..4 radii plus a small floor). The buzz follows its square root, a
+//    perceptual curve. Cruising or parked anywhere in the solar system, the swell is zero.
 //  - transients: one sharp tick on warp entry and one on warp exit.
 //
 // JS only computes two numbers in 0..1 and sends them ~12 times a second (only when they
@@ -65,12 +68,17 @@
         },
 
         _wellDepth(cam) {
+            const NEAR = 2.5, FAR = 4;    // tide fades out between 2.5 and 4 body radii
             let best = 0;
             const consider = (pos, rRef) => {
                 if (!pos || !(rRef > 0)) return;
                 const d = Math.max(rRef, cam.distanceTo(pos));
-                const phi = rRef / d;                 // potential relative to the surface
-                if (phi > best) best = phi;
+                const x = d / rRef;                   // distance in body radii (>= 1)
+                if (x >= FAR) return;
+                const tide = 1 / (x * x * x);         // tidal acceleration relative to the surface
+                const t = Math.min(1, Math.max(0, (x - NEAR) / (FAR - NEAR)));
+                const v = tide * (1 - t * t * (3 - 2 * t));
+                if (v > best) best = v;
             };
             try {
                 /* global objects, blackHoles */
@@ -83,10 +91,9 @@
                 const sp = window.starProximity;
                 if (sp && sp.mesh && sp.mesh.visible) consider(sp.mesh.position, sp.mesh.scale.x);
             } catch (_) {}
-            // Ignore the faint far-field (phi < 0.05, i.e. beyond 20 radii) so cruising
-            // the system isn't a constant hum, then ease in.
-            const x = Math.min(1, Math.max(0, (best - 0.05) / 0.95));
-            return x * x * (3 - 2 * x);
+            // (R/d)^3 is already steep; a square root keeps the last radius or two before the
+            // surface from being all the same, and the 0.03 floor drops the faint edge.
+            return best < 0.03 ? 0 : Math.min(1, Math.sqrt(best));
         },
 
         update(dt) {
