@@ -361,6 +361,7 @@ private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreMana
         Spacer(Modifier.height(2.dp))
         SectionHeader("SOUND")
         ToggleRow("Ambient hum", state.ambientHum) { state.ambientHum = it; bridge.setAmbientHum(it) }
+        ToggleRow("Haptics", state.haptics) { state.haptics = it; bridge.setHaptics(it) }
         Spacer(Modifier.height(2.dp))
         SectionHeader("FLY TO")
         listOf("Sun", "Earth", "Mars", "Jupiter", "Saturn", "ISS", "Sirius").forEach { name ->

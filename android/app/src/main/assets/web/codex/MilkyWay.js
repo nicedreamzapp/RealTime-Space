@@ -46,8 +46,10 @@
         do { theta = (Math.random() * 2 - 1) * Math.PI; }
         while (Math.random() > 0.35 + 0.65 * Math.pow(Math.cos(theta / 2), 2));
 
-        // Height above the plane: thin disk, slightly thicker far out.
-        const h = gauss() * 0.05 * (0.7 + ly / 40000);
+        // Height above the plane, as an angle: the thin disk's ~300 ly scale height seen
+        // from inside spreads nearby stars many degrees off the plane, so the naked-eye band
+        // is 10-30 deg wide (the old 0.05 squeezed it into a ~2 deg dotted stripe).
+        const h = gauss() * 0.15 * (1.3 - 0.6 * (ly / 40000));
 
         const inPlane = Math.cos(theta), across = Math.sin(theta);
         const v = new THREE.Vector3()
@@ -59,7 +61,7 @@
         pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
 
         // Warm faint stars; a slice of dust-reddened dark patches along the core.
-        const dust = Math.abs(theta) < 1.1 && Math.abs(h) < 0.02 && Math.random() < 0.22;
+        const dust = Math.abs(theta) < 1.1 && Math.abs(h) < 0.05 && Math.random() < 0.22;
         const w = 0.55 + Math.random() * 0.45;
         if (dust) {
           col[i * 3] = 0.10 * w; col[i * 3 + 1] = 0.07 * w; col[i * 3 + 2] = 0.05 * w;

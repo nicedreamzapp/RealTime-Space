@@ -71,10 +71,16 @@ class MainActivity : ComponentActivity() {
 
         if (savedInstanceState == null) RatingPrompt.noteLaunch(this)
         if (savedInstanceState == null) handleDeepLink(intent)
-        bridge = WebBridge(vibrator(), state, onReady = { onEngineReady() }, onArrived = { onArrivedAtWorld() },
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        state.ambientHum = prefs.getBoolean("ambient_hum", false)
+        state.haptics = prefs.getBoolean("haptics", true)
+        val vib = vibrator()
+        val flight = FlightHaptics(this, vib).also { it.enabled = state.haptics }
+        bridge = WebBridge(vib, state, onReady = { onEngineReady() }, onArrived = { onArrivedAtWorld() },
             deviceInfoJson = deviceInfoJson(),
-            onAmbientHumChanged = { on -> getSharedPreferences("settings", MODE_PRIVATE).edit().putBoolean("ambient_hum", on).apply() })
-        state.ambientHum = getSharedPreferences("settings", MODE_PRIVATE).getBoolean("ambient_hum", false)
+            onAmbientHumChanged = { on -> prefs.edit().putBoolean("ambient_hum", on).apply() },
+            flight = flight,
+            onHapticsChanged = { on -> prefs.edit().putBoolean("haptics", on).apply() })
         store = StoreManager(this)
 
         val assetLoader = WebViewAssetLoader.Builder()
@@ -161,6 +167,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        if (this::bridge.isInitialized) bridge.flight?.stop()
+    }
+
     override fun onResume() {
         super.onResume()
         if (this::store.isInitialized) store.refreshTrial()
@@ -189,7 +200,13 @@ class MainActivity : ComponentActivity() {
     private fun deviceInfoJson(): String {
         val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val mi = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
-        val json = "{\"lowRam\":${am.isLowRamDevice},\"memClassMB\":${am.memoryClass},\"totalMB\":${mi.totalMem / (1024 * 1024)}}"
+        // model/manufacturer/haptics feed RTQuality.js (start tier) and RTHaptics.js through the
+        // index.html shim's window.__RT_DEVICE, the same object the iOS app injects.
+        val q = { t: String -> "\"" + t.replace("\\", "").replace("\"", "") + "\"" }
+        val haptics = getSharedPreferences("settings", MODE_PRIVATE).getBoolean("haptics", true)
+        val json = "{\"lowRam\":${am.isLowRamDevice},\"memClassMB\":${am.memoryClass},\"totalMB\":${mi.totalMem / (1024 * 1024)}," +
+            "\"model\":${q(Build.MODEL ?: "")},\"manufacturer\":${q(Build.MANUFACTURER ?: "")},\"sdk\":${Build.VERSION.SDK_INT}," +
+            "\"haptics\":$haptics}"
         Log.i(TAG, "device info: $json")
         return json
     }

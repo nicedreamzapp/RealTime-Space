@@ -36,6 +36,13 @@
         window.webkit.messageHandlers.iosHandler = { postMessage: send };
         window.webkit.messageHandlers.logging = { postMessage: logfwd };
         window.__SPACE_BRIDGE_READY__ = true;
+        // Device hints for RTQuality.js (start tier) and RTHaptics.js (saved toggle): the same
+        // window.__RT_DEVICE object the iOS app injects, built from AndroidBridge.deviceInfo().
+        try {
+            var di = window.AndroidBridge && window.AndroidBridge.deviceInfo ? JSON.parse(window.AndroidBridge.deviceInfo()) : null;
+            if (di) window.__RT_DEVICE = { platform: 'android', model: di.model || '', manufacturer: di.manufacturer || '',
+                memGB: (di.totalMB || 0) / 1024, lowRam: !!di.lowRam, sdk: di.sdk || 0, haptics: di.haptics !== false };
+        } catch(e){}
         // Real system-bar + cutout insets from MainActivity.pushInsets (CSS px). The web files
         // use var(--sai-*) where iOS uses env(safe-area-inset-*), which WebView reports as 0.
         window.__rtsSetInsets = function(t, r, b, l){
@@ -225,7 +232,12 @@
         // first composed frames come out black. So bloom can never leave a black screen —
         // worst case it silently reverts to the old direct path. Set this to true to force
         // the direct path manually (e.g. for debugging).
-        window.__FORCE_DIRECT__ = true;
+        // ANDROID: the direct path was forced on every phone since the July port (entry-level
+        // PowerVR GPUs hung on the full post chain). Since 1.13 only LOW tier (RTQuality.js:
+        // low-RAM or <= 4 GB phones, or ?rtq=low) stays direct; medium/high run the post chain
+        // (auto-exposure, lensing, visor, HDR Sun) at the Android 1x pixel ratio, with the
+        // black-frame guard and the fps governor behind it. main.js reads this flag.
+        window.__FORCE_DIRECT_ON_LOW__ = true;
         // Boot guard: if the THREE bundle somehow failed to load, say so loudly instead
         // of leaving a silent black screen (the old CDN failure mode).
         if (!window.THREE || !window.THREE.EffectComposer) {
@@ -234,9 +246,13 @@
 
         const scripts = [
             'RendererCore.js',
+            'CameraOptics.js',
             'LightingSystem.js',
             'NavigationPhysics.js',
+            'Ephemeris.js',
             'OrbitalMechanics.js',
+            'RTQuality.js',
+            'RTHaptics.js',
             'UpdateLoop.js',
             'Starfield.js',
             'Star.js',
@@ -254,6 +270,7 @@
             'codex/Codex.js',
             'codex/LiveData.js',
             'codex/ISS.js',
+            'codex/Spacecraft.js',
             'codex/Constellations.js',
             'codex/data/hyg_stars.js',
             'codex/HYGStarfield.js',
@@ -261,6 +278,7 @@
             'codex/Exoplanets.js',
             'codex/Galaxies.js',
             'codex/Deepsky.js',
+            'codex/Visor.js',
             'codex/Cockpit.js',
             'codex/StarProximity.js',
             'codex/ChaseView.js',
@@ -277,7 +295,7 @@
             'TourBuilder.js',
             'main.js'
         ];
-        const APP_VERSION = '2026-11-04a'; // bump to bust browser cache after edits
+        const APP_VERSION = '2026-11-06sun'; // bump to bust browser cache after edits
         // Query-string cache busting is for http dev serving only — file:// URLs
         // inside the app bundle don't cache and may not tolerate query params.
         const bust = location.protocol.startsWith('http') ? '?v=' + APP_VERSION : '';

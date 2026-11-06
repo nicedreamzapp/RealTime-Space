@@ -32,7 +32,11 @@ class WebBridge(
     /** {"lowRam":bool,"memClassMB":n,"totalMB":n} for the web texture budget (Planet.js rtsTexBudget). */
     private val deviceInfoJson: String = "null",
     /** Persist the Ambient hum choice natively (MainActivity prefs). */
-    private val onAmbientHumChanged: (Boolean) -> Unit = {}
+    private val onAmbientHumChanged: (Boolean) -> Unit = {},
+    /** Flight rumble / gravity swell / warp ticks from RTHaptics.js; its .enabled is the Haptics toggle. */
+    val flight: FlightHaptics? = null,
+    /** Persist the Haptics choice natively (MainActivity prefs). */
+    private val onHapticsChanged: (Boolean) -> Unit = {}
 ) {
     @JavascriptInterface
     fun deviceInfo(): String = deviceInfoJson
@@ -57,7 +61,16 @@ class WebBridge(
                     Log.i(TAG, "READY handshake received from web engine")
                     main.post { onReady() }
                 }
-                "HAPTIC" -> haptic(o.optString("style"))
+                "HAPTIC" -> {
+                    val style = o.optString("style")
+                    if (style == "warpIn" || style == "warpOut") main.post { flight?.tick(style) }
+                    else haptic(style)
+                }
+                "HAPTIC_FLIGHT" -> {
+                    val r = o.optDouble("rumble", 0.0).toFloat()
+                    val sw = o.optDouble("swell", 0.0).toFloat()
+                    main.post { flight?.setFlight(r, sw) }
+                }
                 "ARRIVED" -> main.post { onArrived() }
                 "RADAR" -> parseRadar(o)
                 "POSITION_UPDATE" -> {
@@ -86,6 +99,7 @@ class WebBridge(
     }
 
     fun haptic(style: String) {
+        if (flight?.enabled == false) return   // Haptics toggle off: no taps either (same as iOS)
         val v = vibrator ?: return
         if (!v.hasVibrator()) return
         val pattern = when (style) {
@@ -222,6 +236,13 @@ class WebBridge(
         setLUTEnabled(state.lutEnabled)
         setLUTIntensity(state.lutIntensity)
         setAmbientHum(state.ambientHum)
+        setHaptics(state.haptics)
+    }
+
+    fun setHaptics(on: Boolean) {
+        onHapticsChanged(on)
+        flight?.enabled = on
+        call("window.RTHaptics&&window.RTHaptics.setEnabled&&window.RTHaptics.setEnabled($on)")
     }
 
     fun setAmbientHum(on: Boolean) {

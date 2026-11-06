@@ -26,7 +26,23 @@
       chrome.envMapIntensity = 3.0;
       const darkMetal = new THREE.MeshStandardMaterial({ color: 0x5a6a7a, metalness: 0.8, roughness: 0.32 });
       darkMetal.envMapIntensity = 2.0;
-      const glassMat = new THREE.MeshStandardMaterial({ color: 0x0a1622, metalness: 0.9, roughness: 0.05 });
+      // Canopy: real coated glass instead of a dark mirror. Clearcoat gives the sharp
+      // outer-surface Sun highlight, a thin-film layer gives the faint gold/violet sheen a
+      // sputtered sun-control coating shows at grazing angles, and the base stays dark so
+      // the Fresnel edge carries the read. If the tier is already known to be low
+      // when the ship is built (RTQuality tier), keep the cheap standard material.
+      const lowTier = !!(window.RTQuality && window.RTQuality.tier === 'low');
+      let glassMat;
+      if (!lowTier && THREE.MeshPhysicalMaterial) {
+        glassMat = new THREE.MeshPhysicalMaterial({
+          color: 0x07121c, metalness: 0.15, roughness: 0.08,
+          clearcoat: 1.0, clearcoatRoughness: 0.04,
+          iridescence: 0.55, iridescenceIOR: 1.8, iridescenceThicknessRange: [180, 420],
+          specularIntensity: 1.0, ior: 1.5
+        });
+      } else {
+        glassMat = new THREE.MeshStandardMaterial({ color: 0x0a1622, metalness: 0.9, roughness: 0.05 });
+      }
       glassMat.envMapIntensity = 2.2;
       const goldMat = new THREE.MeshStandardMaterial({ color: 0xc9a34a, metalness: 1.0, roughness: 0.25 });
       goldMat.envMapIntensity = 1.6;
@@ -219,6 +235,7 @@
 
       const setMode = (mode) => {
         window.__viewMode = mode;
+        if (window.Visor) window.Visor._apply();   // visor glass: on in helm/visor, off in chase
         if (mode === 'chase') {
           window.chaseView.enable();
           if (window.cockpit) { window.cockpit.forceHidden = true; window.cockpit._apply(); }

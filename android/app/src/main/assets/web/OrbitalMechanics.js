@@ -24,6 +24,8 @@ class OrbitalMechanics {
 
     update(deltaTime, rendererCore) {
         this.time += deltaTime * this.timeScale;
+        // Real-date sim clock (Ephemeris.js): LIVE at 1x, whole days per second above that.
+        if (window.Ephemeris) window.Ephemeris.clock.advance(deltaTime, this.timeScale);
 
         // Update each orbiting object
         for (const obj of this.objects) {
@@ -42,6 +44,18 @@ class OrbitalMechanics {
 
     updateOrbitalPosition(obj, deltaTime) {
         const orbital = obj.orbitalData;
+
+        // Real planets: true heliocentric position for the sim date (JPL elements),
+        // radius compressed by Ephemeris.mapRadius, direction exact.
+        if (orbital.ephemeris && window.Ephemeris) {
+            const Eph = window.Ephemeris;
+            const v = Eph.planetHelio(orbital.ephemeris, Eph.clock.jd());
+            if (v) {
+                const p = Eph.helioToScene(v);
+                obj.mesh.position.set(p[0], p[1], p[2]);
+                return;
+            }
+        }
 
         // Full Keplerian elements with defaults
         const a = orbital.semiMajorAxis || 50;
@@ -107,18 +121,63 @@ class OrbitalMechanics {
         obj.trueAnomaly = nu;
     }
 
+    // Greenwich mean sidereal time (radians) for a Julian date (IAU 1982 / Meeus 12.4;
+    // UTC stands in for UT1, < 1 s apart). This is the right ascension of the Greenwich
+    // meridian, i.e. how far Earth has turned from the vernal equinox.
+    static gmstRad(jd) {
+        const d = jd - 2451545.0, T = d / 36525;
+        let deg = 280.46061837 + 360.98564736629 * d + T * T * (0.000387933 - T / 38710000);
+        deg = ((deg % 360) + 360) % 360;
+        return deg * Math.PI / 180;
+    }
+
     updateRotation(obj, deltaTime) {
         if (!obj.rotationPeriod || !obj.mesh) return;
+
+        // Earth up to 1 day/s: the real angle for the sim date. In the Earth mesh frame the
+        // prime meridian is +x and lon 90E is -z; before the tilt, scene +x is the vernal
+        // equinox and -z is RA 90, so rotation.y = GMST puts Greenwich at its real RA. In
+        // LIVE the sim clock IS the UTC clock, so the day/night line and the auroral oval
+        // (pinned to the surface) match the real Earth right now. Faster than 1 day/s the
+        // real spin would only strobe, so it falls through to the capped visual spin.
+        if (obj.poleTowardEclipticLon90 && window.Ephemeris && this.timeScale <= 10) {
+            obj.mesh.rotation.y = OrbitalMechanics.gmstRad(window.Ephemeris.clock.jd());
+            if (!obj._tiltApplied) this._applyTilt(obj);
+            return;
+        }
 
         // Axial rotation. Cap the rotation contribution of time acceleration so
         // planets don't become motion-blurred tops at 1000× orbital speed.
         const rotationScale = Math.min(this.timeScale, 50);
         const rotationSpeed = (2 * Math.PI) / obj.rotationPeriod;
         obj.mesh.rotation.y += rotationSpeed * deltaTime * rotationScale;
+        if (obj.axialTilt && !obj._tiltApplied) this._applyTilt(obj);
+    }
 
-        // Apply axial tilt if specified
-        if (obj.axialTilt && !obj._tiltApplied) {
-            obj.mesh.rotation.z = obj.axialTilt;
+    _applyTilt(obj) {
+
+        // Apply axial tilt if specified.
+        // Rotation order MUST be ZYX: with the default XYZ, the constant Z tilt
+        // gets swept around by the ever-growing Y spin, so the tilt axis PRECESSES
+        // — Saturn's rings visibly tumbled around the planet instead of holding a
+        // fixed plane. ZYX applies spin about the body axis first, then the tilt,
+        // which keeps the ring plane rock-steady.
+        {
+            if (obj.poleTowardEclipticLon90) {
+                // Earth: the north celestial pole sits at ecliptic longitude 90 deg, latitude
+                // 90 - 23.44 deg. Ephemeris.helioToScene maps ecliptic (x, y, z) to scene
+                // (x, z, -y), so the pole is scene (0, cos e, -sin e): a tilt of -e about X.
+                // With order XYZ the spin (Y) is applied first and the X tilt after it, so
+                // the axis stays fixed in space. Result: June solstice (Earth at helio lon
+                // 270) north pole toward the Sun, December (lon 90) away, as on the real date.
+                // (The old +Z tilt leaned the pole toward ecliptic lon 180, a quarter year off:
+                // in November the north pole leaned sideways instead of away from the Sun.)
+                obj.mesh.rotation.order = 'XYZ';
+                obj.mesh.rotation.x = -obj.axialTilt;
+            } else {
+                obj.mesh.rotation.order = 'ZYX';
+                obj.mesh.rotation.z = obj.axialTilt;
+            }
             obj._tiltApplied = true;
         }
     }
@@ -206,6 +265,7 @@ class OrbitalMechanics {
                 geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
                 const material = new THREE.LineBasicMaterial({
+                depthWrite: false, // transparent overlay must not stamp the depth buffer
                     color: obj.color || 0x4488ff,
                     transparent: true,
                     opacity: 0.3
@@ -213,6 +273,7 @@ class OrbitalMechanics {
 
                 obj._trail = new THREE.Line(geometry, material);
                 obj._trail.frustumCulled = false;
+                obj._trail.userData.annotation = true;   // overlay: hidden by the clean frame
                 obj._trailIndex = 0;
                 obj._trailPositions = [];
 

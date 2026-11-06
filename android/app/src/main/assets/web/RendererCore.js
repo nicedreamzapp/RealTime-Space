@@ -20,6 +20,9 @@ class RendererCore {
         // ANDROID PORT: entry-level mobile GPUs (e.g. PowerVR GE8320) hang when pushing
         // the full cinematic pipeline at native DPR. Cap at 1x here.
         this.maxPixelRatio = 1;
+        // Native app (Android WebView via AndroidBridge, or WKWebView) vs plain desktop browser.
+        // main.js uses it to pick half-float HDR targets only where the GPU can render to them.
+        this.isNativeApp = !!(window.webkit?.messageHandlers?.iosHandler || window.AndroidBridge);
         this.pixelRatio = Math.min(window.devicePixelRatio, this.maxPixelRatio);
 
         this.initScene();

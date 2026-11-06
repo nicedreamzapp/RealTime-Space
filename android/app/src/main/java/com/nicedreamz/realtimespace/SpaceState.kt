@@ -47,4 +47,6 @@ class SpaceState {
     var lutEnabled by mutableStateOf(false)
     /** Constant ambient drone; off by default (persisted by the web engine and MainActivity prefs). */
     var ambientHum by mutableStateOf(false)
+    /** Flight haptics (speed rumble, gravity swell, warp ticks) and button taps; on by default like iOS. */
+    var haptics by mutableStateOf(true)
 }
