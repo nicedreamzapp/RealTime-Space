@@ -500,11 +500,14 @@ class Planet {
                     float arcs = k1 * exp(-a1 * a1) + 0.6 * k2 * exp(-a2 * a2) + 0.4 * k3 * exp(-a3 * a3);
                     // diffuse aurora band underneath the arcs, itself patchy
                     float band = (s + radians(0.8)) / radians(2.8);
-                    float diffuse = 0.10 * exp(-band * band) * (0.3 + nB.b);
+                    float diffuse = 0.03 * exp(-band * band) * (0.3 + nB.b);
                     // brightness around the oval: strongest in the midnight sector,
                     // weak on the dayside (cusp), patchy everywhere
                     float sector = smoothstep(-0.85, 0.7, cphi);
-                    float along = sector * sector * (0.25 + 1.1 * nA.a);
+                    // ISS passes show the oval as bright knots and folds with near-dark gaps
+                    // between them, not a uniform ring: square the patchiness.
+                    float pch = smoothstep(0.2, 0.85, nA.a) * (0.5 + 0.8 * nB.a);
+                    float along = sector * sector * (0.08 + 1.4 * pch * pch);
                     // vertical rays: fine structure along the arc, constant with height
                     vec4 nR = NZ(cs * 140.0 + vec2(seed, t * 0.6));
                     float rayN = nR.r;
@@ -529,7 +532,7 @@ class Planet {
                     float pink = exp(-pz * pz);
                     float curtain = arcs * rays * along;
                     vec3 e = vec3(0.12, 1.0, 0.32) * (green * (curtain + diffuse))
-                           + vec3(1.0, 0.08, 0.12) * (red * (0.035 * curtain + diffuse * 0.25 + 0.012 * arcs))
+                           + vec3(1.0, 0.08, 0.12) * (red * (0.02 * curtain + diffuse * 0.2 + 0.004 * arcs * along))
                            + vec3(0.9, 0.25, 0.65) * (pink * curtain * 0.35);
                     return e * nightFade;
                 }
@@ -566,7 +569,10 @@ class Planet {
                         if (nightFade <= 0.0) continue;
                         sum += auroraEmission(uToFixed * p, Lf, nightFade) * ds;
                     }
-                    vec3 col = sum * 0.012 * uIntensity;
+                    // Scaled to the ISS night footage (Gerst 2017, ISS 4K aurora): seen edge-on the
+                    // oval is a thin bright ribbon at the limb, the same order of brightness
+                    // as the city lights below it, not a band that floods the frame.
+                    vec3 col = sum * 0.006 * uIntensity;
                     gl_FragColor = vec4(col, 1.0);
                 }
             `,
@@ -1395,6 +1401,12 @@ class Planet {
                     cityBlur *= smoothstep(0.003, 0.03, cityBlur.r);
                     vec3 night = (nightColor * (1.0 - 0.85 * cov) + cityBlur * cov * 0.25) * 1.6 * lightsOn;
                     surface += night;
+                    // Night-side ground and cloud tops lit by airglow, starlight and (when up)
+                    // the Moon: ~1e-6 of daylight, but the ISS night timelapses are long
+                    // high-ISO exposures where clouds and coastlines still read faintly
+                    // under the city lights. This is that exposure's floor, not a light.
+                    vec3 nightFloor = mix(dayColor * 0.6, vec3(0.85), cov) * vec3(0.008, 0.010, 0.014);
+                    surface += nightFloor * lightsOn;
 
                     // --- Aerial perspective: camera -> surface through the atmosphere
                     vec3 ro = (cameraPosition - uCenter) * uKmPerUnit;

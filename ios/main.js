@@ -247,7 +247,9 @@ function initGalaxy() {
                     // the look the strength/radius were tuned to. Half-float keeps the halo smooth
                     // but would let a single huge texel (a galaxy core where thousands of additive
                     // stars stack, a NaN/Inf from a degenerate shader) bloom into a big square
-                    // plateau. Cap the bloom source at 2x white and drop NaN/Inf texels.
+                    // plateau. Cap the bloom source at white and drop NaN/Inf texels (a 2x cap let
+                    // the truncated tails of the widest blur mip show as grey squares around
+                    // bright galaxy cores).
                     try {
                         const m = bloomPass.materialHighPassFilter;
                         const src = 'gl_FragColor = mix( outputColor, texel, alpha );';
@@ -256,7 +258,7 @@ function initGalaxy() {
                                 'vec4 bp = mix( outputColor, texel, alpha );' +
                                 ' float bl = bp.r + bp.g + bp.b;' +
                                 ' if (!(bl == bl) || bl > 1.0e4) bp = vec4(0.0);' +
-                                ' gl_FragColor = vec4(min(bp.rgb, vec3(2.0)), bp.a);');
+                                ' gl_FragColor = vec4(min(bp.rgb, vec3(1.0)), bp.a);');
                             m.needsUpdate = true;
                         }
                     } catch (e) { console.warn("bloom bright-pass cap skipped:", e); }
@@ -284,7 +286,9 @@ function initGalaxy() {
                             uIntensity: { value: 0.0 },
                             uDecay: { value: 0.94 },
                             uDensity: { value: 0.9 },
-                            uWeight: { value: 0.065 }
+                            uWeight: { value: 0.065 },
+                            uSrcR: { value: 0.05 },     // Sun's apparent radius (UV of height)
+                            uAspect: { value: 1.0 }
                         },
                         vertexShader: `
                             varying vec2 vUv;
@@ -300,6 +304,8 @@ function initGalaxy() {
                             uniform float uDecay;
                             uniform float uDensity;
                             uniform float uWeight;
+                            uniform float uSrcR;
+                            uniform float uAspect;
                             varying vec2 vUv;
 
                             void main() {
@@ -320,6 +326,11 @@ function initGalaxy() {
                                         // comparison, so this skips NaN and Inf alike.
                                         if (!(lum >= 0.0 && lum < 64.0)) { illum *= uDecay; continue; }
                                         s *= smoothstep(0.8, 1.25, lum); // only near-blown pixels (the sun core) shaft — star sprites/labels no longer smear into white rays
+                                        // Shafts are sunlight: only texels on/around the Sun's disk feed them.
+                                        // Blown galaxy cores and stars elsewhere used to smear into dotted
+                                        // radial streaks aimed at an off-screen Sun.
+                                        vec2 dq = (coord - uLightPos) * vec2(uAspect, 1.0);
+                                        s *= 1.0 - smoothstep(uSrcR * 1.15, uSrcR * 1.6 + 0.01, length(dq));
                                         rays += s * illum * uWeight;
                                         illum *= uDecay;
                                     }
@@ -722,6 +733,15 @@ function createUpdateSystems() {
                 }
             }
         },
+        // Clean frame (?clean=1): re-sweep about once a second for labels created later
+        {
+            name: "CleanFrame",
+            update: (dt) => {
+                if (!cleanFrame) return;
+                cleanSweepT += dt;
+                if (cleanSweepT > 1) { cleanSweepT = 0; applyCleanFrame(); }
+            }
+        },
         // Auto-exposure system update
         {
             name: "AutoExposure",
@@ -763,6 +783,12 @@ function createUpdateSystems() {
                 // solar filter (Star.js) dims the shafts further as it darkens.
                 const lens = 1 - 0.8 * (window.__sunFilter || 0);
                 pass.uniforms.uIntensity.value = 0.35 * facing * facing * screenFade * behind * lens;
+                // apparent solar radius in UV-of-height units, for the source mask
+                const sd = Math.max(rc.camera.position.length(), 1e-3);
+                const sunR = (objects.find(o => o.type === 'star') || {}).radius || 15;
+                const halfFov = THREE.MathUtils.degToRad(rc.camera.fov || 60) * 0.5;
+                pass.uniforms.uSrcR.value = Math.tan(Math.asin(Math.min(1, sunR / sd))) / Math.tan(halfFov) * 0.5;
+                pass.uniforms.uAspect.value = rc.camera.aspect || 1;
             }
         },
         // Procedural soundscape follows flight state and proximity to bodies
@@ -2252,6 +2278,34 @@ function createPlanetHighlights() {
     });
 }
 
+// Clean frame: hides every annotation drawn into the 3D scene (name labels, orbit /
+// constellation / trail lines, the faint label hint rings) so a capture shows only the sky.
+// Debug and trailer use only: URL ?clean=1 or galaxyExplorer.setCleanFrame(true); nothing in
+// the app UI reaches it. Annotations move to layer 31, which the camera never renders, so
+// modules that toggle .visible on their labels every frame can't bring them back.
+let cleanFrame = (() => { try { return new URLSearchParams(location.search).get('clean') === '1'; } catch (e) { return false; } })();
+let cleanSweepT = 1;   // first sweep on the first frame
+const CLEAN_LAYER = 31;
+function _isAnnotation(o) {
+    if (o.isLine) return true;   // Line, LineSegments, LineLoop: all overlays in this app
+    const m = o.material;
+    if (o.isSprite && m && m.map && m.map.isCanvasTexture && m.blending === THREE.NormalBlending) return true;
+    return false;
+}
+function applyCleanFrame() {
+    if (!rendererCore || !rendererCore.scene) return;
+    const hide = new Set(planetHighlights.map(ph => ph.glow).filter(Boolean));
+    rendererCore.scene.traverse(o => {
+        if (!(hide.has(o) || _isAnnotation(o))) return;
+        if (cleanFrame) { o.layers.set(CLEAN_LAYER); o.userData.__clean = true; }
+        else if (o.userData.__clean) { o.layers.set(0); delete o.userData.__clean; }
+    });
+}
+function setCleanFrame(on) {
+    cleanFrame = !!on;
+    applyCleanFrame();
+}
+
 function setPlanetLabelsVisible(visible) {
     showPlanetLabels = visible;
     planetHighlights.forEach(ph => {
@@ -2368,6 +2422,8 @@ function exposeFlyToAPI() {
     window.galaxyExplorer.setPlanetLabelsVisible = function(visible) {
         setPlanetLabelsVisible(visible);
     };
+
+    window.galaxyExplorer.setCleanFrame = setCleanFrame;
 
     window.galaxyExplorer.setCinematicMode = setCinematicMode;
     window.galaxyExplorer.getCinematicMode = getCinematicMode;
