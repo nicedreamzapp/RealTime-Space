@@ -471,10 +471,11 @@ class CameraOptics {
                 // Webb's spikes are hairlines (~1-2 px core in the First Deep Field / Pillars
                 // NIRCam frames) even on the brightest stars; only the length grows with
                 // flux. The old disk-proportional width (6% of the disk) read as thick wedges.
-                // Capped at ~1.4 px of a 720-line frame: a disk that fills the screen made the
-                // old width (1.5% of the disk radius) into 10+ px bands on a phone.
-                const px720 = dbs.y / 720;
-                u.uSpikeW.value = Math.min(Math.max(1.1 * px720, rUV * dbs.y * 0.015), 1.4 * px720);
+                // Capped at ~1.2 CSS px: a disk that fills the screen made the old width
+                // (1.5% of the disk radius, floor scaled per 720 buffer lines) into 10+ px
+                // bands on a phone's 2000+ line buffer.
+                const cssPx = dbs.y / Math.max(1, window.innerHeight);
+                u.uSpikeW.value = Math.max(1.0, Math.min(Math.max(1.1 * dbs.y / 720, rUV * dbs.y * 0.015), 1.2 * cssPx));
                 // the auto-lens solar filter (Star.js) is an ND filter in front of the
                 // optics: everything the Sun puts through the camera dims with it
                 const filt = this.sun._filter || 0;

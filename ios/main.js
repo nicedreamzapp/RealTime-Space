@@ -724,6 +724,16 @@ function _labelExclusions() {
         if (r.width < 2 || r.height < 2) return;
         add(r.left, r.top, r.width, r.height);
     });
+    // Landscape helm: the cockpit art (codex/Cockpit.js, drawn 106% at -3%) is opaque outside
+    // its windshield, so a label must stay inside the main windshield opening, measured from
+    // the PNG's alpha: x 0.254-0.739, y 0.249-0.700 of the art, centre console from y 0.62.
+    _lbl.win = null;
+    const art = document.getElementById('cockpit-art');
+    if (art && art.style.display !== 'none') {
+        const ax = f => -0.03 * W + f * 1.06 * W, ay = f => -0.03 * H + f * 1.06 * H;
+        _lbl.win = { l: ax(0.254), r: ax(0.739), t: ay(0.249), b: ay(0.700) };
+        add(ax(0.455), ay(0.615), ax(0.545) - ax(0.455), ay(0.700) - ay(0.615), 4);
+    }
     _lbl.rects = rects;
     return rects;
 }
@@ -753,18 +763,22 @@ function layoutPlanetLabel(ph, camera, opacity) {
     const ndc = _lbl.s.copy(C).project(camera);
     const cx = (ndc.x * 0.5 + 0.5) * W, cy = (1 - (ndc.y * 0.5 + 0.5)) * H;
     const rs = Math.tan(Math.asin(Math.min(1, R / d))) / tanH * 0.5 * H;   // limb radius, px
-    // planet entirely off screen: its name must not be dragged in to the screen edge
-    if (cx + rs < 0 || cx - rs > W || cy + rs < 0 || cy - rs > H) { label.material.opacity = 0; ph._box = null; return; }
+    // planet entirely off screen (or behind the cockpit frame): its name must not be
+    // dragged in to the edge
+    const rects = _labelExclusions(), win = _lbl.win;
+    const vl = win ? win.l : 0, vr = win ? win.r : W, vt = win ? win.t : 0, vb = win ? win.b : H;
+    if (cx + rs < vl || cx - rs > vr || cy + rs < vt || cy - rs > vb) { label.material.opacity = 0; ph._box = null; return; }
 
     // Natural size = the old world-space size; capped so a near planet's name stays a title,
     // not a wall of text (the canvas text is half the sprite's height).
-    const S = _lbl.safe, rects = _labelExclusions();
+    const S = _lbl.safe;
     const natural = R * pxPerWorld;                          // sprite height in px (scale.y = R)
     const cap = Math.max(26, Math.min(72, Math.min(W, H) * 0.14));
     let h = Math.min(natural, cap);
     const minH = Math.min(natural, 22);
 
-    const top = S.t + 4, bottom = H - S.b - 4, left = S.l + 4, right = W - S.r - 4;
+    let top = S.t + 4, bottom = H - S.b - 4, left = S.l + 4, right = W - S.r - 4;
+    if (win) { top = Math.max(top, win.t + 4); bottom = Math.min(bottom, win.b - 4); left = Math.max(left, win.l + 4); right = Math.min(right, win.r - 4); }
     const textBox = (x, y, hh) => {                         // the glyphs' box, not the sprite's
         const tw = 4 * hh * ph.textFrac, th = hh * 0.62;
         return { x0: x - tw / 2, y0: y - th / 2, x1: x + tw / 2, y1: y + th / 2, tw: tw, th: th };
