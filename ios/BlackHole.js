@@ -23,7 +23,7 @@
 // the full redshift factor g = sqrt(1 - rs/r) / (gamma (1 - beta cos theta)) with the
 // Schwarzschild circular-orbit speed beta = sqrt(rs / (2 (r - rs))) (0.5c at the ISCO), so the
 // approaching side is brighter (bolometric I ~ g^4) and bluer (T_obs = g T), the receding side
-// dim and red. A real disk around Sgr A* peaks in UV/X-ray; the peak is mapped to 1700 K so
+// dim and red. A real disk around Sgr A* peaks in UV/X-ray; the peak is mapped to 1900 K so
 // the physical shift ratio g lands in visible colours (the same choice NASA Goddard's Schnittman
 // 2019 visualization makes: its orange is a palette, the brightness asymmetry is physics).
 //
@@ -46,32 +46,35 @@ class BlackHole {
 
         // Geometry in units of rs.
         this.diskInner = 3.0;   // ISCO of a Schwarzschild hole = 6GM/c^2 = 3 rs
-        this.diskOuter = 20.0;
+        // Outer edge 12 rs (was 20): matched to Schnittman 2019 (NASA SVS 13326), where the
+        // visible disk spans ~4.5 shadow diameters; at 20 rs the dim outer annulus dominated
+        // the frame and the shadow read too small.
+        this.diskOuter = 12.0;
         this.traceRadius = 22.0; // full geodesic integration inside this sphere, analytic outside
         // Inclination from the Sun's side (degrees from the disk axis). 80 deg gives the
         // Interstellar / Luminet view on arrival. Sgr A*'s true orientation is uncertain
         // (EHT 2022 prefers a more face-on view); the camera can orbit to any angle.
-        this.viewInclination = config.inclination || 80;
-        // Fly-to arrival distance (world units): 40 rs frames the shadow + whole disk.
-        this.flyDistance = this.radius * 40;
+        // 76 deg (was 80): Schnittman's frame; the far side of the disk is lensed into a
+        // tall bright arch over the shadow and the near side still crosses in front of it.
+        this.viewInclination = config.inclination || 76;
+        // Fly-to arrival distance (world units): 30 rs frames shadow + whole 12 rs disk.
+        this.flyDistance = this.radius * 30;
 
         this.time = 0;
         this.tier = BlackHole.detectTier();
         this._oriented = false;
+        this._onRtq = (e) => this.setQuality(e.detail.tier);
+        window.addEventListener('rtquality', this._onRtq);
         this.createMesh();
 
         console.log(`🕳️ Created BLACK HOLE: ${this.name} (geodesic ray-traced lensing, tier ${this.tier})`);
     }
 
     // ---------------------------------------------------------------- quality tiers
+    // Tier comes from the global RTQuality (single source of truth; ?rtq= / ?tier= override).
     static detectTier() {
-        let t = null;
-        try { t = window.RS_QUALITY_TIER || localStorage.getItem('rsQualityTier'); } catch (e) {}
-        if (t === 'high' || t === 'medium' || t === 'low') return t;
-        const native = !!(window.webkit?.messageHandlers?.iosHandler || window.AndroidBridge);
-        if (!native) return 'high';
-        // Phones: medium by default; small/older screens drop to low.
-        return (Math.min(screen.width, screen.height) < 390) ? 'low' : 'medium';
+        const t = window.RTQuality && window.RTQuality.tier;
+        return (t === 'high' || t === 'medium' || t === 'low') ? t : 'medium';
     }
 
     static tierDefines(tier) {
@@ -162,7 +165,9 @@ class BlackHole {
         }
 
         // Emission + opacity where a ray crosses the disk plane (local y = 0).
-        vec4 bhDiskSample(vec3 xc, vec3 dir) {
+        // order = how many times this photon has already crossed the disk plane (0 = direct
+        // image, 1+ = lensed images: the arch's under-side, the photon ring).
+        vec4 bhDiskSample(vec3 xc, vec3 dir, float order) {
             float r = length(xc.xz);
             if (uDisk < 0.5 || r < uIn || r > uOut) return vec4(0.0);
             float phi = atan(xc.z, xc.x);
@@ -175,8 +180,14 @@ class BlackHole {
             vec3 vel = uSpin * normalize(vec3(-xc.z, 0.0, xc.x));
             vec3 n = -dir;                                    // photon heads to the camera
             float g = sqrt(1.0 - 1.0 / r) / (gam * (1.0 - beta * dot(vel, n)));
-            float dens = bhDensity(r, phi);
-            float edge = smoothstep(uOut, uOut * 0.55, r) * smoothstep(uIn, uIn * 1.04, r);
+            // Higher-order images are squeezed ~e^(pi) per half orbit, so one pixel of the
+            // photon ring covers a long stretch of disk: show the turbulence's mean there
+            // (a box-filter of the noise) instead of point-sampling it into a dotted ring.
+            float dens = order < 0.5 ? bhDensity(r, phi) : mix(bhDensity(r, phi), 0.42, min(order, 1.0) * 0.9);
+            // Outer fade over most of the disk (not just its rim): in Schnittman's frames the
+            // outer disk dims and reddens steadily, so the bright inner disk and its lensed
+            // arch carry the image instead of a uniformly lit plate with a hard edge.
+            float edge = smoothstep(uOut, uOut * 0.3, r) * smoothstep(uIn, uIn * 1.04, r);
             // Slab optical depth grows along grazing paths (1 / |cos|).
             float tau = (0.12 + 2.2 * dens) * edge / max(abs(dir.y), 0.03);
             float alpha = 1.0 - exp(-tau);
@@ -193,6 +204,7 @@ class BlackHole {
             float A = 0.0;
             esc = 0.0;
             dirOut = v;
+            float order = 0.0;
             vec3 L = cross(x, v);
             float h2 = dot(L, L);
             for (int i = 0; i < BH_STEPS; i++) {
@@ -206,9 +218,10 @@ class BlackHole {
                 v += x * (-1.5 * h2 / (r2 * r2 * r) * 0.5 * dt);
                 if (xp.y * x.y < 0.0) {
                     vec3 xc = mix(xp, x, xp.y / (xp.y - x.y));
-                    vec4 e = bhDiskSample(xc, normalize(v));
+                    vec4 e = bhDiskSample(xc, normalize(v), order);
                     col += (1.0 - A) * e.rgb;
                     A += (1.0 - A) * e.a;
+                    order += 1.0;
                     if (A > 0.995) break;
                 }
                 if (r < 1.0) { A = 1.0; break; }                        // event horizon
@@ -264,8 +277,8 @@ class BlackHole {
             uOut: { value: this.diskOuter },
             uRb: { value: this.traceRadius },
             uFmax: { value: fmax },
-            uTpeak: { value: 1700 },
-            uGain: { value: 1.5 },
+            uTpeak: { value: 1900 },
+            uGain: { value: 0.7 },
             uSpin: { value: 1 },
             uDisk: { value: this.accretionDiskEnabled ? 1 : 0 }
         };
@@ -357,8 +370,8 @@ class BlackHole {
                 uPxPerRad: { value: 800 },
                 uHalo0: { value: 60 },
                 uHalo1: { value: 220 },
-                uTime: { value: 0 }, uIn: { value: 3 }, uOut: { value: 20 }, uRb: { value: 22 },
-                uFmax: { value: 1 }, uTpeak: { value: 1700 }, uGain: { value: 1.5 },
+                uTime: { value: 0 }, uIn: { value: 3 }, uOut: { value: 12 }, uRb: { value: 22 },
+                uFmax: { value: 1 }, uTpeak: { value: 1900 }, uGain: { value: 0.7 },
                 uSpin: { value: 1 }, uDisk: { value: 1 }
             },
             defines: BlackHole.tierDefines(BlackHole.detectTier()),
@@ -514,19 +527,10 @@ class BlackHole {
             on = off < halfDiag + halo;
         }
         pass.enabled = on;
-
-        // Auto step-down: if frames run long (> 22 ms avg, under ~45 fps) while the hole is
-        // being traced, drop one tier. Never steps back up, so it can't oscillate.
-        this._perfT = (this._perfT || 0) + deltaTime;
-        if (on && this._perfT > 3 && this.tier !== 'low') {
-            this._perfT = 0;
-            const ul = (typeof loop !== 'undefined' && loop && loop.performanceStats) ? loop : null;
-            const avg = ul ? ul.performanceStats.averageDelta : 0;
-            if (avg > 22) this.setQuality(this.tier === 'high' ? 'medium' : 'low');
-        }
     }
 
     dispose() {
+        if (this._onRtq) window.removeEventListener('rtquality', this._onRtq);
         this.mesh.traverse(child => {
             if (child.geometry) child.geometry.dispose();
             if (child.material) child.material.dispose();

@@ -137,8 +137,21 @@ class OrbitalMechanics {
         // fixed plane. ZYX applies spin about the body axis first, then the tilt,
         // which keeps the ring plane rock-steady.
         if (obj.axialTilt && !obj._tiltApplied) {
-            obj.mesh.rotation.order = 'ZYX';
-            obj.mesh.rotation.z = obj.axialTilt;
+            if (obj.poleTowardEclipticLon90) {
+                // Earth: the north celestial pole sits at ecliptic longitude 90 deg, latitude
+                // 90 - 23.44 deg. Ephemeris.helioToScene maps ecliptic (x, y, z) to scene
+                // (x, z, -y), so the pole is scene (0, cos e, -sin e): a tilt of -e about X.
+                // With order XYZ the spin (Y) is applied first and the X tilt after it, so
+                // the axis stays fixed in space. Result: June solstice (Earth at helio lon
+                // 270) north pole toward the Sun, December (lon 90) away, as on the real date.
+                // (The old +Z tilt leaned the pole toward ecliptic lon 180, a quarter year off:
+                // in November the north pole leaned sideways instead of away from the Sun.)
+                obj.mesh.rotation.order = 'XYZ';
+                obj.mesh.rotation.x = -obj.axialTilt;
+            } else {
+                obj.mesh.rotation.order = 'ZYX';
+                obj.mesh.rotation.z = obj.axialTilt;
+            }
             obj._tiltApplied = true;
         }
     }

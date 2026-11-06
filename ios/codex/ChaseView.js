@@ -30,8 +30,8 @@
       // outer-surface Sun highlight, a thin-film layer gives the faint gold/violet sheen a
       // sputtered sun-control coating shows at grazing angles, and the base stays dark so
       // the Fresnel edge carries the read. If the tier is already known to be low
-      // when the ship is built (?tier=low / window.__qualityTier), keep the cheap standard material.
-      const lowTier = (window.Visor && window.Visor.tier === 'low') || window.__qualityTier === 'low';
+      // when the ship is built (RTQuality tier), keep the cheap standard material.
+      const lowTier = !!(window.RTQuality && window.RTQuality.tier === 'low');
       let glassMat;
       if (!lowTier && THREE.MeshPhysicalMaterial) {
         glassMat = new THREE.MeshPhysicalMaterial({

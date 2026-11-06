@@ -191,17 +191,11 @@ const EARTH_ATMO_GLSL = `
     }
 `;
 
-// Rendering quality tier for the expensive Earth effects. 'high' on desktop
-// browsers, 'medium' in the native app (phones), 'low' for small/low-DPR phones.
-// window.__RS_QUALITY = 'high' | 'medium' | 'low' overrides (for testing).
+// Rendering quality tier for the expensive Earth effects: the global RTQuality tier
+// (RTQuality.js is the single source of truth, ?rtq= / ?tier= overrides it for testing).
 function planetQualityTier() {
-    const forced = (typeof window !== 'undefined') && window.__RS_QUALITY;
-    if (forced === 'high' || forced === 'medium' || forced === 'low') return forced;
-    const native = !!(window.webkit?.messageHandlers?.iosHandler || window.AndroidBridge);
-    if (!native) return 'high';
-    const longSide = Math.max(window.screen?.width || 0, window.screen?.height || 0);
-    if ((window.devicePixelRatio || 1) < 3 || longSide < 800) return 'low';
-    return 'medium';
+    const t = window.RTQuality && window.RTQuality.tier;
+    return (t === 'high' || t === 'medium' || t === 'low') ? t : 'medium';
 }
 const EARTH_QUALITY = {
     //          sky steps, surface aerial-perspective steps, aurora steps
@@ -259,6 +253,9 @@ class Planet {
         // (This random fallback + no data from planetData was why Saturn's ring
         // angle changed every launch.)
         this.axialTilt = config.axialTilt !== undefined ? config.axialTilt : Math.random() * 0.5; // Radians
+        // True pole direction for bodies placed by the real ephemeris (Earth): the north pole
+        // leans toward ecliptic longitude 90 deg (J2000 NCP = lon 90, lat 66.56).
+        this.poleTowardEclipticLon90 = !!config.poleTowardEclipticLon90;
         this.magneticFieldStrength = config.magneticFieldStrength || (this.hasAurora ? 0.5 + Math.random() * 0.5 : 0);
         this.texturePack = config.texturePack || null;
 
@@ -362,6 +359,29 @@ class Planet {
         if (this.hasCities) {
             this._createCityLights();
         }
+
+        // Follow the global quality tier live (RTQuality 'rtquality' event).
+        if (this.texturePack === "earth" && typeof window !== 'undefined' && !this._onRtq) {
+            this._onRtq = () => this._applyEarthQuality();
+            window.addEventListener('rtquality', this._onRtq);
+        }
+    }
+
+    // Re-set the ray-march step counts for the current tier (one recompile per change).
+    _applyEarthQuality() {
+        const q = EARTH_QUALITY[planetQualityTier()];
+        const U = this.uniforms || {};
+        this.mesh.traverse(o => {
+            const m = o.material;
+            if (!m || !m.defines) return;
+            let n = null, k = null;
+            if ('AURORA_STEPS' in m.defines) { k = 'AURORA_STEPS'; n = q.aurora; }
+            else if ('ATMO_STEPS' in m.defines) {
+                k = 'ATMO_STEPS';
+                n = (m.uniforms === U.atmosphere) ? q.sky : (m.uniforms === U.earth ? q.ap : null);
+            }
+            if (k && n != null && m.defines[k] !== n) { m.defines[k] = n; m.needsUpdate = true; }
+        });
     }
 
     // AURORA (Earth only) - volumetric emission ray-marched through a 90-400 km shell.
@@ -396,7 +416,7 @@ class Planet {
         const geo = new THREE.SphereGeometry(shellRadius * 1.004, 96, 48);
         const mat = new THREE.ShaderMaterial({
             uniforms: this.uniforms.aurora,
-            defines: { AURORA_STEPS: q.aurora },
+            defines: { AURORA_STEPS: q.aurora },   // re-set on tier change (_applyEarthQuality)
             vertexShader: `
                 #include <common>
                 #include <logdepthbuf_pars_vertex>
@@ -426,6 +446,7 @@ class Planet {
 
                 uniform sampler2D uNoise;
                 vec4 NZ(vec2 p) { return texture2D(uNoise, p * (1.0 / 256.0)); }
+                float gFine = 0.0;   // fine-ray weight, set per pixel from camera altitude
                 vec2 raySphere(vec3 ro, vec3 rd, float r) {
                     float b = dot(ro, rd);
                     float c = dot(ro, ro) - r * r;
@@ -489,6 +510,15 @@ class Planet {
                     float rayN = nR.r;
                     float rays = 0.25 + 1.1 * rayN * rayN
                                * (0.6 + 0.4 * NZ(cs * 420.0 + vec2(t * 1.3, seed)).g);
+                #if AURORA_STEPS > 12
+                    // Finer rays (ISS 4K aurora frames: individual rays a few km wide, many
+                    // per 100 km of arc, flickering in < 1 s). Only when the camera is low
+                    // enough to resolve them; at a distance they would just shimmer.
+                    if (gFine > 0.0) {
+                        float f = NZ(cs * 1100.0 + vec2(seed + 7.0, t * 2.2)).a;
+                        rays *= mix(1.0, 0.45 + 1.6 * f * f * f, gFine);
+                    }
+                #endif
                     // lower edge altitude varies per ray (precipitating electron energy)
                     float hb = 103.0 + 14.0 * mix(nR.b, nC.g, 0.5);
                     float dh = h - hb;
@@ -521,6 +551,7 @@ class Planet {
                     float near = max(max(abs(dot(pa, uMagAxis)), abs(dot(pb, uMagAxis))), abs(dot(pm, uMagAxis)));
                     if (near < 0.55) discard;
                     vec3 Lf = uToFixed * L;
+                    gFine = 1.0 - smoothstep(1500.0, 6000.0, length(ro) - RG);
                     float ds = (t1 - t0) / float(AURORA_STEPS);
                     float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
                     vec3 sum = vec3(0.0);
@@ -1447,13 +1478,12 @@ class Planet {
             saturn:  'textures/saturn/saturn_hi.jpg'
         };
         // 8192x4096 Mars (Solar System Scope, CC BY 4.0): ~180 MB of GPU memory with
-        // mips, so only on the HIGH render tier (RTQuality) or ?rtq=high.
-        let tier = 'medium';
-        if (window.RTQuality && window.RTQuality.tier) tier = window.RTQuality.tier;
-        else { try { tier = new URLSearchParams(location.search).get('rtq') || tier; } catch (e) {} }
-        if (tier === 'high') HI.mars = 'textures/mars/mars_8k.jpg';
+        // mips, so only on the HIGH render tier (RTQuality).
+        if (planetQualityTier() === 'high') HI.mars = 'textures/mars/mars_8k.jpg';
         const hiPath = HI[this.texturePack];
-        if (!hiPath && high) return;
+        // No hi map for this tier (e.g. Mars after RTQuality drops below HIGH): treat as far,
+        // so a resident 8K gets freed on the next LOD tick instead of staying in GPU memory.
+        if (!hiPath && high) high = false;
         if (!hiPath && this._texDetail !== 'high') return; // nothing loaded to free
         this._texWantsHigh = high;
         if (high) {

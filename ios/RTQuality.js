@@ -19,7 +19,8 @@
 //     (hw.machine identifier + physical memory) before any script runs. iPhone 12 family
 //     (iPhone13,x) and older, or under 7 GB RAM, start at medium; A12 and older start at low.
 //     In a plain browser navigator.deviceMemory / hardwareConcurrency are used instead.
-//     ?rtq=low|medium|high in the URL forces and locks a tier (testing).
+//     ?rtq=low|medium|high (or ?tier=) in the URL forces and locks a tier (testing). This is
+//     the ONLY tier source: Earth, black hole, camera optics, visor and 8K textures all read it.
 //  2. Auto governor: frame times are averaged over 2 s windows. Drop one tier after 2
 //     consecutive windows below 45 fps; climb one tier only after 5 consecutive windows at
 //     >= 57 fps, never sooner than 8 s after the last change, and a tier we were forced out
@@ -46,7 +47,8 @@
 
     function deviceStartTier() {
         try {
-            const q = new URLSearchParams(location.search).get('rtq');
+            const sp = new URLSearchParams(location.search);
+            const q = sp.get('rtq') || sp.get('tier');   // debug override, the only one in the app
             if (q && PRESETS[q]) return { tier: q, lock: true, why: 'url' };
         } catch (_) {}
 

@@ -21,8 +21,8 @@
 //     planet's shadow. Frost grows slowly and sublimes faster once sunlight returns.
 //
 // Tiers: high = full shader; medium = smaller textures, no chromatic rim / fewer frost
-// taps; low = pass disabled (zero cost). Tier comes from window.__qualityTier or ?tier=
-// if set, otherwise a 3-second fps probe after attach picks it.
+// taps; low = pass disabled (zero cost). Tier comes from window.RTQuality (?rtq= / ?tier= to
+// force) and follows its 'rtquality' event; there is no separate probe here.
 //
 // API: window.galaxyExplorer.setVisorGlass(bool), setVisorGold(bool).
 // Active in HELM and VISOR views, off in CHASE (camera is outside the ship).
@@ -293,13 +293,21 @@
 
   const Visor = {
     pass: null, rc: null, tier: null, on: true, gold: 0, frost: 0,
-    _sunPow: 0, _lit: 1, _frame: 0, _probe: null,
+    _sunPow: 0, _lit: 1, _frame: 0,
     light: { sun: 0, lit: 1, facing: 0 },   // read by Cockpit.js to light the art
 
+    // Tier = the global RTQuality tier (single source of truth; ?rtq= / ?tier= override there).
     _pickTier() {
-      const q = new URLSearchParams(location.search).get('tier');
-      const t = q || window.__qualityTier;
-      return (t === 'high' || t === 'medium' || t === 'low') ? t : null;
+      const t = window.RTQuality && window.RTQuality.tier;
+      return (t === 'high' || t === 'medium' || t === 'low') ? t : 'medium';
+    },
+
+    _retier() {
+      const t = this._pickTier();
+      if (t === this.tier) return;
+      this.tier = t;
+      if (t !== 'low' && this.composer) this._build(this.composer);
+      this._apply();
     },
 
     attach(composer, rc) {
@@ -307,12 +315,11 @@
       this.rc = rc;
       try { const v = localStorage.getItem(STORE_ON); if (v !== null) this.on = v === 'true'; } catch (e) {}
       try { this.gold = localStorage.getItem(STORE_GOLD) === 'true' ? 1 : 0; } catch (e) {}
-      const fixed = this._pickTier();
-      this.tier = fixed || 'high';          // provisional; the probe can lower it
+      this.tier = this._pickTier();
       this._build(composer);
-      if (!fixed) this._probe = { t0: performance.now(), frames: 0 };
+      window.addEventListener('rtquality', () => this._retier());
       this._installApi();
-      console.log('🪖 Visor glass attached (tier ' + this.tier + (fixed ? ', fixed' : ', probing') + ')');
+      console.log('🪖 Visor glass attached (tier ' + this.tier + ')');
     },
 
     _build(composer) {
@@ -335,9 +342,13 @@
         vertexShader: VERT, fragmentShader: FRAG
       };
       const pass = new T.ShaderPass(shader);
-      // insert right before the final linear->sRGB gamma pass (works in linear light)
+      // The visor is glass in front of the camera lens: insert it after the light shafts and
+      // BEFORE the camera's lens pass (CA/grain/flare happen inside the camera, behind the
+      // visor), and before the film grade + gamma. Falls back to just before gamma.
       const ps = composer.passes;
-      let idx = ps.findIndex(p => p && p.material && /LinearTosRGB/.test(p.material.fragmentShader || ''));
+      const camLens = window.cameraFX && window.cameraFX.lensPass;
+      let idx = camLens ? ps.indexOf(camLens) : -1;
+      if (idx < 0) idx = ps.findIndex(p => p && p.material && /LinearTosRGB/.test(p.material.fragmentShader || ''));
       if (idx < 0) idx = ps.length;
       if (this.pass) { const old = ps.indexOf(this.pass); if (old >= 0) { ps.splice(old, 1); if (old < idx) idx--; } }
       composer.insertPass(pass, idx);
@@ -394,18 +405,6 @@
       if (!cam) return;
       dt = Math.min(Math.max(dt || 0.016, 0), 0.1);
 
-      // fps probe: 3 s of real frames picks the tier once (only if nobody fixed it)
-      if (this._probe) {
-        const p = this._probe; p.frames++;
-        const el = performance.now() - p.t0;
-        if (el > 3000 && p.frames > 10) {
-          const fps = p.frames * 1000 / el;
-          const t = fps < 34 ? 'low' : (fps < 50 ? 'medium' : 'high');
-          this._probe = null;
-          if (t !== this.tier) { this.tier = t; if (t !== 'low') this._build(this.composer); }
-          console.log('🪖 Visor tier ' + t + ' (probe ' + fps.toFixed(1) + ' fps)');
-        }
-      }
       this._apply();
       if (!this.pass.enabled) return;
       const u = this.pass.uniforms;

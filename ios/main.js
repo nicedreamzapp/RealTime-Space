@@ -178,13 +178,27 @@ function initGalaxy() {
                 const renderPass = new RenderPass(rendererCore.scene, rendererCore.camera);
                 composer.addPass(renderPass);
 
+                // POST CHAIN ORDER (light path from the scene to the screen):
+                //  1. scene render (linear HDR radiance)
+                //  2. auto-exposure: a scalar gain on radiance, metered on the unbent frame. It
+                //     commutes with lensing (a pure remap), so putting it first only changes what
+                //     the meter sees, and it lets bloom see the stopped-down signal like a sensor.
+                //  3. black hole lensing: bends the light BEFORE it reaches any optics, so bloom,
+                //     shafts and flare are built from the lensed image (the photon ring blooms).
+                //  4. bloom: scatter inside the optics of the (exposed, lensed) image.
+                //  5. god rays: screen-space shafts toward the Sun (NaN guard kept).
+                //  6. visor glass (Visor.js self-inserts here): the helmet/canopy sits in front of
+                //     the lens, so it filters the light before the camera's own lens artefacts.
+                //  7. camera lens: diffraction spikes, flare ghosts, chromatic aberration, sensor
+                //     grain (CameraOptics); grain is sensor noise, so it goes last before grading.
+                //  8. LUT / film grade, 9. linear -> sRGB gamma (display encoding is always last).
+
                 // Spacecraft camera optics (CameraOptics.js). The exposure pass sits right
                 // after the scene render, before bloom, so a stopped-down camera also
                 // blooms less, exactly like a real sensor.
                 if (typeof CameraOptics !== 'undefined' && ShaderPass) {
                     try {
                         cameraOptics = new CameraOptics(rendererCore);
-                        cameraOptics.qualityProvider = () => (loop && loop.getQualityLevel) ? loop.getQualityLevel() : 1;
                         composer.addPass(cameraOptics.createExposurePass());
                         window.cameraFX = cameraOptics;
                     } catch (e) {
@@ -218,8 +232,36 @@ function initGalaxy() {
                     // and re-allocate at the current size. Wrapped defensively — if the
                     // internals differ across THREE versions, the black-frame guard still
                     // catches any failure. Desktop keeps the half-float targets (HDR bloom).
+                    // r150's UnrealBloomPass actually allocates 8-bit targets by default. With an HDR
+                    // composer that quantises the dim outer halo of a large bright source (black
+                    // hole disk, Sun) into 1/255 plateaus that the blur mips turn into blocky
+                    // octagonal steps. On HDR-capable devices give the blur chain half-float
+                    // targets; elsewhere keep 8-bit (iOS black-frame guard).
+                    if (_hdrOK) try {
+                        const half = THREE.HalfFloatType;
+                        [].concat(bloomPass.renderTargetsHorizontal || [], bloomPass.renderTargetsVertical || [],
+                                  bloomPass.renderTargetBright ? [bloomPass.renderTargetBright] : [])
+                          .forEach(rt => { if (rt && rt.texture && rt.texture.type !== half) { rt.texture.type = half; rt.dispose(); } });
+                    } catch (e) { console.warn("bloom half-float targets skipped:", e); }
+                    // Bright-pass cap: with 8-bit targets the bloom input was clipped at 1.0, which is
+                    // the look the strength/radius were tuned to. Half-float keeps the halo smooth
+                    // but would let a single huge texel (a galaxy core where thousands of additive
+                    // stars stack, a NaN/Inf from a degenerate shader) bloom into a big square
+                    // plateau. Cap the bloom source at 2x white and drop NaN/Inf texels.
                     try {
-                        if (_hdrOK) throw 'hdr-targets'; // skip coercion — keep half-float
+                        const m = bloomPass.materialHighPassFilter;
+                        const src = 'gl_FragColor = mix( outputColor, texel, alpha );';
+                        if (m && m.fragmentShader.indexOf(src) >= 0) {
+                            m.fragmentShader = m.fragmentShader.replace(src,
+                                'vec4 bp = mix( outputColor, texel, alpha );' +
+                                ' float bl = bp.r + bp.g + bp.b;' +
+                                ' if (!(bl == bl) || bl > 1.0e4) bp = vec4(0.0);' +
+                                ' gl_FragColor = vec4(min(bp.rgb, vec3(2.0)), bp.a);');
+                            m.needsUpdate = true;
+                        }
+                    } catch (e) { console.warn("bloom bright-pass cap skipped:", e); }
+                    try {
+                        if (_hdrOK) throw 'hdr-targets'; // half-float set above
                         const byte = THREE.UnsignedByteType;
                         const rts = [].concat(
                             bloomPass.renderTargetsHorizontal || [],
@@ -228,7 +270,7 @@ function initGalaxy() {
                         );
                         rts.forEach(rt => { if (rt && rt.texture) rt.texture.type = byte; });
                         bloomPass.setSize(window.innerWidth, window.innerHeight);
-                    } catch (e) { console.warn("bloom target coercion skipped:", e); }
+                    } catch (e) { if (e !== 'hdr-targets') console.warn("bloom target coercion skipped:", e); }
                 }
 
                 // God rays: screen-space radial light shafts from the sun. Samples the
@@ -793,7 +835,8 @@ function createUpdateSystems() {
                     apply(objects.find(o => o.name === 'Earth'), 'setEarthDetail');
                     apply(objects.find(o => o.name === 'Jupiter'), 'setTexturedDetail');
                     apply(objects.find(o => o.name === 'Saturn'), 'setTexturedDetail');
-                    // 8K Mars / Moon: setters themselves refuse unless the tier is HIGH
+                    // 8K Mars / Moon: setters themselves refuse unless RTQuality.tier is HIGH, and
+                    // free a resident 8K when the tier drops (this tick re-reads it every 20 frames)
                     apply(objects.find(o => o.name === 'Mars'), 'setTexturedDetail');
                     apply(objects.find(o => o.name === 'Moon'), 'setDetail');
                 };
@@ -1626,11 +1669,9 @@ function createPlanetRings(planet, planetRadius) {
     console.log("💫 Created multi-layer rings for", planet.name);
 }
 
-// Render-quality tier from RTQuality when present (perf branch), else ?rtq=, else medium.
+// Render-quality tier: always the global RTQuality tier (single source of truth).
 function rtTier() {
-    if (window.RTQuality && window.RTQuality.tier) return window.RTQuality.tier;
-    try { const q = new URLSearchParams(location.search).get('rtq'); if (q) return q; } catch (e) {}
-    return 'medium';
+    return (window.RTQuality && window.RTQuality.tier) || 'medium';
 }
 
 function createMoon(moonData, parentPlanet) {
@@ -1811,7 +1852,7 @@ function createSolarSystem() {
         // tilt each launch — Saturn's rings sat at a different angle every time.
         { name: "Mercury", radius: 0.8, color: 0x9a8560, distance: 40, period: 88, planetType: "rocky", hasAtmosphere: false, axialTilt: 0.001, texturePack: "mercury" },
         { name: "Venus", radius: 1.5, color: 0xf0d080, distance: 60, period: 225, planetType: "rocky", atmosphereColor: 0xffdd99, atmosphereDensity: 2.0, axialTilt: 0.05, texturePack: "venus" },
-        { name: "Earth", radius: 1.6, color: 0x3388ee, distance: 85, period: 365, planetType: "rocky", atmosphereColor: 0x66bbff, hasClouds: true, axialTilt: 0.409, texturePack: "earth" },
+        { name: "Earth", radius: 1.6, color: 0x3388ee, distance: 85, period: 365, planetType: "rocky", atmosphereColor: 0x66bbff, hasClouds: true, axialTilt: 0.409, poleTowardEclipticLon90: true, texturePack: "earth" },
         { name: "Mars", radius: 1.1, color: 0xd06040, distance: 115, period: 687, planetType: "rocky", atmosphereColor: 0xffbb99, atmosphereDensity: 0.3, axialTilt: 0.439, texturePack: "mars" },
         { name: "Jupiter", radius: 8, color: 0xe0b080, distance: 200, period: 4333, planetType: "gas", hasAtmosphere: true, atmosphereColor: 0xe8d0a8, axialTilt: 0.055, texturePack: "jupiter" },
         { name: "Saturn", radius: 7, color: 0xf8e0a0, distance: 320, period: 10759, planetType: "gas", hasRings: true, atmosphereColor: 0xf0e0b8, axialTilt: 0.466, texturePack: "saturn" },
@@ -1837,6 +1878,7 @@ function createSolarSystem() {
             hasClouds: data.hasClouds || false,
             texturePack: data.texturePack || null,
             axialTilt: data.axialTilt,
+            poleTowardEclipticLon90: !!data.poleTowardEclipticLon90,
             orbitalData: {
                 semiMajorAxis: data.distance,
                 period: data.period,

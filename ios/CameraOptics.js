@@ -71,10 +71,10 @@ class CameraOptics {
             { autoExposure: true, spikes: true, flare: true, ca: true, grain: true },
             CameraOptics._loadPrefs()
         );
-        this.tierOverride = null;
-        try { this.tierOverride = localStorage.getItem('cameraTier'); } catch (e) {}
-        this.qualityProvider = null;   // () => 0.5..1 from UpdateLoop's adaptive quality
         this.tierName = this._detectTier();
+        // Follow the global quality tier (RTQuality) when it changes.
+        this._onRtq = () => this._retier();
+        window.addEventListener('rtquality', this._onRtq);
         this.cfg = CameraOptics.TIERS[this.tierName];
 
         // Exposure state (log2 space)
@@ -91,7 +91,6 @@ class CameraOptics {
         this.sun = null;
         this.starfield = null;
         this.refDistance = 85;         // Earth's orbital radius in game units (set from the scene)
-        this._tierCheck = 0;
         this._v1 = new THREE.Vector3();
         this._v2 = new THREE.Vector3();
         this._v3 = new THREE.Vector3();
@@ -101,15 +100,15 @@ class CameraOptics {
         try { return JSON.parse(localStorage.getItem('cameraFX') || '{}') || {}; } catch (e) { return {}; }
     }
 
+    // Tier = the global RTQuality tier (single source of truth; ?rtq= / ?tier= override).
     _detectTier() {
-        const o = this.tierOverride;
-        if (o === 'high' || o === 'medium' || o === 'low') return o;
-        let t = this.rc.isNativeApp ? 'medium' : 'high';
-        // UpdateLoop drops its quality level when frames run long — follow it down.
-        const q = this.qualityProvider ? this.qualityProvider() : 1;
-        if (q <= 0.6) t = 'low';
-        else if (q <= 0.8 && t === 'high') t = 'medium';
-        return t;
+        const t = window.RTQuality && window.RTQuality.tier;
+        return (t === 'high' || t === 'medium' || t === 'low') ? t : 'medium';
+    }
+
+    _retier() {
+        const t = this._detectTier();
+        if (t !== this.tierName) { this.tierName = t; this.cfg = CameraOptics.TIERS[t]; this._applyStarfield(); }
     }
 
     // ---------- passes ----------
@@ -275,6 +274,9 @@ class CameraOptics {
                 vec3 ghosts(vec2 uv) {
                     vec2 asp = vec2(uRes.x / uRes.y, 1.0);
                     vec2 axis = vec2(0.5) - uSun;
+                    // On-axis source: every ghost is concentric with the Sun and drowns in
+                    // its glare, so fade them out as the Sun nears the optical centre.
+                    float offAxis = smoothstep(0.04, 0.18, length(axis * asp));
                     vec3 acc = vec3(0.0);
                     for (int i = 0; i < 6; i++) {
                         if (float(i) >= uGhosts) break;
@@ -287,7 +289,7 @@ class CameraOptics {
                         float rim = 0.55 + 0.45 * smoothstep(g.y * 0.3, g.y, h);
                         acc += ghostTint(i) * (g.z * disc * rim);
                     }
-                    return acc;
+                    return acc * offAxis;
                 }
 
                 void main() {
@@ -414,13 +416,6 @@ class CameraOptics {
 
     update(dt, camera) {
         dt = Math.min(Math.max(dt || 0.016, 0), 0.1);
-        // re-evaluate the tier every ~2 s (adaptive quality may have dropped)
-        this._tierCheck += dt;
-        if (this._tierCheck > 2) {
-            this._tierCheck = 0;
-            const t = this._detectTier();
-            if (t !== this.tierName) { this.tierName = t; this.cfg = CameraOptics.TIERS[t]; this._applyStarfield(); }
-        }
         // the camera owns exposure in post; keep the renderer's tone-map exposure neutral
         if (this.renderer.toneMappingExposure !== 1.0) this.renderer.toneMappingExposure = 1.0;
 
@@ -473,13 +468,20 @@ class CameraOptics {
                 const flux = Math.pow(this.refDistance / d, 2);
                 u.uSpikeLen.value = THREE.MathUtils.clamp(0.3 * Math.pow(flux, 0.4), 0.08, 0.5) * cfg.spikeScale;
                 const dbs = u.uRes.value;
-                u.uSpikeW.value = Math.max(1.4 * (dbs.y / 600), rUV * dbs.y * 0.06);
+                // Webb's spikes are hairlines (~1-2 px core in the First Deep Field / Pillars
+                // NIRCam frames) even on the brightest stars; only the length grows with
+                // flux. The old disk-proportional width (6% of the disk) read as thick wedges.
+                u.uSpikeW.value = Math.max(1.1 * (dbs.y / 720), rUV * dbs.y * 0.015);
                 // the auto-lens solar filter (Star.js) is an ND filter in front of the
                 // optics: everything the Sun puts through the camera dims with it
                 const filt = this.sun._filter || 0;
                 const nd = 1 - 0.55 * filt;
-                u.uSpikeAmp.value = this.prefs.spikes ? 3.0 * nd : 0;
-                u.uGhostAmp.value = this.prefs.flare ? 0.035 * nd * Math.min(1, Math.pow(flux, 0.5)) : 0;
+                // Thinner core carries less light per pixel; amplitude set so the spike just
+                // clears the bloom like the saturated stars in the Webb frames (was 3.0, wide).
+                u.uSpikeAmp.value = this.prefs.spikes ? 2.4 * nd : 0;
+                // Ghosts: multi-coated optics put each ghost at ~0.1-1% of the source; 0.02
+                // keeps them faint coloured irises (Hubble/ISS flare frames), not discs (was 0.035).
+                u.uGhostAmp.value = this.prefs.flare ? 0.02 * nd * Math.min(1, Math.pow(flux, 0.5)) : 0;
                 u.uGhosts.value = cfg.ghosts;
                 // a disk that fills the frame isn't a point source: fade the optics out
                 sunAmt = edge * (1 - THREE.MathUtils.smoothstep(rUV, 0.22, 0.45));
@@ -498,12 +500,13 @@ class CameraOptics {
         if (name === 'spikes') this._applyStarfield();
         return true;
     }
+    // Manual tier: routes through RTQuality so every effect moves together ('auto' unlocks).
     setTier(t) {
-        this.tierOverride = (t === 'high' || t === 'medium' || t === 'low') ? t : null;
-        try { this.tierOverride ? localStorage.setItem('cameraTier', t) : localStorage.removeItem('cameraTier'); } catch (e) {}
-        this.tierName = this._detectTier();
-        this.cfg = CameraOptics.TIERS[this.tierName];
-        this._applyStarfield();
+        const Q = window.RTQuality;
+        if (!Q) return;
+        if (t === 'high' || t === 'medium' || t === 'low') Q.setTier(t, { lock: true, reason: 'camera' });
+        else Q.unlock();
+        this._retier();
     }
     debug() {
         return { tier: this.tierName, exposure: +this.exposure.toFixed(3), target: +this.targetExposure.toFixed(3),
