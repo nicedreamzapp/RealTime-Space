@@ -1446,8 +1446,15 @@ class Planet {
             jupiter: 'textures/jupiter/jupiter_hi.jpg',
             saturn:  'textures/saturn/saturn_hi.jpg'
         };
+        // 8192x4096 Mars (Solar System Scope, CC BY 4.0): ~180 MB of GPU memory with
+        // mips, so only on the HIGH render tier (RTQuality) or ?rtq=high.
+        let tier = 'medium';
+        if (window.RTQuality && window.RTQuality.tier) tier = window.RTQuality.tier;
+        else { try { tier = new URLSearchParams(location.search).get('rtq') || tier; } catch (e) {} }
+        if (tier === 'high') HI.mars = 'textures/mars/mars_8k.jpg';
         const hiPath = HI[this.texturePack];
-        if (!hiPath) return; // only the bodies we shipped a hi-res for
+        if (!hiPath && high) return;
+        if (!hiPath && this._texDetail !== 'high') return; // nothing loaded to free
         this._texWantsHigh = high;
         if (high) {
             if (this._texDetail === 'high' || this._texHiLoading) return;
@@ -1462,7 +1469,7 @@ class Planet {
                 this._texMaterial.needsUpdate = true;
                 this._texDetail = 'high';
                 this._texHiLoading = false;
-                console.log(`🪐 ${this.name} → 4K real texture (up close)`);
+                console.log(`🪐 ${this.name} → hi-res real texture (up close)`);
             }, undefined, () => { this._texHiLoading = false; });
         } else {
             if (this._texDetail === 'low') return;

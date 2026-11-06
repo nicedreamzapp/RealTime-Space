@@ -24,6 +24,8 @@ class OrbitalMechanics {
 
     update(deltaTime, rendererCore) {
         this.time += deltaTime * this.timeScale;
+        // Real-date sim clock (Ephemeris.js): LIVE at 1x, whole days per second above that.
+        if (window.Ephemeris) window.Ephemeris.clock.advance(deltaTime, this.timeScale);
 
         // Update each orbiting object
         for (const obj of this.objects) {
@@ -42,6 +44,18 @@ class OrbitalMechanics {
 
     updateOrbitalPosition(obj, deltaTime) {
         const orbital = obj.orbitalData;
+
+        // Real planets: true heliocentric position for the sim date (JPL elements),
+        // radius compressed by Ephemeris.mapRadius, direction exact.
+        if (orbital.ephemeris && window.Ephemeris) {
+            const Eph = window.Ephemeris;
+            const v = Eph.planetHelio(orbital.ephemeris, Eph.clock.jd());
+            if (v) {
+                const p = Eph.helioToScene(v);
+                obj.mesh.position.set(p[0], p[1], p[2]);
+                return;
+            }
+        }
 
         // Full Keplerian elements with defaults
         const a = orbital.semiMajorAxis || 50;
