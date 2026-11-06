@@ -47,8 +47,17 @@
 
     _light() {
       if (this.img.style.display === 'none') return;
-      const L = window.Visor && window.Visor.light;
-      if (!L) return;
+      const V = window.Visor, L = V && V.light;
+      // The live values only update while the visor pass runs. Low tier (and visor glass
+      // switched off) disables it, which froze them at sun 0 and left the art at 60%
+      // brightness. Without live light the art gets a fixed lighting: the average of the
+      // live model at Earth's distance with the Sun to the side (sun 1, behind 0.5), no
+      // contrast push, a touch of warmth.
+      if (!L || !V.pass || !V.pass.enabled) {
+        const f0 = 'brightness(0.92) sepia(0.05)';
+        if (f0 !== this._lastF) { this._lastF = f0; this.img.style.filter = f0; this.img.style.webkitFilter = f0; }
+        return;
+      }
       const sun = Math.max(0, Math.min(1.2, L.sun || 0));
       const behind = Math.max(0, Math.min(1, 0.5 - 0.5 * (L.facing || 0)));  // 1 = Sun at your back
       const ahead = Math.max(0, L.facing || 0);

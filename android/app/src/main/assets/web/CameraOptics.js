@@ -343,6 +343,19 @@ class CameraOptics {
         return pass;
     }
 
+    // The pixel-pack buffer and fence are raw GL objects, so they died with a lost WebGL
+    // context (three.js rebuilds its own objects, not ours). RendererCore calls this on restore.
+    onContextRestored() {
+        this._pending = false;
+        this._fence = null;
+        if (!this.gl2 || !this.meterBuf) return;
+        const gl = this.renderer.getContext();
+        this.pbo = gl.createBuffer();
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
+        gl.bufferData(gl.PIXEL_PACK_BUFFER, this.meterBuf.byteLength, gl.STREAM_READ);
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    }
+
     // ---------- metering ----------
 
     _meter(renderer, readBuffer) {

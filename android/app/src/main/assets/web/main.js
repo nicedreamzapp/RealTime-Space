@@ -119,27 +119,10 @@ function initGalaxy() {
             rendererCore.renderer.shadowMap.enabled = true;
             rendererCore.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-            // Attempt to load LUT texture before composer creation
+            // FilmLUT.png loads asynchronously (see the film-grade pass below). TextureLoader.load
+            // returns an EMPTY Texture at once, so the LUT pass is only built in onLoad: a
+            // missing or broken file can never feed a black LUT into the grade.
             lutTexture = null;
-            try {
-                const loader = new THREE.TextureLoader();
-                lutTexture = loader.load(
-                    'FilmLUT.png',
-                    function(texture) {
-                        texture.encoding = THREE.SRGBColorSpace;
-                        lutTexture = texture;
-                        console.log("🎨 LUT texture loaded");
-                    },
-                    undefined,
-                    function(err) {
-                        // failed to load LUT texture - silently ignore
-                        lutTexture = null;
-                        //console.log("⚠️ LUT texture not found or failed to load");
-                    }
-                );
-            } catch (e) {
-                lutTexture = null;
-            }
 
             // Setup post-processing composer if available
             if (typeof THREE.EffectComposer !== 'undefined') {
@@ -352,140 +335,127 @@ function initGalaxy() {
                     catch (e) { console.warn("CameraOptics lens pass skipped:", e); }
                 }
 
-                // Add LUT shader pass if LUT texture is loaded
+                // Film grade (FilmLUT.png). No grade pass exists until the LUT has actually
+                // decoded: onLoad builds the 3D-LUT pass and inserts it just before the final
+                // gamma pass. onError skips it, so a missing or broken LUT can never darken or
+                // veil the frame (setLUTEnabled is then a no-op).
                 let lutPass = null;
-                if (lutTexture) {
-                    // Custom LUT ShaderPass for 3D LUT stored as 32x1024 strip (32 slices, each 32x32)
-                    // Note: This shader assumes the LUT texture is a 1024x32 image with 32 vertical slices of 32x32 pixels
-                    const lutShader = {
-                        uniforms: {
-                            tDiffuse: { value: null },
-                            lutMap: { value: lutTexture },
-                            intensity: { value: lutIntensity }
-                        },
-                        vertexShader: `
-                            varying vec2 vUv;
-                            void main() {
-                                vUv = uv;
-                                gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
-                            }
-                        `,
-                        fragmentShader: `
-                            precision highp float;
-                            uniform sampler2D tDiffuse;
-                            uniform sampler2D lutMap;
-                            uniform float intensity;
-                            varying vec2 vUv;
+                if (ShaderPass) {
+                    const makeLUTPass = (texture) => {
+                        const lutShader = {
+                            uniforms: {
+                                tDiffuse: { value: null },
+                                lutMap: { value: texture },
+                                intensity: { value: lutIntensity }
+                            },
+                            vertexShader: `
+                                varying vec2 vUv;
+                                void main() {
+                                    vUv = uv;
+                                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+                                }
+                            `,
+                            fragmentShader: `
+                                precision highp float;
+                                uniform sampler2D tDiffuse;
+                                uniform sampler2D lutMap;
+                                uniform float intensity;
+                                varying vec2 vUv;
 
-                            // LUT info constants
-                            const float size = 32.0; // LUT dimension (32x32x32)
-                            const float sliceSize = 1.0 / size;
-                            const float slicePixelSize = sliceSize / size;
+                                // LUT info constants
+                                const float size = 32.0; // LUT dimension (32x32x32)
+                                const float sliceSize = 1.0 / size;
+                                const float slicePixelSize = sliceSize / size;
                             
-                            vec3 sampleAs3DLUT(sampler2D lut, vec3 color) {
-                                // Clamp input color
-                                color = clamp(color, 0.0, 1.0);
+                                vec3 sampleAs3DLUT(sampler2D lut, vec3 color) {
+                                    // Clamp input color
+                                    color = clamp(color, 0.0, 1.0);
 
-                                // Get the index of the slice
-                                float blueIndex = color.b * (size - 1.0);
-                                float sliceLow = floor(blueIndex);
-                                float sliceHigh = min(size - 1.0, sliceLow + 1.0);
-                                float sliceFrac = fract(blueIndex);
+                                    // Get the index of the slice
+                                    float blueIndex = color.b * (size - 1.0);
+                                    float sliceLow = floor(blueIndex);
+                                    float sliceHigh = min(size - 1.0, sliceLow + 1.0);
+                                    float sliceFrac = fract(blueIndex);
 
-                                // Compute UV for low slice
-                                float xOffsetLow = sliceLow * sliceSize;
-                                vec2 uvLow = vec2(xOffsetLow + color.r * sliceSize + slicePixelSize * 0.5,
-                                                  color.g * size * slicePixelSize + slicePixelSize * 0.5);
-                                // Compute UV for high slice
-                                float xOffsetHigh = sliceHigh * sliceSize;
-                                vec2 uvHigh = vec2(xOffsetHigh + color.r * sliceSize + slicePixelSize * 0.5,
-                                                  color.g * size * slicePixelSize + slicePixelSize * 0.5);
+                                    // Compute UV for low slice
+                                    float xOffsetLow = sliceLow * sliceSize;
+                                    vec2 uvLow = vec2(xOffsetLow + color.r * sliceSize + slicePixelSize * 0.5,
+                                                      color.g * size * slicePixelSize + slicePixelSize * 0.5);
+                                    // Compute UV for high slice
+                                    float xOffsetHigh = sliceHigh * sliceSize;
+                                    vec2 uvHigh = vec2(xOffsetHigh + color.r * sliceSize + slicePixelSize * 0.5,
+                                                      color.g * size * slicePixelSize + slicePixelSize * 0.5);
 
-                                // Sample color from both slices
-                                vec3 sliceColorLow = texture2D(lut, uvLow).rgb;
-                                vec3 sliceColorHigh = texture2D(lut, uvHigh).rgb;
+                                    // Sample color from both slices
+                                    vec3 sliceColorLow = texture2D(lut, uvLow).rgb;
+                                    vec3 sliceColorHigh = texture2D(lut, uvHigh).rgb;
 
-                                // Interpolate between slices
-                                return mix(sliceColorLow, sliceColorHigh, sliceFrac);
-                            }
+                                    // Interpolate between slices
+                                    return mix(sliceColorLow, sliceColorHigh, sliceFrac);
+                                }
 
-                            void main() {
-                                vec4 original = texture2D(tDiffuse, vUv);
-                                vec3 lutColor = sampleAs3DLUT(lutMap, original.rgb);
+                                void main() {
+                                    vec4 original = texture2D(tDiffuse, vUv);
+                                    vec3 lutColor = sampleAs3DLUT(lutMap, original.rgb);
 
-                                // Mix original and LUT color by intensity
-                                vec3 finalColor = mix(original.rgb, lutColor, intensity);
+                                    // Mix original and LUT color by intensity
+                                    vec3 finalColor = mix(original.rgb, lutColor, intensity);
 
-                                gl_FragColor = vec4(finalColor, original.a);
-                            }
-                        `
+                                    gl_FragColor = vec4(finalColor, original.a);
+                                }
+                            `
+                        };
+                        return new ShaderPass(lutShader);
                     };
-                    if (ShaderPass) {
-                        lutPass = new ShaderPass(lutShader);
-                        lutPass.enabled = lutEnabled;
-                        composer.addPass(lutPass);
-                        rendererCore.lutPass = lutPass;
-                    }
-                } else if (ShaderPass) {
-                    // Fallback color correction shader if no LUT loaded
-                    const colorCorrectionShader = {
-                        uniforms: {
-                            tDiffuse: { value: null },
-                            lift: { value: 0.03 },
-                            gamma: { value: 0.92 },
-                            gain: { value: 1.12 }
-                        },
-                        vertexShader: `
-                            varying vec2 vUv;
-                            void main() {
-                                vUv = uv;
-                                gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
-                            }
-                        `,
-                        fragmentShader: `
-                            uniform sampler2D tDiffuse;
-                            uniform float lift;
-                            uniform float gamma;
-                            uniform float gain;
-                            varying vec2 vUv;
-
-                            vec3 applyLiftGammaGain(vec3 color, float lift, float gamma, float gain) {
-                                color = color + lift;
-                                color = pow(color, vec3(gamma));
-                                color = color * gain;
-                                return color;
-                            }
-
-                            void main() {
-                                vec4 tex = texture2D(tDiffuse, vUv);
-                                vec3 corrected = applyLiftGammaGain(tex.rgb, lift, gamma, gain);
-                                gl_FragColor = vec4(corrected, tex.a);
-                            }
-                        `
-                    };
-                    const lutPassFallback = new ShaderPass(colorCorrectionShader);
-                    composer.addPass(lutPassFallback);
-                    rendererCore.lutPass = lutPassFallback;
-                    lutPass = lutPassFallback;
-                    lutPass.enabled = lutEnabled;
+                    try {
+                        new THREE.TextureLoader().load('FilmLUT.png', (texture) => {
+                            try {
+                                if (!texture || !texture.image || !(texture.image.width > 0)) return;
+                                // LUT texels are data (a colour table): uploaded linear, no mipmaps. The
+                                // lookup UVs jump with colour, not screen position, so mip selection picked
+                                // tiny averaged levels and turned the grade into yellow/black noise.
+                                texture.generateMipmaps = false;
+                                texture.minFilter = THREE.LinearFilter;
+                                texture.magFilter = THREE.LinearFilter;
+                                texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+                                texture.needsUpdate = true;
+                                if (rendererCore.lutPass) return;
+                                const gp = rendererCore.gammaPass;
+                                let idx = gp ? composer.passes.indexOf(gp) : -1;
+                                if (idx < 0) idx = composer.passes.length;
+                                const p = makeLUTPass(texture);
+                                p.enabled = lutEnabled;
+                                p.uniforms.intensity.value = lutIntensity;
+                                composer.insertPass(p, idx);   // insertPass sizes it to the composer
+                                rendererCore.lutPass = p;
+                                lutPass = p;
+                                lutTexture = texture;
+                                console.log("🎨 LUT texture loaded");
+                            } catch (e) { console.warn("LUT pass skipped:", e); }
+                        }, undefined, () => {
+                            // missing / undecodable LUT: keep the plain grade
+                            lutTexture = null;
+                        });
+                    } catch (e) { lutTexture = null; }
                 }
 
                 // Final linear→sRGB conversion. Composer render targets are linear in
                 // r150, so without this the whole frame displays too dark.
                 if (ShaderPass && THREE.GammaCorrectionShader) {
-                    composer.addPass(new ShaderPass(THREE.GammaCorrectionShader));
+                    rendererCore.gammaPass = new ShaderPass(THREE.GammaCorrectionShader);
+                    composer.addPass(rendererCore.gammaPass);
                 }
 
                 rendererCore.composer = composer;
                 try { if (window.Visor) window.Visor.attach(composer, rendererCore); } catch (e) { console.warn('Visor attach failed:', e); } // [unreal/visor] canopy glass pass, self-inserts before gamma
                 rendererCore.useComposer = true;
-                // TEMP: force direct rendering (bypass composer) for black-screen isolation.
-                if (window.__FORCE_DIRECT__) rendererCore.useComposer = false;
-                // Android low tier keeps the old direct path (see index.html).
-                if (window.__FORCE_DIRECT_ON_LOW__ && window.RTQuality && window.RTQuality.tier === 'low') {
-                    rendererCore.useComposer = false;
-                    console.log('🎬 Android low tier: direct rendering (no post chain)');
-                }
+                // __FORCE_DIRECT__: force direct rendering (bypass composer) for black-screen isolation.
+                rendererCore._postOK = !window.__FORCE_DIRECT__;  // cleared for good if the black-frame guard gives up on post
+                rendererCore._hdrTargets = _hdrOK;                // composer targets are half-float (composerToLDR clears it)
+                // Android low tier keeps the old direct path (see index.html), and a governor move
+                // into or out of low switches the post chain off / back on at runtime.
+                applyPostForTier(rendererCore, 'boot');
+                window.addEventListener('rtquality', () => applyPostForTier(rendererCore, 'tier change'));
 
                 // Restore LUT settings from localStorage
                 try {
@@ -609,6 +579,7 @@ function initGalaxy() {
         });
 
         loop.start();
+        startRenderWatchdog();
 
         // Setup iOS bridge for Swift communication
         setupIOSBridge();
@@ -850,6 +821,33 @@ function halfFloatRenderable(renderer) {
     } catch (e) { return false; }
 }
 
+// Post chain on/off for the current tier. Android low tier renders direct (no composer); a
+// governor drop into low switches the chain off and a climb out of low switches it back on.
+// window.__rtHDR tells the Sun (Star.js uLDR) whether its photosphere renders into half-float
+// targets with headroom above 1.0. Direct rendering goes straight to the 8-bit canvas, where the
+// HDR Sun would clip to a flat disk, so the direct path always gets the toned-down LDR Sun.
+function applyPostForTier(rc, why) {
+    if (!rc || !rc.composer) return;
+    const lowDirect = !!(window.__FORCE_DIRECT_ON_LOW__ && window.RTQuality && window.RTQuality.tier === 'low');
+    const want = rc._postOK !== false && !lowDirect;
+    const was = !!rc.useComposer;
+    rc.useComposer = want;
+    window.__rtHDR = want && rc._hdrTargets !== false;
+    if (want && !was) {
+        // back on: size the chain to the current buffer and re-run the black-frame check
+        try {
+            const sz = rc.renderer.getSize(new THREE.Vector2());
+            if (rc.composer.setPixelRatio) rc.composer.setPixelRatio(rc.renderer.getPixelRatio());
+            rc.composer.setSize(sz.x, sz.y);
+        } catch (e) {}
+        rc._bloomChecked = false; rc._bloomWarm = 0;
+    }
+    if (want !== was || why === 'boot') {
+        console.log(want ? `🎬 Post chain ON (${why}, ${window.__rtHDR ? 'HDR' : '8-bit'})`
+                         : `🎬 Direct rendering, no post chain (${why}${lowDirect ? ', low tier' : ''})`);
+    }
+}
+
 // Drop an HDR composer to 8-bit targets (the black-frame guard's first fallback). The Sun
 // reads window.__rtHDR and switches to its no-headroom output.
 function composerToLDR(rc) {
@@ -858,6 +856,7 @@ function composerToLDR(rc) {
               bp ? [].concat(bp.renderTargetsHorizontal || [], bp.renderTargetsVertical || [],
                              bp.renderTargetBright ? [bp.renderTargetBright] : []) : [])
       .forEach(rt => { if (rt && rt.texture && rt.texture.type !== byte) { rt.texture.type = byte; rt.dispose(); } });
+    rc._hdrTargets = false;
     window.__rtHDR = false;
 }
 
@@ -880,6 +879,75 @@ function composerFrameIsBlack(renderer) {
         return true; // nothing but black → the bug
     } catch (e) {
         return false; // can't tell → assume OK, don't disable
+    }
+}
+
+// Runtime render watchdog. The boot guard (ComposerRender) only checks the first frames; this
+// runs every 4 s (never per frame) for the whole session:
+//  1. Liveness: the UpdateLoop's rAF tick count must advance while the page is visible.
+//     Three stalled checks in a row (~12 s) means the WebView/GPU hung: reload the page once.
+//  2. Blank output: the exposure meter (CameraOptics) already reads back a 32x16 luminance map
+//     of the scene before post. If a cell is clearly lit there, read only that cell's block of
+//     the final canvas (a few KB). Black twice in a row means the post chain is blanking a lit
+//     scene: same ladder as the boot guard, 8-bit targets first, then direct rendering.
+function startRenderWatchdog() {
+    let lastTicks = -1, stalls = 0, blanks = 0, lastAt = performance.now();
+    setInterval(() => {
+        const now = performance.now(), gap = now - lastAt;
+        lastAt = now;
+        const rc = rendererCore;
+        // hidden page / throttled timers / lost context: not a hang, start counting afresh
+        if (!rc || !rc.renderer || rc.contextLost || document.visibilityState !== 'visible' || gap > 8000) {
+            lastTicks = -1; stalls = 0; blanks = 0; return;
+        }
+        const ticks = window.__rtLoopTicks || 0;
+        if (lastTicks >= 0 && ticks === lastTicks) {
+            if (++stalls >= 3) { stalls = 0; RendererCore.reloadOnce('render loop stalled'); }
+        } else stalls = 0;
+        lastTicks = ticks;
+
+        if (!rc.useComposer || !rc.composer || !rc._bloomChecked) { blanks = 0; return; }
+        const co = window.cameraFX;
+        if (!co || !co.meterBuf || !co.prefs || !co.prefs.autoExposure || !(co.meterLum > 0)) return;
+        const b = co.meterBuf, n = co.meterW * co.meterH;
+        let best = 0, bi = -1;
+        for (let i = 0; i < n; i++) if (b[i * 4] > best) { best = b[i * 4]; bi = i; }
+        if (best < 32) { blanks = 0; return; }       // nothing clearly lit (cell mean < ~0.5)
+        if (!outputBlockIsBlack(rc.renderer, bi % co.meterW, Math.floor(bi / co.meterW), co.meterW, co.meterH)) { blanks = 0; return; }
+        if (++blanks < 2) return;
+        blanks = 0;
+        if (rc._hdrTargets !== false && rc.isNativeApp) {
+            composerToLDR(rc);
+            applyPostForTier(rc, 'blank frame');
+            rc._bloomChecked = false; rc._bloomWarm = 0;
+            console.warn('⚠️ Watchdog: post chain went black on a lit scene, retrying on 8-bit targets.');
+        } else {
+            rc.useComposer = false; rc._postOK = false; window.__rtHDR = false;
+            console.warn('⚠️ Watchdog: post chain went black on a lit scene, falling back to direct rendering.');
+        }
+    }, 4000);
+}
+
+// Reads one meter cell's block of the final canvas (drawing buffer is preserved, so this is
+// valid between frames). True only if every pixel in it is black.
+function outputBlockIsBlack(renderer, cx, cy, mw, mh) {
+    try {
+        const gl = renderer.getContext();
+        const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
+        if (!W || !H) return false;
+        const bw = Math.max(1, Math.floor(W / mw)), bh = Math.max(1, Math.floor(H / mh));
+        const x0 = Math.min(W - bw, Math.floor(cx * W / mw)), y0 = Math.min(H - bh, Math.floor(cy * H / mh));
+        const buf = new Uint8Array(bw * bh * 4);
+        const prev = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.readPixels(x0, y0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, prev);
+        for (let i = 0; i < buf.length; i += 4) {
+            if (buf[i] > 10 || buf[i + 1] > 10 || buf[i + 2] > 10) return false;
+        }
+        return true;
+    } catch (e) {
+        return false;
     }
 }
 
@@ -1302,6 +1370,8 @@ function createUpdateSystems() {
                                 console.warn("⚠️ Half-float post produced a BLACK frame — retrying on 8-bit targets.");
                             } else if (composerFrameIsBlack(rendererCore.renderer)) {
                                 rendererCore.useComposer = false;
+                                rendererCore._postOK = false;   // a tier climb never turns it back on
+                                window.__rtHDR = false;
                                 console.warn("⚠️ Post-processing produced a BLACK frame on this device — auto-falling back to direct rendering (bloom off, no black screen).");
                             } else {
                                 console.log("✅ Post-processing validated — cinematic bloom is ACTIVE.");

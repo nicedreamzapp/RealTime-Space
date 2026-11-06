@@ -108,13 +108,18 @@ class WebBridge(
             "warp"    -> longArrayOf(0, 14, 18, 14, 18, 45)
             else      -> longArrayOf(0, 14) // light
         }
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                v.vibrate(VibrationEffect.createWaveform(pattern, -1))
-            } else {
-                @Suppress("DEPRECATION") v.vibrate(pattern, -1)
-            }
-        } catch (_: Exception) {}
+        // On the main thread with the flight rumble: the one-shot cancels the running rumble
+        // waveform, so reset its level too or the rumble would never be re-issued.
+        main.post {
+            flight?.interrupted()
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createWaveform(pattern, -1))
+                } else {
+                    @Suppress("DEPRECATION") v.vibrate(pattern, -1)
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     private fun parseRadar(o: JSONObject) {

@@ -19,9 +19,12 @@ import android.os.Vibrator
  *
  * Android has no continuous player with live intensity, so the rumble is a short repeating
  * waveform (40 ms period) re-issued only when its quantised strength changes. Phones with
- * amplitude control get the real amplitude; the rest get the same energy as a duty cycle
- * (longer on-time per period). Deliberately faint: the strongest rumble+swell is 0.45 of
- * full strength, the same gains as the iOS player.
+ * amplitude control get the real amplitude. On/off motors (no amplitude control) can't play a
+ * faint rumble at all: a duty cycle there is a constant 25 Hz buzz. They get nothing below
+ * [pulseThreshold] of full rumble, and above it only separate short pulses whose rate rises
+ * with strength (one every 600 ms up to one every 200 ms), never a continuous buzz.
+ * Deliberately faint: the strongest rumble+swell is 0.45 of full strength, the same gains as
+ * the iOS player.
  *
  * Off when the user toggle is off or Battery Saver is on (the continuous buzz is the battery
  * cost; iOS skips it in Low Power Mode the same way). A watchdog stops the rumble if the web
@@ -39,6 +42,8 @@ class FlightHaptics(private val context: Context, private val vibrator: Vibrator
     private val maxIntensity = 0.45f
     private val periodMs = 40L
     private val levels = 16
+    /** No-amplitude motors: silent below this fraction of the max rumble (warp or a deep well). */
+    private val pulseThreshold = 0.4f
 
     private var currentLevel = 0
     private var lastUpdate = 0L
@@ -65,7 +70,8 @@ class FlightHaptics(private val context: Context, private val vibrator: Vibrator
         val intensity = minOf(maxIntensity, r * rumbleGain + s * swellGain)
         // Quantise against the max so a slowly changing speed doesn't restart the waveform
         // every update: at most `levels` distinct strengths.
-        val level = if (intensity < 0.01f) 0 else ((intensity / maxIntensity) * levels).toInt().coerceIn(1, levels)
+        var level = if (intensity < 0.01f) 0 else ((intensity / maxIntensity) * levels).toInt().coerceIn(1, levels)
+        if (!hasAmp && level < levels * pulseThreshold) level = 0
         if (level == currentLevel) return
         if (level == 0) { stop(); return }
         val wasRunning = currentLevel != 0
@@ -76,9 +82,11 @@ class FlightHaptics(private val context: Context, private val vibrator: Vibrator
             val amp = (strength * 255f).toInt().coerceIn(1, 255)
             VibrationEffect.createWaveform(longArrayOf(periodMs), intArrayOf(amp), 0)
         } else {
-            // On/off motor: carry the same strength as a duty cycle, at least 4 ms on.
-            val on = (periodMs * strength).toLong().coerceIn(4L, periodMs - 4L)
-            VibrationEffect.createWaveform(longArrayOf(0, on, periodMs - on), 1)
+            // On/off motor: separate short pulses, never a buzz. 0 at the threshold .. 1 at max.
+            val k = ((level.toFloat() / levels - pulseThreshold) / (1f - pulseThreshold)).coerceIn(0f, 1f)
+            val on = (8 + 6 * k).toLong()                 // 8..14 ms tap
+            val gap = (600 - 400 * k).toLong() - on       // one pulse per 600..200 ms
+            VibrationEffect.createWaveform(longArrayOf(0, on, gap), 1)
         }
         play(v, effect)
         if (!wasRunning) { main.removeCallbacks(watchdog); main.postDelayed(watchdog, 500) }
@@ -94,8 +102,15 @@ class FlightHaptics(private val context: Context, private val vibrator: Vibrator
             VibrationEffect.createOneShot(if (entering) 14L else 10L, VibrationEffect.DEFAULT_AMPLITUDE)
         }
         // A one-shot replaces the running rumble; the next flight update restarts it.
-        currentLevel = 0
+        interrupted()
         play(v, effect)
+    }
+
+    /** Any one-shot vibration (a tick here, a UI tap in WebBridge.haptic) cancels the running
+     *  waveform. Forget the level so the next flight update re-issues the rumble. Main thread. */
+    fun interrupted() {
+        main.removeCallbacks(watchdog)
+        currentLevel = 0
     }
 
     fun stop() {

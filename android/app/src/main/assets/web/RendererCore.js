@@ -31,8 +31,87 @@ class RendererCore {
         this.initEnvironmentMap();
         this.initPostProcessing();
         this.setupResizeHandler();
+        this.setupContextLossHandler();
 
         console.log("✅ RendererCore initialized with HUBBLE-QUALITY settings");
+    }
+
+    // ---- WebGL context loss (GPU reset, driver kill, memory pressure on a phone) ----
+    // Lost: preventDefault (asks the browser to restore), the UpdateLoop idles (main.js checks
+    // this.contextLost), and a timer waits for the restore. Restored: three.js rebuilds its GL
+    // state from the scene graph; we drop one RTQuality tier (the GPU just told us it was
+    // over budget), rebuild the post targets and IBL, and re-run the black-frame check.
+    // Never restored within CONTEXT_RESTORE_MS: reload the page once (reloadOnce guards loops).
+    setupContextLossHandler() {
+        this.contextLost = false;
+        this.contextLossCount = 0;
+        const CONTEXT_RESTORE_MS = 5000;
+        this.canvas.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            this.contextLost = true;
+            this.contextLossCount++;
+            console.warn('⚠️ WebGL context lost — render loop paused, waiting for restore');
+            clearTimeout(this._restoreTimer);
+            this._restoreTimer = setTimeout(() => {
+                if (this.contextLost) RendererCore.reloadOnce('WebGL context was not restored');
+            }, CONTEXT_RESTORE_MS);
+            try { window.dispatchEvent(new CustomEvent('rtglcontext', { detail: { lost: true } })); } catch (_) {}
+        }, false);
+        // Registered after three.js's own listener (the renderer is built first), so three has
+        // already re-initialised its GL state by the time this runs.
+        this.canvas.addEventListener('webglcontextrestored', () => {
+            clearTimeout(this._restoreTimer);
+            try {
+                this.onContextRestored();
+                this.contextLost = false;
+                console.log('✅ WebGL context restored (tier ' + ((window.RTQuality && window.RTQuality.tier) || '?') + ')');
+                try { window.dispatchEvent(new CustomEvent('rtglcontext', { detail: { lost: false } })); } catch (_) {}
+            } catch (err) {
+                console.error('❌ WebGL restore failed:', err);
+                RendererCore.reloadOnce('WebGL restore failed');
+            }
+        }, false);
+    }
+
+    onContextRestored() {
+        const gl = this.renderer.getContext();
+        if (!gl || (gl.isContextLost && gl.isContextLost())) throw new Error('context still lost');
+        const Q = window.RTQuality;
+        if (Q) {
+            const order = ['low', 'medium', 'high'];
+            const i = order.indexOf(Q.tier);
+            if (i > 0) {
+                if (Q._falls) Q._falls[Q.tier] = (Q._falls[Q.tier] || 0) + 2;   // never climb back this session
+                Q.setTier(order[i - 1], { reason: 'WebGL context restored' });
+            }
+            Q._appliedPR = null;   // force the pixel ratio + composer resize below to run
+            Q.apply('context restored');
+        }
+        const w = window.innerWidth, h = window.innerHeight;
+        this.renderer.setSize(w, h);
+        if (this.composer) {
+            // fresh ping-pong targets (the old ones only existed in the lost context)
+            if (this.composer.reset) this.composer.reset();
+            this.composer.setSize(w, h);
+        }
+        if (window.cameraFX && window.cameraFX.onContextRestored) window.cameraFX.onContextRestored();
+        // the PMREM environment map was a render target in the lost context: rebuild it
+        this.initEnvironmentMap();
+        this._bloomChecked = false; this._bloomWarm = 0;
+    }
+
+    // Reload the page, at most once a minute (sessionStorage stamp), so a GPU that can't hold a
+    // context never turns into a reload loop. Returns true if it reloaded.
+    static reloadOnce(why) {
+        try {
+            const k = 'rt_gl_reload_at', now = Date.now();
+            const last = Number(sessionStorage.getItem(k) || 0);
+            if (now - last < 60000) { console.error('❌ ' + why + ' (already reloaded once, staying put)'); return false; }
+            sessionStorage.setItem(k, String(now));
+        } catch (_) {}
+        console.error('❌ ' + why + ' — reloading the page once');
+        setTimeout(() => location.reload(), 50);
+        return true;
     }
 
     initScene() {

@@ -45,6 +45,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var bridge: WebBridge
     private lateinit var store: StoreManager
     private var webView: WebView? = null
+    private var webContainer: android.widget.FrameLayout? = null
+    private lateinit var assetLoader: WebViewAssetLoader
+    /** Uptime of recent renderer-process deaths, to back off if the renderer keeps dying. */
+    private val rendererDeaths = ArrayDeque<Long>()
     /** Latest system-bar + cutout insets in dp (= CSS px): top, right, bottom, left. */
     private var webInsets = floatArrayOf(0f, 0f, 0f, 0f)
 
@@ -83,7 +87,7 @@ class MainActivity : ComponentActivity() {
             onHapticsChanged = { on -> prefs.edit().putBoolean("haptics", on).apply() })
         store = StoreManager(this)
 
-        val assetLoader = WebViewAssetLoader.Builder()
+        assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
 
@@ -108,53 +112,13 @@ class MainActivity : ComponentActivity() {
           androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
+                // A plain container holds the WebView so a dead renderer process can be
+                // swapped for a fresh WebView in place (onRenderProcessGone).
                 factory = { ctx ->
-                    WebView(ctx).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
+                    android.widget.FrameLayout(ctx).apply {
                         setBackgroundColor(0xFF000005.toInt())
-
-                        settings.apply {
-                            javaScriptEnabled = true
-                            domStorageEnabled = true
-                            @Suppress("DEPRECATION")
-                            databaseEnabled = true
-                            allowFileAccess = false
-                            allowContentAccess = false
-                            mediaPlaybackRequiresUserGesture = false
-                            loadWithOverviewMode = true
-                            useWideViewPort = true
-                            cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
-                        }
-                        WebView.setWebContentsDebuggingEnabled(true)
-
-                        // JS -> native bridge object (index.html shim forwards iosHandler here)
-                        addJavascriptInterface(bridge, "AndroidBridge")
-                        bridge.webView = this
-                        webView = this
-
-                        webViewClient = object : WebViewClient() {
-                            override fun shouldInterceptRequest(
-                                view: WebView,
-                                request: WebResourceRequest
-                            ): WebResourceResponse? =
-                                assetLoader.shouldInterceptRequest(request.url)
-
-                            override fun onPageFinished(view: WebView, url: String?) {
-                                pushInsets()
-                            }
-                        }
-
-                        webChromeClient = object : WebChromeClient() {
-                            override fun onConsoleMessage(cm: ConsoleMessage): Boolean {
-                                Log.d("RTSpaceJS", "${cm.messageLevel()} ${cm.message()} @${cm.sourceId()}:${cm.lineNumber()}")
-                                return true
-                            }
-                        }
-
-                        loadUrl(ASSET_BASE + "index.html")
+                        webContainer = this
+                        addView(createWebView(ctx))
                     }
                 }
             )
@@ -165,6 +129,87 @@ class MainActivity : ComponentActivity() {
             PaywallOverlay(store, visible = showUnlock || store.locked, onClose = { showUnlock = false })
           }
         }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun createWebView(ctx: Context): WebView = WebView(ctx).apply {
+        layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        setBackgroundColor(0xFF000005.toInt())
+
+        settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            @Suppress("DEPRECATION")
+            databaseEnabled = true
+            allowFileAccess = false
+            allowContentAccess = false
+            mediaPlaybackRequiresUserGesture = false
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+        }
+        WebView.setWebContentsDebuggingEnabled(true)
+
+        // JS -> native bridge object (index.html shim forwards iosHandler here)
+        addJavascriptInterface(bridge, "AndroidBridge")
+        bridge.webView = this
+        webView = this
+
+        webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? =
+                assetLoader.shouldInterceptRequest(request.url)
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                pushInsets()
+            }
+
+            // The renderer process died (GPU driver crash, or the system killed it for memory).
+            // Without this override the whole app is killed with it; returning true keeps the
+            // app alive, and a fresh WebView reloads the engine in the same spot.
+            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+                Log.w(TAG, "WebView renderer gone (crashed=${detail?.didCrash()}), rebuilding the WebView")
+                replaceDeadWebView(view)
+                return true
+            }
+        }
+
+        webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(cm: ConsoleMessage): Boolean {
+                Log.d("RTSpaceJS", "${cm.messageLevel()} ${cm.message()} @${cm.sourceId()}:${cm.lineNumber()}")
+                return true
+            }
+        }
+
+        loadUrl(ASSET_BASE + "index.html")
+    }
+
+    /** Swap a WebView whose renderer died for a new one in the same container. Backs off to a
+     *  5 s delay if it has died 3+ times in the last minute, so a renderer that can't survive
+     *  never becomes a tight crash loop. */
+    private fun replaceDeadWebView(dead: WebView) {
+        val container = webContainer ?: return
+        if (this::bridge.isInitialized) {
+            bridge.flight?.stop()
+            if (bridge.webView === dead) bridge.webView = null
+        }
+        if (webView === dead) webView = null
+        state.engineReady = false
+        container.removeView(dead)
+        try { dead.destroy() } catch (_: Exception) {}
+        val now = android.os.SystemClock.uptimeMillis()
+        rendererDeaths.addLast(now)
+        while (rendererDeaths.isNotEmpty() && now - rendererDeaths.first() > 60_000) rendererDeaths.removeFirst()
+        val delay = if (rendererDeaths.size >= 3) 5_000L else 0L
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (isFinishing || isDestroyed || webView != null) return@postDelayed
+            container.addView(createWebView(this))
+        }, delay)
     }
 
     override fun onPause() {
