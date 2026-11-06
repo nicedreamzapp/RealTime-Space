@@ -736,14 +736,17 @@ function createUpdateSystems() {
             update: (dt) => { if (window.codex) window.codex.update(dt); }
         },
         // Planet detail LOD: swap in true high-res textures only when close, free them when
-        // far. Earth → 8K day+night; Jupiter/Saturn → real 4K photo. Hysteresis avoids thrash.
+        // far. Earth → 8K day+night; Jupiter/Saturn → real 4K photo; Mars/Moon → real 8K on
+        // HIGH tier only. Hysteresis avoids thrash.
         {
             name: "PlanetLOD",
             update: (() => {
                 let frame = 0;
+                const wp = new THREE.Vector3();
                 const apply = (body, setter) => {
                     if (!body || !body[setter]) return;
-                    const d = rendererCore.camera.position.distanceTo(body.mesh.position);
+                    // world position: the Moon is parented to Earth, so .position is local
+                    const d = rendererCore.camera.position.distanceTo(body.mesh.getWorldPosition(wp));
                     const r = body.radius || 1;
                     if (d < r * 7) body[setter](true);
                     else if (d > r * 11) body[setter](false);
@@ -753,6 +756,9 @@ function createUpdateSystems() {
                     apply(objects.find(o => o.name === 'Earth'), 'setEarthDetail');
                     apply(objects.find(o => o.name === 'Jupiter'), 'setTexturedDetail');
                     apply(objects.find(o => o.name === 'Saturn'), 'setTexturedDetail');
+                    // 8K Mars / Moon: setters themselves refuse unless the tier is HIGH
+                    apply(objects.find(o => o.name === 'Mars'), 'setTexturedDetail');
+                    apply(objects.find(o => o.name === 'Moon'), 'setDetail');
                 };
             })()
         },
@@ -988,13 +994,25 @@ function initHUD() {
 }
 
 // ========== TIME ACCELERATION ==========
+// The planets, Moon and spacecraft run on a real-date clock (Ephemeris.clock):
+// 1 = LIVE (real time, tonight's real sky), then whole days per simulated second.
+// `scale` still drives planet spin (capped in OrbitalMechanics) and Ephemeris.rateFor.
 const TIME_SCALES = [
-    { scale: 1,    label: 'TIME 1×' },
-    { scale: 10,   label: 'TIME 10×' },
-    { scale: 100,  label: 'TIME 100×' },
-    { scale: 1000, label: 'TIME 1000×' },
-    { scale: 0,    label: 'TIME ⏸' }
+    { scale: 1,    label: 'LIVE',        speech: 'live, real time' },
+    { scale: 10,   label: '1 DAY/S',     speech: '1 day per second' },
+    { scale: 100,  label: '10 DAYS/S',   speech: '10 days per second' },
+    { scale: 1000, label: '100 DAYS/S',  speech: '100 days per second' },
+    { scale: 0,    label: 'TIME ⏸',      speech: 'paused' }
 ];
+
+// Pill text = speed + the simulated date whenever it isn't live, so nobody mistakes a
+// fast-forwarded sky for tonight's.
+function timePillText(entry) {
+    if (typeof Ephemeris === 'undefined' || entry.scale === 1) return entry.label;
+    const d = Ephemeris.clock.date();
+    const M = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][d.getMonth()];
+    return entry.label + ' · ' + M + ' ' + d.getDate() + ' ' + d.getFullYear();
+}
 let timeScaleIndex = 0;
 let timePillEl = null;
 
@@ -1004,7 +1022,7 @@ function createTimeControl() {
     timePillEl.textContent = TIME_SCALES[0].label;
     // A div, so VoiceOver/TalkBack read it as text; say what it is and that it can be tapped.
     timePillEl.setAttribute('role', 'button');
-    timePillEl.setAttribute('aria-label', 'Time speed, 1 times. Tap to speed up time');
+    timePillEl.setAttribute('aria-label', 'Time: live, real time. Tap to speed up time');
     timePillEl.style.cssText = `
         position: absolute; top: max(18px, env(safe-area-inset-top)); left: max(18px, env(safe-area-inset-left)); z-index: 120;
         padding: 6px 13px; border-radius: 14px;
@@ -1021,6 +1039,11 @@ function createTimeControl() {
         cycleTimeScale();
     });
     document.body.appendChild(timePillEl);
+    // keep the simulated date on the pill current while time runs fast
+    setInterval(() => {
+        const entry = TIME_SCALES[timeScaleIndex];
+        if (timePillEl && entry.scale !== 1) timePillEl.textContent = timePillText(entry);
+    }, 250);
 }
 
 function cycleTimeScale() {
@@ -1028,11 +1051,11 @@ function cycleTimeScale() {
     const entry = TIME_SCALES[timeScaleIndex];
     if (orbitalMechanics) orbitalMechanics.setTimeScale(entry.scale);
     if (timePillEl) {
-        timePillEl.textContent = entry.label;
-        timePillEl.setAttribute('aria-label', 'Time speed, ' + entry.scale + ' times. Tap to change it');
+        timePillEl.textContent = timePillText(entry);
+        timePillEl.setAttribute('aria-label', 'Time: ' + entry.speech + '. Tap to change it');
     }
     if (hud && typeof hud.showInfo === 'function') {
-        hud.showInfo(entry.scale === 0 ? 'ORBITS PAUSED' : `ORBITAL TIME ${entry.scale}×`, 1200);
+        hud.showInfo(entry.scale === 0 ? 'ORBITS PAUSED' : entry.scale === 1 ? 'LIVE: TONIGHT\'S REAL SKY' : `ORBITAL TIME ${entry.label}`, 1200);
     }
     return entry.scale;
 }
@@ -1177,6 +1200,10 @@ function setupIOSBridge() {
         if (orbitalMechanics) {
             orbitalMechanics.setTimeScale(scale);
         }
+        // keep the pill honest when time is set from outside (it shows LIVE vs a sim date)
+        const i = TIME_SCALES.findIndex(t => t.scale === scale);
+        if (i >= 0) timeScaleIndex = i;
+        if (timePillEl) timePillEl.textContent = i >= 0 ? timePillText(TIME_SCALES[i]) : 'TIME ' + scale + '×';
     };
 
     window.galaxyExplorer.toggleTrails = function(show) {
@@ -1561,10 +1588,20 @@ function createPlanetRings(planet, planetRadius) {
     console.log("💫 Created multi-layer rings for", planet.name);
 }
 
+// Render-quality tier from RTQuality when present (perf branch), else ?rtq=, else medium.
+function rtTier() {
+    if (window.RTQuality && window.RTQuality.tier) return window.RTQuality.tier;
+    try { const q = new URLSearchParams(location.search).get('rtq'); if (q) return q; } catch (e) {}
+    return 'medium';
+}
+
 function createMoon(moonData, parentPlanet) {
     const moonGeo = new THREE.SphereGeometry(moonData.radius, 64, 32);
     const loader = new THREE.TextureLoader();
-    const moonColor = loader.load('textures/moon/moon_4k.jpg',
+    // Low tier keeps the 1K map resident; medium/high the 4K. The real 8K (Solar System
+    // Scope, CC BY 4.0) only streams in on HIGH tier when the camera is close (setDetail).
+    const moonBase = rtTier() === 'low' ? 'textures/moon/moon_color_1k.jpg' : 'textures/moon/moon_4k.jpg';
+    const moonColor = loader.load(moonBase,
         () => console.log('🌑 Moon texture loaded'),
         undefined,
         (err) => console.warn('Moon texture failed:', err));
@@ -1595,7 +1632,10 @@ function createMoon(moonData, parentPlanet) {
         parentPlanet: parentPlanet,
         orbitDistance: moonData.distance,
         orbitPeriod: moonData.period,
-        angle: Math.random() * Math.PI * 2,
+        _tmpA: new THREE.Vector3(), _tmpB: new THREE.Vector3(), _tmpC: new THREE.Vector3(),
+        _ax: new THREE.Vector3(), _ay: new THREE.Vector3(), _az: new THREE.Vector3(),
+        _basis: new THREE.Matrix4(), _q: new THREE.Quaternion(), _pq: new THREE.Quaternion(),
+        _hiTex: null, _loTex: moonColor, _wantHi: false, _hiLoading: false,
         _shadowUniforms: {
             uSunPos: { value: new THREE.Vector3() },
             uSunRadius: { value: 15.0 },
@@ -1603,12 +1643,79 @@ function createMoon(moonData, parentPlanet) {
             uOccluderCount: { value: 0 }
         },
         _occluders: [],
-        setOccluders: function(list) { this._occluders = (list || []).slice(0, 4); },
+        setOccluders: function(list) { this._occluders = (list || []).slice(0, 4); this._allOccluders = this._occluders; },
+        // 8K Moon only on HIGH tier and only while close; freed again on the way out.
+        setDetail: function(high) {
+            high = high && rtTier() === 'high';
+            this._wantHi = high;
+            if (high) {
+                if (this._hiTex || this._hiLoading) return;
+                this._hiLoading = true;
+                new THREE.TextureLoader().load('textures/moon/moon_8k.jpg', (tex) => {
+                    this._hiLoading = false;
+                    if (!this._wantHi) { tex.dispose(); return; }
+                    if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+                    else if (THREE.sRGBEncoding !== undefined) tex.encoding = THREE.sRGBEncoding;
+                    tex.anisotropy = 16;
+                    this._hiTex = tex; moonMat.map = tex; moonMat.needsUpdate = true;
+                    console.log('🌑 Moon → 8K (up close)');
+                }, undefined, () => { this._hiLoading = false; });
+            } else if (this._hiTex) {
+                moonMat.map = this._loTex; moonMat.needsUpdate = true;
+                this._hiTex.dispose(); this._hiTex = null;
+                console.log('🌑 Moon → base texture (far away, 8K freed)');
+            }
+        },
+        _eclipseLink: null,   // { earth, moonAsOccluder, on } set by createSolarSystem
+        // In the compressed scene the Moon sits only ~3 Earth radii out and is ~10x too big
+        // for its distance, so the scene geometry alone would eclipse it at almost every full
+        // and new moon. Real eclipses need the Moon within ~1.5 degrees of the anti-sun point
+        // (lunar) or of the Sun (solar) as seen from Earth, so the shadows are switched on
+        // only then; when on, the existing shadow shaders draw them.
+        _gateEclipses: function(moonGeoAU, earthHelioAU) {
+            const m = moonGeoAU, e = earthHelioAU;
+            const cosA = (m[0] * e[0] + m[1] * e[1] + m[2] * e[2]) / (Math.hypot(m[0], m[1], m[2]) * Math.hypot(e[0], e[1], e[2]));
+            const fromAntiSun = Math.acos(Math.max(-1, Math.min(1, cosA))) * 180 / Math.PI;
+            // Earth's penumbra radius at the Moon (~1.28 deg) + the Moon's own radius (0.26)
+            this.lunarEclipse = fromAntiSun < 1.54;
+            // Moon + Sun radii (0.26 + 0.27) + Earth's radius as seen from the Moon (0.95)
+            this.solarEclipse = (180 - fromAntiSun) < 1.48;
+            this._occluders = this.lunarEclipse ? (this._allOccluders || []) : [];
+            const link = this._eclipseLink;
+            if (link && link.earth.setOccluders && link.on !== this.solarEclipse) {
+                link.earth.setOccluders(this.solarEclipse ? [link.moonAsOccluder] : []);
+                link.on = this.solarEclipse;
+            }
+        },
         update: function(deltaTime) {
-            this.angle += (deltaTime * 2 * Math.PI) / this.orbitPeriod;
-            this.mesh.position.x = Math.cos(this.angle) * this.orbitDistance;
-            this.mesh.position.z = Math.sin(this.angle) * this.orbitDistance;
-            this.mesh.rotation.y += deltaTime * 0.5;
+            // Real Moon: geocentric position for the sim date (Astronomical Almanac / Meeus
+            // low-precision series, Ephemeris.moonGeo), so the phase lit by the Sun at the
+            // origin is tonight's real phase. Distance on the linear Earth-neighbourhood scale.
+            const parent = this.parentPlanet.mesh;
+            parent.updateWorldMatrix(true, false);
+            const earthW = this._tmpA.setFromMatrixPosition(parent.matrixWorld);
+            let off;
+            if (typeof Ephemeris !== 'undefined') {
+                const jd = Ephemeris.clock.jd();
+                const mg = Ephemeris.moonGeo(jd);
+                off = Ephemeris.geoToScene(mg);
+                this._gateEclipses(mg, Ephemeris.planetHelio('Earth', jd));
+            } else {
+                off = [this.orbitDistance, 0, 0];
+            }
+            const moonW = this._tmpB.set(earthW.x + off[0], earthW.y + off[1], earthW.z + off[2]);
+            // Parent spins and is tilted: convert the world position into its local frame.
+            this.mesh.position.copy(parent.worldToLocal(this._tmpC.copy(moonW)));
+
+            // Tidally locked: the near side (texture longitude 0 = local +X) faces Earth,
+            // lunar north roughly along ecliptic north.
+            const xAxis = this._ax.subVectors(earthW, moonW).normalize();
+            const zAxis = this._az.crossVectors(xAxis, THREE.Object3D.DEFAULT_UP).normalize();
+            const yAxis = this._ay.crossVectors(zAxis, xAxis);
+            this._basis.makeBasis(xAxis, yAxis, zAxis);
+            this._q.setFromRotationMatrix(this._basis);
+            parent.getWorldQuaternion(this._pq);
+            this.mesh.quaternion.copy(this._pq.invert().multiply(this._q));
 
             const su = this._shadowUniforms;
             let n = 0;
@@ -1631,30 +1738,6 @@ function createMoon(moonData, parentPlanet) {
     }
 
     return moon;
-}
-
-// J2000 mean longitude (degrees) and daily motion (degrees/day) per planet.
-// Lets each planet start at its real heliocentric direction for today's date —
-// the actual arrangement of the solar system right now.
-const PLANET_EPHEMERIS = {
-    Mercury: [252.25084, 4.09233445],
-    Venus:   [181.97973, 1.60213034],
-    Earth:   [100.46435, 0.98560910],
-    Mars:    [355.45332, 0.52402068],
-    Jupiter: [ 34.40438, 0.08308529],
-    Saturn:  [ 49.94432, 0.03344414],
-    Uranus:  [313.23218, 0.01172834],
-    Neptune: [304.88003, 0.00598103],
-    Pluto:   [238.92904, 0.00397557]
-};
-
-function currentMeanLongitude(name) {
-    const e = PLANET_EPHEMERIS[name];
-    if (!e) return Math.random() * Math.PI * 2;
-    const daysSinceJ2000 = Date.now() / 86400000 - 10957.5;
-    let deg = (e[0] + e[1] * daysSinceJ2000) % 360;
-    if (deg < 0) deg += 360;
-    return deg * Math.PI / 180;
 }
 
 // ========== SOLAR SYSTEM ==========
@@ -1681,7 +1764,8 @@ function createSolarSystem() {
         lighting.addStarLight(sun);
     }
 
-    // Planet data (semi-realistic orbital distances scaled down)
+    // Planet data. `distance` = the scene radius of the planet's MEAN distance (the anchors of
+    // Ephemeris.mapRadius); the actual position each frame is the real one for the sim date.
     const planetData = [
         // axialTilt = real values in radians (Earth 23.4°, Saturn 26.7°, Uranus
         // famously sideways at ~98°). Without these, every planet rolled a RANDOM
@@ -1695,8 +1779,8 @@ function createSolarSystem() {
         { name: "Uranus", radius: 4, color: 0x70ccee, distance: 450, period: 30687, planetType: "ice", hasRings: true, axialTilt: 1.706, texturePack: "uranus" },
         { name: "Neptune", radius: 3.8, color: 0x3355ee, distance: 550, period: 60190, planetType: "ice", axialTilt: 0.494, texturePack: "neptune" },
         // Pluto — demoted on paper, not in here. Real eccentric, tilted orbit
-        // (e=0.25, i=17°), so it swings inside its drawn distance and rides above
-        // the ecliptic; no orbit ring since a flat circle would just be wrong.
+        // (e=0.25, i=17°) from the JPL elements: it swings inside Neptune's distance
+        // and rides above the ecliptic, and its drawn orbit path shows that.
         { name: "Pluto", radius: 0.45, color: 0xc9b29b, distance: 650, period: 90560, planetType: "rocky", hasAtmosphere: false, axialTilt: 2.14, texturePack: "pluto", eccentricity: 0.25, inclination: 0.30, noOrbitLine: true }
     ];
 
@@ -1719,17 +1803,19 @@ function createSolarSystem() {
                 period: data.period,
                 eccentricity: data.eccentricity ?? 0.02,
                 inclination: data.inclination || 0,
-                // Real ephemeris: start where the planet actually is today
-                meanAnomalyAtEpoch: currentMeanLongitude(data.name)
+                // Real ephemeris (Ephemeris.js, JPL Keplerian elements): OrbitalMechanics
+                // places the planet at its true heliocentric position for the sim date.
+                ephemeris: data.name
             }
         });
 
         rendererCore.scene.add(planet.mesh);
         objects.push(planet);
 
-        // Create orbit line (skipped for tilted/eccentric orbits like Pluto's,
-        // where a flat circle would misrepresent the real path)
-        if (!data.noOrbitLine) createOrbitLine(data.distance);
+        // True orbit path (real eccentricity, tilt and orientation, same radius mapping
+        // as the planet itself). Falls back to the old circle if Ephemeris is missing.
+        if (typeof Ephemeris !== 'undefined') createEphemerisOrbitLine(data.name);
+        else if (!data.noOrbitLine) createOrbitLine(data.distance);
     });
 
     // Add Earth's moon — and wire eclipse shadows both ways
@@ -1740,6 +1826,8 @@ function createSolarSystem() {
         moon.setOccluders([{ mesh: earth.mesh, radius: earth.radius }]);   // lunar eclipses
         if (earth.setOccluders) {
             earth.setOccluders([{ mesh: moon.mesh, radius: moon.radius }]); // solar eclipse spot
+            // both get gated every frame to real eclipse dates (moon._gateEclipses)
+            moon._eclipseLink = { earth, moonAsOccluder: { mesh: moon.mesh, radius: moon.radius }, on: true };
         }
     }
 
@@ -1791,6 +1879,21 @@ function createOrbitLine(radius) {
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     const material = new THREE.LineBasicMaterial({
                 depthWrite: false, // transparent overlay must not stamp the depth buffer
+        color: 0x334455,
+        transparent: true,
+        opacity: 0.3
+    });
+    const line = new THREE.Line(geometry, material);
+    rendererCore.scene.add(line);
+    orbitLines.push(line);
+}
+
+function createEphemerisOrbitLine(name) {
+    const pts = Ephemeris.orbitPath(name, Ephemeris.clock.jd(), 256);
+    if (!pts.length) return;
+    const geometry = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+    const material = new THREE.LineBasicMaterial({
+        depthWrite: false, // transparent overlay must not stamp the depth buffer
         color: 0x334455,
         transparent: true,
         opacity: 0.3

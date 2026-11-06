@@ -35,6 +35,7 @@
 		99B70EAD2E8BB7A2003F9928 /* Comet.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EAC2E8BB79B003F9928 /* Comet.js */; };
 		99B70EC52E8BB830003F9928 /* LightingSystem.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EC42E8BB82B003F9928 /* LightingSystem.js */; };
 		99B70EC72E8BB855003F9928 /* OrbitalMechanics.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EC62E8BB850003F9928 /* OrbitalMechanics.js */; };
+		99EE0A0B0C0D0E0F1A2B3C02 /* Ephemeris.js in Resources */ = {isa = PBXBuildFile; fileRef = 99EE0A0B0C0D0E0F1A2B3C01 /* Ephemeris.js */; };
 		99B70EDD2E8BB971003F9928 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EDC2E8BB96C003F9928 /* index.html */; };
 		99B70EDF2E8BB98E003F9928 /* main.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EDE2E8BB989003F9928 /* main.js */; };
 		99B70EE02E8BBD0A003F9928 /* HUD.js in Resources */ = {isa = PBXBuildFile; fileRef = 99B70EDA2E8BB900003F9928 /* HUD.js */; };
@@ -111,6 +112,7 @@
 		99B70EAC2E8BB79B003F9928 /* Comet.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Comet.js; sourceTree = "<group>"; };
 		99B70EC42E8BB82B003F9928 /* LightingSystem.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = LightingSystem.js; sourceTree = "<group>"; };
 		99B70EC62E8BB850003F9928 /* OrbitalMechanics.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = OrbitalMechanics.js; sourceTree = "<group>"; };
+		99EE0A0B0C0D0E0F1A2B3C01 /* Ephemeris.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Ephemeris.js; sourceTree = "<group>"; };
 		99B70EC82E8BB869003F9928 /* NavigationPhysics.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = NavigationPhysics.js; sourceTree = "<group>"; };
 		99B70ED82E8BB8D3003F9928 /* ParticleSystem.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ParticleSystem.js; sourceTree = "<group>"; };
 		99B70EDA2E8BB900003F9928 /* HUD.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = HUD.js; sourceTree = "<group>"; };
@@ -231,6 +233,7 @@
 				99B70ED82E8BB8D3003F9928 /* ParticleSystem.js */,
 				99B70EC82E8BB869003F9928 /* NavigationPhysics.js */,
 				99B70EC62E8BB850003F9928 /* OrbitalMechanics.js */,
+				99EE0A0B0C0D0E0F1A2B3C01 /* Ephemeris.js */,
 				99B70EC42E8BB82B003F9928 /* LightingSystem.js */,
 				99B70EAC2E8BB79B003F9928 /* Comet.js */,
 				99B70EA82E8BB762003F9928 /* AsteroidBelt.js */,
@@ -407,6 +410,7 @@
 				99B70EE42E8BBD0A003F9928 /* Star.js in Resources */,
 				99A0B1512E8A7DB100113A42 /* SphereRadar.js in Resources */,
 				99B70EC72E8BB855003F9928 /* OrbitalMechanics.js in Resources */,
+				99EE0A0B0C0D0E0F1A2B3C02 /* Ephemeris.js in Resources */,
 				99B70EDD2E8BB971003F9928 /* index.html in Resources */,
 				99B70EA72E8BB73F003F9928 /* Nebula.js in Resources */,
 				99B70E922E8BB58B003F9928 /* RendererCore.js in Resources */,
