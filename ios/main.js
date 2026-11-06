@@ -165,7 +165,18 @@ function initGalaxy() {
                 // patches around the Sun in Matt's screenshots as an 8-bit banding artifact.
                 // They are not — he confirmed the phone looks right. The phone keeps 8-bit.
                 // The wedge Matt is chasing is on the DESKTOP build, not here.
-                const _hdrOK = !rendererCore.isNativeApp && THREE.HalfFloatType !== undefined;
+                //
+                // 2026-11-06: the 8-bit phone target clipped the scene at 1.0 BEFORE the
+                // auto-exposure pass, so the Sun's photosphere (radiance well above 1) reached
+                // the exposure gain as a flat clipped yellow disk: no limb darkening, no
+                // texture, nothing for the meter to tame. The phone now gets the same
+                // half-float HDR targets as desktop whenever the context can actually render
+                // to RGBA16F (WebGL2 + EXT_color_buffer_float/half_float, framebuffer
+                // complete). Contexts that can't keep 8-bit, and the black-frame guard drops
+                // an HDR composer back to 8-bit before it would give up on post entirely.
+                const _hdrOK = THREE.HalfFloatType !== undefined &&
+                    (!rendererCore.isNativeApp || halfFloatRenderable(rendererCore.renderer));
+                window.__rtHDR = _hdrOK;
                 const _isDesktop = !rendererCore.isNativeApp;
                 const _dbs = rendererCore.renderer.getDrawingBufferSize(new THREE.Vector2());
                 const _iosRT = new THREE.WebGLRenderTarget(_dbs.x, _dbs.y, {
@@ -655,6 +666,188 @@ class RendererExposure {
 
 let rendererExposure = null;
 
+// ---- Planet name labels: screen-space layout ------------------------------------------
+// The name labels are world-space sprites (a planet-radius tall, 1.8 R above the centre),
+// so near a planet the name grew to fill the top of the screen: on the folded iPhone Duo
+// "Earth" ran under the radar and the menu buttons, and from the helm "Sun" was cut off by
+// the top edge. Each frame the label is now laid out in screen space: its height is capped,
+// it sits just above the planet's limb, inside the safe area, and it is moved (then shrunk,
+// then hidden) until it clears every HUD control. The native SwiftUI controls (radar,
+// menu / view / TOUR column, bottom console) are not in the DOM, so their frames are
+// mirrored from ContentView.swift; the web controls are measured.
+const _lbl = { v: new THREE.Vector3(), c: new THREE.Vector3(), q: new THREE.Vector3(), s: new THREE.Vector3(),
+               rects: [], safe: { t: 0, r: 0, b: 0, l: 0 }, at: -1e9, w: 0, h: 0 };
+
+function _labelSafeInsets() {
+    let el = document.getElementById('rt-safe-probe');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'rt-safe-probe';
+        el.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
+            'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);';
+        document.body.appendChild(el);
+    }
+    const cs = getComputedStyle(el);
+    return { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0,
+             b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
+}
+
+// HUD rectangles (CSS px, {x0,y0,x1,y1}) the labels must stay clear of; refreshed twice a second.
+function _labelExclusions() {
+    const now = performance.now(), W = window.innerWidth, H = window.innerHeight;
+    if (now - _lbl.at < 500 && _lbl.w === W && _lbl.h === H) return _lbl.rects;
+    _lbl.at = now; _lbl.w = W; _lbl.h = H;
+    const S = _lbl.safe = _labelSafeInsets();
+    const rects = [];
+    const add = (x, y, w, h, pad) => { pad = pad == null ? 6 : pad; rects.push({ x0: x - pad, y0: y - pad, x1: x + w + pad, y1: y + h + pad }); };
+    const native = !!(rendererCore && rendererCore.isNativeApp);
+    if (native) {
+        // Mirrors ContentView.swift's top bar and bottom console (points == CSS px here).
+        const land = W > H, roomy = Math.min(W, H) >= 600;
+        const right = W - S.r - 16;
+        if (land) {
+            const rw = roomy ? 120 : 80;
+            add(right - 50, S.t + 6, 50, 40 * 3 + 8 * 2);                       // ⋯ / view / TOUR
+            add(right - 50 - 44 - rw, S.t + 6 + (roomy ? 12 : 24), rw, rw);     // radar
+            add(0, H - S.b - 6 - 112, W, 112 + S.b + 6, 0);                     // joystick / speed / thrust row
+        } else {
+            add(right - 120, S.t + 8, 120, 120 + 8 + 40 * 3 + 8 * 2);           // radar + button column
+            add(0, H - S.b - 8 - 150, W, 150 + S.b + 8, 0);                     // speed pill, joystick, thrust
+        }
+    }
+    // Web HUD controls, measured.
+    const sel = '#time-pill, #cxScan, .cx-controls, #compass, #exploration-toggle-btn, #exploration-sidebar, #target-info, #boost-status';
+    document.querySelectorAll(sel).forEach(el => {
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.05) return;
+        const r = el.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) return;
+        add(r.left, r.top, r.width, r.height);
+    });
+    _lbl.rects = rects;
+    return rects;
+}
+
+function _hitsAny(b, rects) {
+    for (let i = 0; i < rects.length; i++) {
+        const r = rects[i];
+        if (b.x0 < r.x1 && b.x1 > r.x0 && b.y0 < r.y1 && b.y1 > r.y0) return true;
+    }
+    return false;
+}
+
+function layoutPlanetLabel(ph, camera, opacity) {
+    const label = ph.label, planet = ph.planet;
+    if (!label.visible || opacity <= 0.001 || !planet.mesh) return;
+    const W = window.innerWidth, H = window.innerHeight;
+    const C = planet.mesh.getWorldPosition(_lbl.c);
+    const toC = _lbl.v.copy(C).sub(camera.position);
+    const d = toC.length();
+    const R = planet.radius || 1;
+    const fwd = _lbl.q.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    const depth = toC.dot(fwd);
+    if (depth <= R * 0.2 || d <= R * 1.01) { label.material.opacity = 0; return; }
+
+    const tanH = Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5);
+    const pxPerWorld = H / (2 * depth * tanH);              // CSS px per world unit at the planet
+    const ndc = _lbl.s.copy(C).project(camera);
+    const cx = (ndc.x * 0.5 + 0.5) * W, cy = (1 - (ndc.y * 0.5 + 0.5)) * H;
+    const rs = Math.tan(Math.asin(Math.min(1, R / d))) / tanH * 0.5 * H;   // limb radius, px
+    // planet entirely off screen: its name must not be dragged in to the screen edge
+    if (cx + rs < 0 || cx - rs > W || cy + rs < 0 || cy - rs > H) { label.material.opacity = 0; ph._box = null; return; }
+
+    // Natural size = the old world-space size; capped so a near planet's name stays a title,
+    // not a wall of text (the canvas text is half the sprite's height).
+    const S = _lbl.safe, rects = _labelExclusions();
+    const natural = R * pxPerWorld;                          // sprite height in px (scale.y = R)
+    const cap = Math.max(26, Math.min(72, Math.min(W, H) * 0.14));
+    let h = Math.min(natural, cap);
+    const minH = Math.min(natural, 22);
+
+    const top = S.t + 4, bottom = H - S.b - 4, left = S.l + 4, right = W - S.r - 4;
+    const textBox = (x, y, hh) => {                         // the glyphs' box, not the sprite's
+        const tw = 4 * hh * ph.textFrac, th = hh * 0.62;
+        return { x0: x - tw / 2, y0: y - th / 2, x1: x + tw / 2, y1: y + th / 2, tw: tw, th: th };
+    };
+    const fits = (x, y, hh) => {
+        const b = textBox(x, y, hh);
+        return b.x0 >= left && b.x1 <= right && b.y0 >= top && b.y1 <= bottom && !_hitsAny(b, rects);
+    };
+    const clampX = (x, hh) => { const tw = 4 * hh * ph.textFrac; return Math.min(Math.max(x, left + tw / 2), right - tw / 2); };
+    const clampY = (y, hh) => { const th = hh * 0.62; return Math.min(Math.max(y, top + th / 2), bottom - th / 2); };
+
+    let px = null, py = null;
+    for (let tries = 0; tries < 4 && px === null; tries++) {
+        const gap = h * 0.2;
+        const x = clampX(cx, h);
+        // candidates: above the limb (the old spot), slid down toward the centre, below the limb
+        const above = cy - rs - gap - h * 0.31;
+        const cands = [above];
+        for (let k = 1; k <= 6; k++) cands.push(above + k * (rs + gap) / 3);
+        cands.push(cy + rs + gap + h * 0.31);
+        for (let i = 0; i < cands.length; i++) {
+            const y = clampY(cands[i], h);
+            if (fits(x, y, h)) { px = x; py = y; break; }
+            // sideways nudge: away from whatever HUD column is on that side
+            const tw = 4 * h * ph.textFrac;
+            for (const dx of [-tw * 0.5, tw * 0.5, -tw, tw]) {
+                const x2 = clampX(x + dx, h);
+                if (fits(x2, y, h)) { px = x2; py = y; break; }
+            }
+            if (px !== null) break;
+        }
+        if (px === null) { if (h <= minH) break; h = Math.max(minH, h * 0.75); }
+    }
+    if (px === null) { label.material.opacity = 0; ph._box = null; return; }   // nowhere clear: no label
+    ph._box = textBox(px, py, h);
+
+    // Back to the world: a point on the ray through (px, py), just in front of the planet so
+    // the planet's own surface never hides the label it carries.
+    const dist = Math.max(depth - R * 1.05, depth * 0.5);
+    const ndcX = px / W * 2 - 1, ndcY = 1 - py / H * 2;
+    const p = _lbl.v.set(ndcX, ndcY, 0.5).unproject(camera).sub(camera.position).normalize();
+    const along = dist / Math.max(1e-6, p.dot(fwd));
+    const world = p.multiplyScalar(along).add(camera.position);
+    const k = h * 2 * dist * tanH / H;                       // sprite height in world units
+    const ws = planet.mesh.getWorldScale(_lbl.s);
+    planet.mesh.worldToLocal(world);
+    label.position.copy(world);
+    label.scale.set(4 * k / (ws.x || 1), k / (ws.y || 1), 1);
+}
+
+// True when this WebGL context can render into RGBA16F targets (what THREE.HalfFloatType
+// render targets become on WebGL2). Tested with a real framebuffer, not just the extension
+// list, because a context can expose the extension and still refuse the attachment.
+function halfFloatRenderable(renderer) {
+    try {
+        const gl = renderer.getContext();
+        if (typeof WebGL2RenderingContext === 'undefined' || !(gl instanceof WebGL2RenderingContext)) return false;
+        if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) return false;
+        const tex = gl.createTexture(), fb = gl.createFramebuffer();
+        const prevFb = gl.getParameter(gl.FRAMEBUFFER_BINDING), prevTex = gl.getParameter(gl.TEXTURE_BINDING_2D);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 4, 4, 0, gl.RGBA, gl.HALF_FLOAT, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, prevFb);
+        gl.bindTexture(gl.TEXTURE_2D, prevTex);
+        gl.deleteFramebuffer(fb); gl.deleteTexture(tex);
+        return ok;
+    } catch (e) { return false; }
+}
+
+// Drop an HDR composer to 8-bit targets (the black-frame guard's first fallback). The Sun
+// reads window.__rtHDR and switches to its no-headroom output.
+function composerToLDR(rc) {
+    const byte = THREE.UnsignedByteType, c = rc.composer, bp = rc.bloomPass;
+    [].concat(c ? [c.renderTarget1, c.renderTarget2] : [],
+              bp ? [].concat(bp.renderTargetsHorizontal || [], bp.renderTargetsVertical || [],
+                             bp.renderTargetBright ? [bp.renderTargetBright] : []) : [])
+      .forEach(rt => { if (rt && rt.texture && rt.texture.type !== byte) { rt.texture.type = byte; rt.dispose(); } });
+    window.__rtHDR = false;
+}
+
 // One-time guard against the iOS "composer renders black" bug. Reads a wide central band
 // of the just-composed frame; if every sampled pixel is black, the post-processing pipeline
 // failed on this device and we must fall back to direct rendering. The scene always has a
@@ -950,6 +1143,7 @@ function createUpdateSystems() {
                     opacity = Math.min(Math.max(opacity, 0), 1);
 
                     ph.label.material.opacity = opacity;
+                    layoutPlanetLabel(ph, rc.camera, opacity);
 
                     if (!ph.glow) return;
                     // Gentle pulse. The ring geometry is already sized to the planet's
@@ -1087,7 +1281,13 @@ function createUpdateSystems() {
                         rendererCore._bloomWarm = (rendererCore._bloomWarm || 0) + 1;
                         if (rendererCore._bloomWarm >= 6) {
                             rendererCore._bloomChecked = true;
-                            if (composerFrameIsBlack(rendererCore.renderer)) {
+                            if (window.__rtHDR && rendererCore.isNativeApp && composerFrameIsBlack(rendererCore.renderer)) {
+                                // HDR targets came out black on this phone: retry the same
+                                // post chain on 8-bit targets before giving up on post.
+                                composerToLDR(rendererCore);
+                                rendererCore._bloomChecked = false; rendererCore._bloomWarm = 0;
+                                console.warn("⚠️ Half-float post produced a BLACK frame — retrying on 8-bit targets.");
+                            } else if (composerFrameIsBlack(rendererCore.renderer)) {
                                 rendererCore.useComposer = false;
                                 console.warn("⚠️ Post-processing produced a BLACK frame on this device — auto-falling back to direct rendering (bloom off, no black screen).");
                             } else {
@@ -2266,6 +2466,7 @@ function createPlanetHighlights() {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(obj.name, 384, 96);
+        const textFrac = Math.min(1, ctx.measureText(obj.name).width / 768);
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.anisotropy = 4;
@@ -2310,7 +2511,10 @@ function createPlanetHighlights() {
         planetHighlights.push({
             planet: obj,
             label: label,
-            glow: glow
+            glow: glow,
+            textFrac: textFrac,
+            baseScale: label.scale.clone(),
+            basePos: label.position.clone()
         });
     });
 }

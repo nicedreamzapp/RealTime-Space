@@ -2,8 +2,10 @@
 // Layers:
 //   ambient  — two slow detuned low oscillators + filtered noise (deep space hum)
 //   thrust   — band-passed noise rumble that follows the throttle
-//   shimmer  — high harmonic cluster that swells as you near the sun
-//   abyss    — sub-bass drone that grows near the black hole
+// Nothing else: the Sun "shimmer" (a 1.2-2.1 kHz sine cluster) and the black-hole sine
+// drone were removed (Matt 2026-11-06: "the annoying ringing space sound"). Both layers
+// Thrust is filtered noise (no tone); the only tonal voices left are the opt-in ambient
+// hum's 55-110 Hz drone, which is off by default.
 // iOS/WKWebView suspends AudioContext until a user gesture; we resume on first touch.
 
 class AudioEngine {
@@ -12,7 +14,7 @@ class AudioEngine {
         this.started = false;
         this.enabled = true;
         // The constant ambient drone is OFF unless the player turns "Ambient hum" on (Matt 2026-11-04:
-        // "the constant hum plays the whole time"). Event sounds (thrust, sun, black hole) are unchanged.
+        // "the constant hum plays the whole time"). The thrust rumble is the only event sound.
         try { this.ambientHum = localStorage.getItem('rts_ambient_hum') === '1'; } catch (e) { this.ambientHum = false; }
         this._nodes = {};
 
@@ -144,46 +146,6 @@ class AudioEngine {
         this._nodes.thrustFilter.connect(this._nodes.thrustGain);
         this._nodes.thrustGain.connect(this.master);
         thrustNoise.start();
-
-        // ---- Sun shimmer ----
-        this._nodes.shimmerGain = ctx.createGain();
-        this._nodes.shimmerGain.gain.value = 0;
-        this._nodes.shimmerGain.connect(this.master);
-        [1244, 1567, 2092].forEach((freq, i) => {
-            const osc = ctx.createOscillator();
-            osc.type = 'sine';
-            osc.frequency.value = freq;
-            const g = ctx.createGain();
-            g.gain.value = 0.06 / (i + 1);
-            const trem = ctx.createOscillator();
-            trem.frequency.value = 0.13 + i * 0.07;
-            const tremGain = ctx.createGain();
-            tremGain.gain.value = 0.03;
-            trem.connect(tremGain);
-            tremGain.connect(g.gain);
-            osc.connect(g);
-            g.connect(this._nodes.shimmerGain);
-            osc.start();
-            trem.start();
-        });
-
-        // ---- Black hole abyss ----
-        this._nodes.abyssGain = ctx.createGain();
-        this._nodes.abyssGain.gain.value = 0;
-        this._nodes.abyssGain.connect(this.master);
-        const abyss = ctx.createOscillator();
-        abyss.type = 'sine';
-        abyss.frequency.value = 31;
-        const abyss2 = ctx.createOscillator();
-        abyss2.type = 'sine';
-        abyss2.frequency.value = 38.7;
-        const abyssMix = ctx.createGain();
-        abyssMix.gain.value = 0.5;
-        abyss.connect(abyssMix);
-        abyss2.connect(abyssMix);
-        abyssMix.connect(this._nodes.abyssGain);
-        abyss.start();
-        abyss2.start();
     }
 
     // Called every frame with flight/scene state.
@@ -197,14 +159,6 @@ class AudioEngine {
         this._nodes.thrustGain.gain.setTargetAtTime(thrustTarget, t, ease);
         this._nodes.thrustFilter.frequency.setTargetAtTime(
             state.boosting ? 420 : 160 + Math.min(160, state.speed * 1.2), t, 0.25);
-
-        // Sun shimmer: audible inside ~220 units, swells as you close in
-        const sunAmount = Math.max(0, 1 - (state.sunDistance || 9999) / 220);
-        this._nodes.shimmerGain.gain.setTargetAtTime(sunAmount * sunAmount * 0.5, t, 0.4);
-
-        // Black hole: sub-bass dread inside ~500 units
-        const bhAmount = Math.max(0, 1 - (state.blackHoleDistance || 9999) / 500);
-        this._nodes.abyssGain.gain.setTargetAtTime(bhAmount * bhAmount * 0.6, t, 0.4);
     }
 
     // "Ambient hum" setting (persisted). Fades the drone in or out; events are unaffected.

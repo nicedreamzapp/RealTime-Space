@@ -96,7 +96,10 @@ class Star {
             uSpots: { value: this._makeSpots() },
             // Auto-lens solar filter (0 = bare sensor, 1 = full ND solar filter). Driven
             // per frame from update() when the camera faces the star.
-            uFilter: { value: 0.0 }
+            uFilter: { value: 0.0 },
+            // 1 when the scene renders into 8-bit targets (no headroom above 1.0): the
+            // filtered disk is scaled to fit under white instead of clipping flat.
+            uLDR: { value: window.__rtHDR === false ? 1.0 : 0.0 }
         };
         const material = new THREE.ShaderMaterial({
             uniforms: this.surfaceUniforms,
@@ -117,6 +120,7 @@ class Star {
                 uniform float time;
                 uniform float uDetail;
                 uniform float uFilter;
+                uniform float uLDR;
                 uniform vec4 uSpots[8];
                 varying vec3 vPos;
                 varying vec3 vNormalV;
@@ -161,7 +165,7 @@ class Star {
                         vec3 q = p * F;
                         // how many cells fall in one pixel: fade detail the sensor can't resolve
                         float cellsPerPx = length(fwidth(q));
-                        float res = 1.0 - smoothstep(0.18, 0.7, cellsPerPx);
+                        float res = 1.0 - smoothstep(0.35, 1.3, cellsPerPx);
                         if (res > 0.0) {
                             vec2 w = worley(q, time * 0.25);
                             float lane = smoothstep(0.0, 0.22, w.y - w.x);      // dark lanes
@@ -173,9 +177,29 @@ class Star {
                             }
                             I *= 1.0 + 0.16 * res * g;
                         }
+                    } else {
+                        // Low tier: the same cell scale from one value-noise octave (8 taps
+                        // instead of Worley's 27). Ridged noise gives bright cells split by
+                        // dark lanes; same resolution fade, a little less contrast.
+                        vec3 q = p * 300.0;
+                        float res = 1.0 - smoothstep(0.35, 1.3, length(fwidth(q)));
+                        if (res > 0.0) {
+                            float n = vnoise(q * 0.9 + vec3(0.0, time * 0.05, 0.0));
+                            float g = 1.0 - abs(2.0 * n - 1.0);          // 0 on the lanes
+                            I *= 1.0 + 0.12 * res * (smoothstep(0.15, 0.85, g) - 0.55);
+                        }
                     }
                     // unresolved convection: very low-contrast mottling, always on
                     I *= 1.0 + 0.025 * (vnoise(p * 9.0 + time * 0.01) - 0.5) + 0.015 * (vnoise(p * 31.0 - time * 0.02) - 0.5);
+                    // Supergranular network (~30 Mm cells, ~25 per solar radius): magnetic
+                    // network faculae outline the cells. Faint at disk centre, brighter toward
+                    // the limb (white-light faculae contrast grows as mu falls), so the disk
+                    // keeps a resolved texture at distances where granules are sub-pixel.
+                    {
+                        float nA = vnoise(p * 25.0 + 3.1), nB = vnoise(p * 57.0 - 1.7);
+                        float net = smoothstep(0.55, 0.95, 1.0 - abs(2.0 * nA - 1.0)) * smoothstep(0.25, 0.75, nB);
+                        I *= 1.0 + net * (0.025 + 0.16 * pow(1.0 - mu, 1.5));
+                    }
 
                     // ---- sunspots (umbra ~0.2, penumbra ~0.75 of the quiet Sun) + faculae ----
                     float umbra = 0.0, pen = 0.0, plage = 0.0;
@@ -214,8 +238,17 @@ class Star {
                     // auto-exposure floor (0.6) that the meter settles on with the Sun in frame:
                     // the centre lands just over the bloom threshold, so it glows softly
                     // without clipping to white (the HMI frames never go white).
-                    vec3 ramp = vec3(smoothstep(0.0, 0.42, L), 0.78 * smoothstep(0.12, 1.0, L), 0.5 * smoothstep(0.45, 1.05, L));
-                    vec3 filt = ramp * 1.8;
+                    // The ramp keeps a real slope at the top end (L ~ 1, disk centre): the old
+                    // smoothstep ramps went flat there, which erased the granulation exactly
+                    // where the disk is brightest.
+                    float Lc = max(L, 0.0);
+                    vec3 ramp = vec3(pow(Lc, 0.45),
+                                     0.78 * pow(max(Lc - 0.1, 0.0) / 0.9, 1.2),
+                                     0.5 * pow(max(Lc - 0.4, 0.0) / 0.6, 1.6));
+                    // Gain: with the meter at its floor (0.6) the centre's red lands at ~0.95,
+                    // just over the bloom threshold, so it glows softly and never clips flat.
+                    // With no headroom (8-bit targets) the disk is scaled to fit under 1.0.
+                    vec3 filt = ramp * mix(1.6, 0.98, uLDR);
                     vec3 col = mix(bare, filt, uFilter);
                     gl_FragColor = vec4(col, 1.0);
                 }
@@ -231,7 +264,8 @@ class Star {
             uExtent: { value: this.radius * 7.0 },  // half-size of the quad, world units
             uSilR: { value: this.radius },          // silhouette radius in the quad plane
             uPxR: { value: 0.003 },                 // one screen pixel, in solar radii
-            uGain: { value: 1.0 }
+            uGain: { value: 1.0 },
+            uFilt: { value: 0.0 }                   // the auto-lens solar filter (0..1)
         };
         const mat = new THREE.ShaderMaterial({
             uniforms: this.coronaUniforms,
@@ -255,7 +289,7 @@ class Star {
                 }
             `,
             fragmentShader: `
-                uniform float time, uPxR, uGain, uExtent, uSilR;
+                uniform float time, uPxR, uGain, uExtent, uSilR, uFilt;
                 varying vec2 vR;
                 float h1(float n) { return fract(sin(n) * 43758.5453); }
                 float n1(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(h1(i), h1(i + 1.0), f); }
@@ -280,6 +314,12 @@ class Star {
                     st = mix(1.0, st, smoothstep(1.0, 1.4, r));
                     col += vec3(1.0, 0.94, 0.86) * kc * st * 0.55;
 
+                    // Through the solar filter the outer corona falls ~5 stops under the
+                    // filtered disk and is lost in the sensor floor; only the bright inner
+                    // K-corona stays, as a soft glow hugging the limb. Without this the
+                    // r^-2.5 tail plus its bloom laid a grey veil over the whole frame when
+                    // the Sun filled the screen.
+                    col *= mix(1.0, exp(-h * 3.0), uFilt);
                     // fade to exactly zero before the quad edge: no visible boundary
                     float rMax = uExtent / uSilR;
                     col *= 1.0 - smoothstep(rMax * 0.55, rMax * 0.98, r);
@@ -338,6 +378,7 @@ class Star {
             this._filter = (this._filter || 0) + (target - (this._filter || 0)) * Math.min(1, deltaTime * 3.5);
             if (this.surfaceUniforms) this.surfaceUniforms.uFilter.value = this._filter;
             window.__sunFilter = this._filter;   // god rays + camera optics read it
+            if (this.surfaceUniforms) this.surfaceUniforms.uLDR.value = window.__rtHDR === false ? 1.0 : 0.0;
 
             if (this.coronaUniforms) {
                 const R = this.radius;
@@ -350,6 +391,7 @@ class Star {
                 this.coronaUniforms.uPxR.value = (2 * d * Math.tan(fovR / 2) / H) / R;
                 // the corona is scattered photospheric light: the filter dims it too
                 this.coronaUniforms.uGain.value = 1.0 + 5.0 * (1 - this._filter);
+                this.coronaUniforms.uFilt.value = this._filter;
                 this.coronaUniforms.time.value = this.time;
             }
         }

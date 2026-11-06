@@ -143,6 +143,16 @@
             const dEarth = this._tmp.distanceTo(cam.position);
             const vis = dEarth < this.earthRadius * 40;
             this.marker.visible = vis;
+            // Keep the label a label: world-sized, it grew to a ~60 px headline when flying
+            // near Earth. Cap its on-screen height at ~16 px (CSS), whatever the distance.
+            if (vis && this._label) {
+              const dL = this.marker.position.distanceTo(cam.position);
+              const tanH = Math.tan((cam.fov || 60) * Math.PI / 360);
+              const hMax = 16 * 2 * dL * tanH / Math.max(1, window.innerHeight);
+              const h = Math.min(this.earthRadius * 0.225, hMax);
+              this._label.scale.set(h * (1.2 / 0.225), h, 1);
+              this._label.position.y = Math.min(this.earthRadius * 0.18, h * 0.8);
+            }
           }
         }
         requestAnimationFrame(step);
