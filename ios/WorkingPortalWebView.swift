@@ -188,6 +188,11 @@ struct WorkingPortalWebView: UIViewRepresentable {
                                                              injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
         
+        // Device hints for RTQuality.js's starting tier (WKWebView hides the model and RAM)
+        // and the saved Haptics toggle for RTHaptics.js. Injected before any page script.
+        userContentController.addUserScript(WKUserScript(source: Self.deviceHintScript(),
+                                                         injectionTime: .atDocumentStart, forMainFrameOnly: true))
+
         let config = WKWebViewConfiguration()
         config.userContentController = userContentController
         // Serve bundled web assets (HTML/JS/textures) same-origin so WebGL textures load.
@@ -278,4 +283,26 @@ struct WorkingPortalWebView: UIViewRepresentable {
 
 private extension Notification.Name {
     static let workingPortalNavUpdate = Notification.Name("WorkingPortalWebView.navUpdate")
+}
+
+extension WorkingPortalWebView {
+    /// `window.__RT_DEVICE = {model, memGB, haptics}`: hardware identifier (e.g. "iPhone13,2"
+    /// is an iPhone 12), physical RAM, and the saved Haptics toggle. Read by RTQuality.js
+    /// (start tier) and RTHaptics.js.
+    static func deviceHintScript() -> String {
+        var model: String
+        if let sim = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] {
+            model = sim
+        } else {
+            var info = utsname()
+            uname(&info)
+            model = withUnsafeBytes(of: &info.machine) { raw in
+                String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+            }
+        }
+        model = model.filter { $0.isLetter || $0.isNumber || $0 == "," || $0 == "_" }
+        let memGB = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
+        let haptics = GalaxyBridge.hapticsEnabled
+        return "window.__RT_DEVICE = { model: '\(model)', memGB: \(String(format: "%.1f", memGB)), haptics: \(haptics) };"
+    }
 }

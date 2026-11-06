@@ -22,30 +22,139 @@ final class GalaxyBridge: NSObject, WKScriptMessageHandler {
     // MARK: - CoreHaptics helper
     
     private static let hapticEngineHelper = HapticEngineHelper()
+
+    // In-app Haptics toggle (menu > DISPLAY > Haptics). Default on; the patterns themselves
+    // are deliberately faint. iOS offers no public API to read the System Haptics switch in
+    // Settings > Sounds & Haptics, so this toggle is the user's control.
+    static let hapticsDefaultsKey = "hapticsEnabled"
+    static var hapticsEnabled: Bool {
+        UserDefaults.standard.object(forKey: hapticsDefaultsKey) as? Bool ?? true
+    }
+
+    static func stopFlightHaptics() {
+        DispatchQueue.main.async { hapticEngineHelper.stopFlight() }
+    }
     
     private class HapticEngineHelper {
         private var engine: CHHapticEngine?
         private var supportsHaptics: Bool
         
+        // Flight rumble: one looping continuous event whose strength is steered live with
+        // dynamic parameters (no new player per update).
+        private var flightPlayer: CHHapticAdvancedPatternPlayer?
+        private var flightRunning = false
+        private var lastFlightUpdate = Date.distantPast
+        private var watchdog: Timer?
+
+        // Very subtle by design: the strongest combined rumble+swell is 0.45 of full intensity.
+        private let rumbleGain: Float = 0.22
+        private let swellGain: Float = 0.30
+        private let maxIntensity: Float = 0.45
+
         init() {
             var supports = false
             if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
                 supports = true
                 do {
-                    engine = try CHHapticEngine()
-                    try engine?.start()
+                    let e = try CHHapticEngine()
+                    e.playsHapticsOnly = true          // never touch the app's audio session
+                    e.isAutoShutdownEnabled = true     // engine sleeps when nothing is playing
+                    engine = e
+                    try e.start()
                 } catch {
                     engine = nil
                     supports = false
                 }
             }
             supportsHaptics = supports
+            // Backgrounding / audio interruptions stop the engine and invalidate players.
+            engine?.stoppedHandler = { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.flightPlayer = nil
+                    self?.flightRunning = false
+                }
+            }
+            engine?.resetHandler = { [weak self] in
+                DispatchQueue.main.async {
+                    self?.flightPlayer = nil
+                    self?.flightRunning = false
+                    try? self?.engine?.start()
+                }
+            }
         }
-        
+
+        // rumble, swell: 0...1 from RTHaptics.js. Zero for both stops the player.
+        func setFlight(rumble: Float, swell: Float) {
+            guard supportsHaptics, let engine = engine else { return }
+            lastFlightUpdate = Date()
+            // Low Power Mode: skip the continuous rumble (it is the battery-costly part).
+            let r = ProcessInfo.processInfo.isLowPowerModeEnabled ? 0 : max(0, min(1, rumble))
+            let s = ProcessInfo.processInfo.isLowPowerModeEnabled ? 0 : max(0, min(1, swell))
+            let intensity = min(maxIntensity, r * rumbleGain + s * swellGain)
+            if intensity < 0.01 { stopFlight(); return }
+
+            if flightPlayer == nil {
+                do {
+                    try engine.start()
+                    let event = CHHapticEvent(eventType: .hapticContinuous,
+                                              parameters: [CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.0),
+                                                           CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.25)],
+                                              relativeTime: 0,
+                                              duration: 10)
+                    let pattern = try CHHapticPattern(events: [event], parameters: [])
+                    let player = try engine.makeAdvancedPlayer(with: pattern)
+                    player.loopEnabled = true
+                    player.loopEnd = 10
+                    flightPlayer = player
+                } catch {
+                    flightPlayer = nil
+                    return
+                }
+            }
+            guard let player = flightPlayer else { return }
+            // Speed sharpens the buzz slightly; a gravity well deepens (softens) it.
+            let sharp = max(-1, min(1, -0.1 + 0.25 * r - 0.15 * s))
+            let params = [
+                CHHapticDynamicParameter(parameterID: .hapticIntensityControl, value: intensity, relativeTime: 0),
+                CHHapticDynamicParameter(parameterID: .hapticSharpnessControl, value: sharp, relativeTime: 0)
+            ]
+            do {
+                if !flightRunning {
+                    try engine.start()   // may have auto-shut down while idle
+                    try player.start(atTime: CHHapticTimeImmediate)
+                    flightRunning = true
+                }
+                try player.sendParameters(params, atTime: CHHapticTimeImmediate)
+            } catch {
+                flightPlayer = nil
+                flightRunning = false
+            }
+            startWatchdog()
+        }
+
+        func stopFlight() {
+            watchdog?.invalidate()
+            watchdog = nil
+            if let p = flightPlayer, flightRunning {
+                try? p.stop(atTime: CHHapticTimeImmediate)
+            }
+            flightRunning = false
+        }
+
+        // If the web layer stalls (paused loop, page reload) the rumble must not run on.
+        private func startWatchdog() {
+            guard watchdog == nil else { return }
+            watchdog = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                if Date().timeIntervalSince(self.lastFlightUpdate) > 1.5 { self.stopFlight() }
+            }
+        }
+
         func playPattern(for style: String) {
             guard supportsHaptics, let engine = engine else {
                 return
             }
+            try? engine.start()   // auto-shutdown may have put it to sleep
 
             let pattern: CHHapticPattern?
             switch style {
@@ -99,6 +208,16 @@ final class GalaxyBridge: NSObject, WKScriptMessageHandler {
                                   parameters: [CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.0),
                                                CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.9)],
                                   relativeTime: 0.4)
+                ], parameters: [])
+            case "warpIn", "warpOut":
+                // One crisp tick as the drive engages / drops out. Kept light; warp entry is
+                // a touch stronger and sharper than the exit.
+                let entering = style == "warpIn"
+                pattern = try? CHHapticPattern(events: [
+                    CHHapticEvent(eventType: .hapticTransient,
+                                  parameters: [CHHapticEventParameter(parameterID: .hapticIntensity, value: entering ? 0.6 : 0.45),
+                                               CHHapticEventParameter(parameterID: .hapticSharpness, value: entering ? 0.95 : 0.8)],
+                                  relativeTime: 0)
                 ], parameters: [])
             default:
                 pattern = nil
@@ -260,8 +379,27 @@ final class GalaxyBridge: NSObject, WKScriptMessageHandler {
             return
         }
 
+        // Continuous flight rumble from RTHaptics.js (speed + gravity-well depth, 0...1).
+        if typeString == "HAPTIC_FLIGHT" {
+            func num(_ k: String) -> Float {
+                if let d = body[k] as? Double { return Float(d) }
+                if let n = body[k] as? NSNumber { return n.floatValue }
+                return 0
+            }
+            let rumble = num("rumble"), swell = num("swell")
+            DispatchQueue.main.async {
+                if GalaxyBridge.hapticsEnabled {
+                    GalaxyBridge.hapticEngineHelper.setFlight(rumble: rumble, swell: swell)
+                } else {
+                    GalaxyBridge.hapticEngineHelper.stopFlight()
+                }
+            }
+            return
+        }
+
         if typeString == "HAPTIC",
            let style = body["style"] as? String {
+            guard GalaxyBridge.hapticsEnabled else { return }
             DispatchQueue.main.async {
                 if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
                     GalaxyBridge.hapticEngineHelper.playPattern(for: style)

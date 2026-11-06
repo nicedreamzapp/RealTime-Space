@@ -44,9 +44,15 @@ class UpdateLoop {
         this.lastFrameTimes = [];
         this.maxFrameTimeHistory = 10;
 
-        // Adaptive quality
-        this.qualityLevel = 1.0;  // 0.5 to 1.0
+        // Adaptive quality: the tier itself lives in window.RTQuality (RTQuality.js), which
+        // every effect can read. qualityLevel mirrors it as a number for old callers.
         this.autoQuality = true;
+        if (window.RTQuality) {
+            window.RTQuality.attach(rendererCore);
+            this.qualityLevel = window.RTQuality.level();
+        } else {
+            this.qualityLevel = 1.0;
+        }
 
         console.log("✅ CINEMATIC UpdateLoop ready with", systems.length, "systems");
     }
@@ -124,6 +130,7 @@ class UpdateLoop {
 
             // Update performance stats
             this.updatePerformanceStats(rawDelta);
+            if (this.autoQuality && !this.isPaused && window.RTQuality) window.RTQuality.sample(rawDelta);
 
             if (!this.isPaused) {
                 this.totalTime += this.deltaTime;
@@ -138,10 +145,10 @@ class UpdateLoop {
                 // Update UI elements
                 this.updateUI();
 
-                // Adaptive quality adjustment
-                if (this.autoQuality && this.frameCount % 60 === 0) {
-                    this.adjustQuality();
-                }
+                // Flight haptics (iOS only; no-op elsewhere). Cheap: throttled inside.
+                if (window.RTHaptics) window.RTHaptics.update(this.deltaTime);
+
+                if (window.RTQuality) this.qualityLevel = window.RTQuality.level();
             }
         } catch (e) {
             console.error("❌ Loop error:", e.message || e);
@@ -268,7 +275,7 @@ class UpdateLoop {
             // Periodic FPS telemetry (~every 2s) for performance measurement
             if (this.frameCount % 120 === 0) {
                 const pr = this.rendererCore?.renderer?.getPixelRatio?.();
-                console.log(`📊 FPS: ${this.fps} | smoothness: ${this.performanceStats.smoothness}% | pixelRatio: ${pr ?? '?'}`);
+                console.log(`📊 FPS: ${this.fps} | smoothness: ${this.performanceStats.smoothness}% | pixelRatio: ${pr ?? '?'} | tier: ${window.RTQuality?.tier ?? '?'}`);
             }
 
             // Calculate smoothness
@@ -281,19 +288,9 @@ class UpdateLoop {
     }
 
     adjustQuality() {
-        if (!this.autoQuality) return;
-
-        const targetFrameTime = 1000 / this.targetFPS;
-
-        if (this.performanceStats.averageDelta > targetFrameTime * 1.5) {
-            // Performance is poor, reduce quality
-            this.qualityLevel = Math.max(0.5, this.qualityLevel - 0.1);
-            console.log(`📉 Quality reduced to ${(this.qualityLevel * 100).toFixed(0)}%`);
-        } else if (this.performanceStats.averageDelta < targetFrameTime * 0.8 && this.qualityLevel < 1.0) {
-            // Performance is good, increase quality
-            this.qualityLevel = Math.min(1.0, this.qualityLevel + 0.05);
-            console.log(`📈 Quality increased to ${(this.qualityLevel * 100).toFixed(0)}%`);
-        }
+        // Superseded by RTQuality's tiered governor (with hysteresis), sampled every frame
+        // in loop(). Kept so external callers don't break.
+        if (window.RTQuality) this.qualityLevel = window.RTQuality.level();
     }
 
     getNearestObject(position) {
@@ -406,11 +403,13 @@ class UpdateLoop {
 
     setAutoQuality(enabled) {
         this.autoQuality = enabled;
+        if (window.RTQuality) { if (enabled) window.RTQuality.unlock(); else window.RTQuality.locked = true; }
         console.log(`🔧 Auto quality ${enabled ? 'enabled' : 'disabled'}`);
     }
 
     setQualityLevel(level) {
         this.qualityLevel = Math.max(0.5, Math.min(1.0, level));
+        if (window.RTQuality) window.RTQuality.setTier(level >= 0.9 ? 'high' : level >= 0.7 ? 'medium' : 'low', { lock: true });
         console.log(`🎨 Quality level set to ${(this.qualityLevel * 100).toFixed(0)}%`);
     }
 }
