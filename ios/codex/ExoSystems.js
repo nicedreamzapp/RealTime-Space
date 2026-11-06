@@ -58,7 +58,7 @@
     _tex(file) {
       if (!this.texCache[file]) {
         const t = new this.THREE.TextureLoader().load('codex/cosmos/' + file);
-        if (this.THREE.SRGBColorSpace !== undefined) t.colorSpace = this.THREE.SRGBColorSpace;
+        markSRGB(t);
         this.texCache[file] = t;
       }
       return this.texCache[file];
@@ -125,6 +125,7 @@
           new THREE.BufferGeometry().setFromPoints(ringPts),
           new THREE.LineBasicMaterial({ depthWrite: false, color: 0x3a5a7a, transparent: true, opacity: 0.25 })
         );
+        ring.userData.annotation = true;   // orbit overlay: hidden by the clean frame
         this.group.add(ring);
         this.planets.push(m);
 

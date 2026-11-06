@@ -121,14 +121,40 @@ class OrbitalMechanics {
         obj.trueAnomaly = nu;
     }
 
+    // Greenwich mean sidereal time (radians) for a Julian date (IAU 1982 / Meeus 12.4;
+    // UTC stands in for UT1, < 1 s apart). This is the right ascension of the Greenwich
+    // meridian, i.e. how far Earth has turned from the vernal equinox.
+    static gmstRad(jd) {
+        const d = jd - 2451545.0, T = d / 36525;
+        let deg = 280.46061837 + 360.98564736629 * d + T * T * (0.000387933 - T / 38710000);
+        deg = ((deg % 360) + 360) % 360;
+        return deg * Math.PI / 180;
+    }
+
     updateRotation(obj, deltaTime) {
         if (!obj.rotationPeriod || !obj.mesh) return;
+
+        // Earth up to 1 day/s: the real angle for the sim date. In the Earth mesh frame the
+        // prime meridian is +x and lon 90E is -z; before the tilt, scene +x is the vernal
+        // equinox and -z is RA 90, so rotation.y = GMST puts Greenwich at its real RA. In
+        // LIVE the sim clock IS the UTC clock, so the day/night line and the auroral oval
+        // (pinned to the surface) match the real Earth right now. Faster than 1 day/s the
+        // real spin would only strobe, so it falls through to the capped visual spin.
+        if (obj.poleTowardEclipticLon90 && window.Ephemeris && this.timeScale <= 10) {
+            obj.mesh.rotation.y = OrbitalMechanics.gmstRad(window.Ephemeris.clock.jd());
+            if (!obj._tiltApplied) this._applyTilt(obj);
+            return;
+        }
 
         // Axial rotation. Cap the rotation contribution of time acceleration so
         // planets don't become motion-blurred tops at 1000× orbital speed.
         const rotationScale = Math.min(this.timeScale, 50);
         const rotationSpeed = (2 * Math.PI) / obj.rotationPeriod;
         obj.mesh.rotation.y += rotationSpeed * deltaTime * rotationScale;
+        if (obj.axialTilt && !obj._tiltApplied) this._applyTilt(obj);
+    }
+
+    _applyTilt(obj) {
 
         // Apply axial tilt if specified.
         // Rotation order MUST be ZYX: with the default XYZ, the constant Z tilt
@@ -136,7 +162,7 @@ class OrbitalMechanics {
         // — Saturn's rings visibly tumbled around the planet instead of holding a
         // fixed plane. ZYX applies spin about the body axis first, then the tilt,
         // which keeps the ring plane rock-steady.
-        if (obj.axialTilt && !obj._tiltApplied) {
+        {
             if (obj.poleTowardEclipticLon90) {
                 // Earth: the north celestial pole sits at ecliptic longitude 90 deg, latitude
                 // 90 - 23.44 deg. Ephemeris.helioToScene maps ecliptic (x, y, z) to scene
@@ -247,6 +273,7 @@ class OrbitalMechanics {
 
                 obj._trail = new THREE.Line(geometry, material);
                 obj._trail.frustumCulled = false;
+                obj._trail.userData.annotation = true;   // overlay: hidden by the clean frame
                 obj._trailIndex = 0;
                 obj._trailPositions = [];
 

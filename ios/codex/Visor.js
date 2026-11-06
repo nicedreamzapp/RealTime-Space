@@ -177,6 +177,7 @@
     uniform float uFrost;       // 0..1 frost coverage
     uniform float uGold;        // 0..1 gold sun-visor film
     uniform float uTexPerH;     // scratch texels per screen height / texture size
+    uniform float uHigh;        // 1 on HIGH tier (uniform, not a define: a tier change never recompiles)
     varying vec2 vUv;
 
     void main() {
@@ -187,13 +188,14 @@
       // Curved shell: rays near the rim pass the glass at a slant and bend inward a touch.
       float rim = smoothstep(0.55, 1.45, r);
       vec2 uv = vUv - c * (0.016 * rim * rim);
-    #ifdef VISOR_HIGH
-      // slight lateral colour at the extreme rim (dispersion in the slanted shell)
-      float ab = 0.0035 * rim * rim;
-      vec3 col = vec3(texture2D(tDiffuse, uv - c * ab).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv + c * ab).b);
-    #else
-      vec3 col = texture2D(tDiffuse, uv).rgb;
-    #endif
+      vec3 col;
+      if (uHigh > 0.5) {
+        // slight lateral colour at the extreme rim (dispersion in the slanted shell)
+        float ab = 0.0035 * rim * rim;
+        col = vec3(texture2D(tDiffuse, uv - c * ab).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv + c * ab).b);
+      } else {
+        col = texture2D(tDiffuse, uv).rgb;
+      }
 
       // Gold film transmission: gold passes green best, cuts red and blue (darker view).
       col *= mix(vec3(1.0), vec3(0.55, 0.72, 0.52), uGold);
@@ -265,12 +267,13 @@
         // a soft diffuse patch instead of turning into 2-4 sharp copies
         float sa = (cry * 9.0 + field * 23.0);
         vec2 o = vec2(cos(sa), sin(sa)) * vec2(1.0 / uAspect, 1.0) * 0.0035 * (0.4 + dens);
-    #ifdef VISOR_HIGH
-        vec3 blur = (texture2D(tDiffuse, uv + o).rgb + texture2D(tDiffuse, uv - o).rgb +
-                     texture2D(tDiffuse, uv + vec2(o.y, -o.x)).rgb + texture2D(tDiffuse, uv - vec2(o.y, -o.x)).rgb) * 0.25;
-    #else
-        vec3 blur = (texture2D(tDiffuse, uv + o).rgb + texture2D(tDiffuse, uv - o).rgb) * 0.5;
-    #endif
+        vec3 blur;
+        if (uHigh > 0.5) {
+          blur = (texture2D(tDiffuse, uv + o).rgb + texture2D(tDiffuse, uv - o).rgb +
+                  texture2D(tDiffuse, uv + vec2(o.y, -o.x)).rgb + texture2D(tDiffuse, uv - vec2(o.y, -o.x)).rgb) * 0.25;
+        } else {
+          blur = (texture2D(tDiffuse, uv + o).rgb + texture2D(tDiffuse, uv - o).rgb) * 0.5;
+        }
         // ice scatters whatever light reaches it: dim cabin glow, and the Sun when it is near
         vec3 frostLit = vec3(0.70, 0.80, 1.0) * (0.004 + 0.022 * cry * dens) + sunCol * 0.45 * broad * uSunPower * cry;
         col = mix(col, blur * 0.9 + vec3(0.004, 0.005, 0.007), fog * 0.6);
@@ -280,15 +283,10 @@
       gl_FragColor = vec4(col, 1.0);
     }`;
 
-  // scene distance (Sun at origin) -> real AU via the planet table (scene compresses the outer system)
-  const AU_TABLE = [[0, 0], [40, 0.387], [60, 0.723], [85, 1.0], [115, 1.524], [200, 5.2], [320, 9.54], [450, 19.2], [550, 30.1], [650, 39.5]];
+  // scene distance (Sun at origin) -> real AU: the exact inverse of the ephemeris radius
+  // compression, so the visor's irradiance agrees with where the planets actually sit.
   function sceneToAU(d) {
-    for (let i = 1; i < AU_TABLE.length; i++) {
-      const [d1, a1] = AU_TABLE[i], [d0, a0] = AU_TABLE[i - 1];
-      if (d <= d1) return a0 + (a1 - a0) * (d - d0) / (d1 - d0);
-    }
-    // beyond Pluto keep the outer-system slope, then grow fast (interstellar distances)
-    return 39.5 + (d - 650) * 0.094 * Math.max(1, (d - 650) / 400);
+    return window.Ephemeris && window.Ephemeris.unmapRadius ? window.Ephemeris.unmapRadius(d) : d / 85;
   }
 
   const Visor = {
@@ -302,11 +300,32 @@
       return (t === 'high' || t === 'medium' || t === 'low') ? t : 'medium';
     },
 
+    // A tier change never rebuilds the pass or recompiles: it flips uHigh and swaps the
+    // scratch map. Scratch maps are cached CPU-side per size; the one going out of use is
+    // disposed (frees its GPU copy) and re-uploads from the cached pixels if needed again.
+    _scratchFor(N) {
+      this._scratchCache = this._scratchCache || {};
+      return this._scratchCache[N] || (this._scratchCache[N] = buildScratchTex(N));
+    },
+
+    _setTierUniforms() {
+      if (!this.pass) return;
+      const hi = this.tier === 'high';
+      const want = this._scratchFor(hi ? 1024 : 512);
+      const u = this.pass.uniforms;
+      u.uHigh.value = hi ? 1 : 0;
+      if (this._scratch && this._scratch !== want) this._scratch.dispose();
+      this._scratch = want;
+      u.tScratch.value = want;
+    },
+
     _retier() {
       const t = this._pickTier();
       if (t === this.tier) return;
       this.tier = t;
-      if (t !== 'low' && this.composer) this._build(this.composer);
+      // building a new-size scratch map is a one-off CPU job: keep it out of the frame
+      // that handles the tier change
+      setTimeout(() => this._setTierUniforms(), 0);
       this._apply();
     },
 
@@ -324,8 +343,7 @@
 
     _build(composer) {
       const hi = this.tier === 'high';
-      const N = hi ? 1024 : 512;
-      this._scratch = this._scratch && this._scratch.image.width === N ? this._scratch : buildScratchTex(N);
+      this._scratch = this._scratchFor(hi ? 1024 : 512);
       this._field = this._field || buildFieldTex(256);
       const shader = {
         uniforms: {
@@ -336,9 +354,8 @@
           uSunView: { value: new T.Vector3(0, 0, -1) }, uSunUv: { value: new T.Vector2(0.5, 0.5) },
           uSunPower: { value: 0 }, uSunDiskAng: { value: 0.01 },
           uFrost: { value: 0 }, uGold: { value: this.gold },
-          uTexPerH: { value: 1 }
+          uTexPerH: { value: 1 }, uHigh: { value: hi ? 1 : 0 }
         },
-        defines: hi ? { VISOR_HIGH: 1 } : {},
         vertexShader: VERT, fragmentShader: FRAG
       };
       const pass = new T.ShaderPass(shader);
@@ -350,7 +367,6 @@
       let idx = camLens ? ps.indexOf(camLens) : -1;
       if (idx < 0) idx = ps.findIndex(p => p && p.material && /LinearTosRGB/.test(p.material.fragmentShader || ''));
       if (idx < 0) idx = ps.length;
-      if (this.pass) { const old = ps.indexOf(this.pass); if (old >= 0) { ps.splice(old, 1); if (old < idx) idx--; } }
       composer.insertPass(pass, idx);
       this.pass = pass;
       this.composer = composer;
@@ -386,7 +402,7 @@
       try { list = (typeof objects !== 'undefined' && objects) || []; } catch (e) {}
       const P = cam.position, Lx = -P.x, Ly = -P.y, Lz = -P.z;
       const L = Math.hypot(Lx, Ly, Lz) || 1, dx = Lx / L, dy = Ly / L, dz = Lz / L;
-      const w = new T.Vector3();
+      const w = this._sw || (this._sw = new T.Vector3());
       for (const o of list) {
         if (!o || !o.mesh || !o.radius || o.type === 'star' || o.name === 'Sun') continue;
         o.mesh.getWorldPosition(w);
@@ -409,20 +425,20 @@
       if (!this.pass.enabled) return;
       const u = this.pass.uniforms;
 
-      // camera-space direction to the Sun (Sun sits at the origin)
-      const toSun = cam.position.clone().negate();
+      // camera-space direction to the Sun (Sun sits at the origin); scratch objects, no allocs
+      const S_ = this._s || (this._s = { toSun: new T.Vector3(), camDir: new T.Vector3(), q: new T.Quaternion(),
+                                          ndc: new T.Vector3(), size: new T.Vector2() });
+      const toSun = S_.toSun.copy(cam.position).negate();
       const dist = toSun.length() || 1;
       toSun.divideScalar(dist);
-      const camDir = new T.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-      const facing = camDir.dot(toSun);
-      const sv = toSun.clone().applyQuaternion(cam.quaternion.clone().invert());
-      u.uSunView.value.copy(sv);
-      const ndc = new T.Vector3(0, 0, 0).project(cam);
+      const facing = S_.camDir.set(0, 0, -1).applyQuaternion(cam.quaternion).dot(toSun);
+      u.uSunView.value.copy(toSun).applyQuaternion(S_.q.copy(cam.quaternion).invert());
+      const ndc = S_.ndc.set(0, 0, 0).project(cam);
       u.uSunUv.value.set(ndc.x * 0.5 + 0.5, ndc.y * 0.5 + 0.5);
       u.uAspect.value = cam.aspect || 1;
       u.uTanHalf.value = Math.tan((cam.fov || 60) * Math.PI / 360);
       u.uSunDiskAng.value = Math.atan(15 / dist);           // Sun radius 15 scene units
-      const size = new T.Vector2(); rc.renderer.getDrawingBufferSize(size);
+      const size = rc.renderer.getDrawingBufferSize(S_.size);
       u.uTexPerH.value = size.y / this._scratch.image.height;
 
       // eclipse test ~6x a second
@@ -451,15 +467,13 @@
 
   window.Visor = Visor;
 
-  // Drive updates from our own rAF (no main.js loop edits). Renders read uniforms
-  // one frame late at worst, which is invisible for slowly-varying light.
-  let last = performance.now();
-  const tick = (now) => {
-    const dt = (now - last) / 1000; last = now;
-    try { Visor.update(dt); } catch (e) { if (!Visor._warned) { Visor._warned = true; console.warn('Visor update', e); } }
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+  // Driven by the engine's UpdateLoop tick (pauses with it, runs before the composer
+  // render so the uniforms land in the same frame).
+  if (window.rtAddTick) {
+    window.rtAddTick('Visor', (dt) => {
+      try { Visor.update(dt); } catch (e) { if (!Visor._warned) { Visor._warned = true; console.warn('Visor update', e); } }
+    });
+  }
 
   // Fallback attach if the main.js hook line is ever lost in a merge.
   let tries = 0;

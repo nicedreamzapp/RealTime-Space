@@ -956,8 +956,7 @@ class Planet {
             () => console.log(`🪐 ${this.name} color loaded`),
             undefined,
             (err) => console.warn(`${this.name} color load failed:`, err));
-        if (THREE.SRGBColorSpace !== undefined) colorMap.colorSpace = THREE.SRGBColorSpace;
-        else if (THREE.sRGBEncoding !== undefined) colorMap.encoding = THREE.sRGBEncoding;
+        markSRGB(colorMap);
         colorMap.anisotropy = 16;
 
         const matOptions = {
@@ -1033,8 +1032,7 @@ class Planet {
 
         const loader = new THREE.TextureLoader();
         const ringColor = loader.load(reg.ringColor);
-        if (THREE.SRGBColorSpace !== undefined) ringColor.colorSpace = THREE.SRGBColorSpace;
-        else if (THREE.sRGBEncoding !== undefined) ringColor.encoding = THREE.sRGBEncoding;
+        markSRGB(ringColor);
         ringColor.anisotropy = 16;
 
         const ringUniforms = {
@@ -1291,8 +1289,11 @@ class Planet {
                     vec4 worldPos = modelMatrix * vec4(position, 1.0);
                     vWorldPosition = worldPos.xyz;
                     vNormalWorld = normalize(mat3(modelMatrix) * normal);
-                    // Sphere tangent frame: tangent points east (+lon), bitangent north
-                    vec3 objTangent = normalize(vec3(-position.z, 0.0, position.x) + vec3(1e-6, 0.0, 0.0));
+                    // Sphere tangent frame: tangent points east (+lon, +u), bitangent north (+v).
+                    // SphereGeometry puts a vertex at (-cos(2*pi*u), ., sin(2*pi*u)) * sin(theta),
+                    // so d(position)/du is along (z, 0, -x): lon 0 (+x) -> east is -z (lon 90E,
+                    // see earthFixedDir). cross(up, east) = north.
+                    vec3 objTangent = normalize(vec3(position.z, 0.0, -position.x) + vec3(1e-6, 0.0, 0.0));
                     vTangentWorld = normalize(mat3(modelMatrix) * objTangent);
                     vBitangentWorld = normalize(cross(vNormalWorld, vTangentWorld));
                     gl_Position = projectionMatrix * viewMatrix * worldPos;
@@ -1503,8 +1504,7 @@ class Planet {
             this._texHiLoading = true;
             new THREE.TextureLoader().load(hiPath, (tex) => {
                 if (!this._texWantsHigh) { tex.dispose(); this._texHiLoading = false; return; }
-                if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
-                else if (THREE.sRGBEncoding !== undefined) tex.encoding = THREE.sRGBEncoding;
+                markSRGB(tex);
                 tex.anisotropy = 16;
                 this._texHiColor = tex;
                 this._texMaterial.map = tex;
@@ -2082,8 +2082,9 @@ class Planet {
     update(deltaTime, sunPosition) {
         this.time += deltaTime;
 
-        // Rotate surface
-        if (this.surface) {
+        // Rotate surface (not Earth: OrbitalMechanics sets Earth's whole-body angle from
+        // Greenwich sidereal time, and a second spin here would knock it off the real one)
+        if (this.surface && !this.poleTowardEclipticLon90) {
             const rotationSpeed = (Math.PI * 2) / (this.rotationPeriod * 3600);
             this.surface.rotation.y += rotationSpeed * deltaTime * 1000;
         }

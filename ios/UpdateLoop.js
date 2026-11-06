@@ -413,3 +413,22 @@ class UpdateLoop {
         console.log(`🎨 Quality level set to ${(this.qualityLevel * 100).toFixed(0)}%`);
     }
 }
+
+// Register a per-frame callback inside the engine's UpdateLoop tick, ahead of the render
+// system, so add-on layers (Visor, Spacecraft, ...) run on the main clock, pause with it and
+// land in the same frame they are drawn. Safe to call before main.js has built the loop.
+window.rtAddTick = function (name, fn) {
+    const sys = { name, update: fn };
+    const tryAdd = () => {
+        let lp = null;
+        try { lp = (typeof loop !== 'undefined') ? loop : null; } catch (e) {}
+        if (!lp || !lp.systems) return false;
+        const idx = lp.systems.findIndex(x => x && x.name === 'ComposerRender');
+        if (idx >= 0) lp.systems.splice(idx, 0, sys); else lp.systems.push(sys);
+        return true;
+    };
+    if (!tryAdd()) {
+        const t = setInterval(() => { if (tryAdd()) clearInterval(t); }, 250);
+    }
+    return sys;
+};

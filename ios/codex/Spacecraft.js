@@ -32,26 +32,30 @@
 
   const DEG = Math.PI / 180;
 
-  function jwstGeo(jd) {
+  function jwstGeo(jd, out) {
     const n = JW.length / 3;
     const f = (jd - JW_START) / JW_STEP;
     if (f < 0 || f > n - 1) return null;
     const i = Math.min(n - 2, Math.floor(f)), t = f - i;
     const a = i * 3, b = a + 3;
-    return [0, 1, 2].map(k => (JW[a + k] + (JW[b + k] - JW[a + k]) * t) * 1e-6);
+    const o = out || [0, 0, 0];
+    for (let k = 0; k < 3; k++) o[k] = (JW[a + k] + (JW[b + k] - JW[a + k]) * t) * 1e-6;
+    return o;
   }
 
-  function parkerHelio(jd) {
+  function parkerHelio(jd, out) {
     const Eph = window.Ephemeris;
     const a = PARKER.q / (1 - PARKER.e);
     let M = (PARKER.n * (jd - PARKER.tp)) % 360;
-    return Eph.fromElements(a, PARKER.e, PARKER.i * DEG, PARKER.peri * DEG, PARKER.node * DEG, M * DEG);
+    return Eph.fromElements(a, PARKER.e, PARKER.i * DEG, PARKER.peri * DEG, PARKER.node * DEG, M * DEG, out);
   }
 
   class SpacecraftLayer {
     constructor() {
       this.craft = [];
       this._tmp = new window.THREE.Vector3();
+      this._a = [0, 0, 0];   // scratch arrays: _place runs every frame and allocates nothing
+      this._b = [0, 0, 0];
       this._tryAttach(0);
     }
 
@@ -128,21 +132,25 @@
       this.earthMesh.getWorldPosition(this._tmp);
       const earthW = this._tmp;
       const cam = window.explorationTracker && window.explorationTracker.camera;
-      for (const c of this.craft) {
-        let p;
+      const A = this._a, B = this._b;
+      for (let ci = 0; ci < this.craft.length; ci++) {
+        const c = this.craft[ci];
+        let p = B;
         if (c.kind === 'linear') {
           const dt = jd - EPOCH_JD;
-          p = Eph.helioToScene([c.data.p[0] + c.data.v[0] * dt, c.data.p[1] + c.data.v[1] * dt, c.data.p[2] + c.data.v[2] * dt]);
+          A[0] = c.data.p[0] + c.data.v[0] * dt; A[1] = c.data.p[1] + c.data.v[1] * dt; A[2] = c.data.p[2] + c.data.v[2] * dt;
+          Eph.helioToScene(A, B);
         } else if (c.kind === 'parker') {
-          p = Eph.helioToScene(parkerHelio(jd));
+          Eph.helioToScene(parkerHelio(jd, A), B);
         } else {
-          let g = jwstGeo(jd);
+          let g = jwstGeo(jd, A);
           if (!g) {
+            // outside the tabulated window only (rare): planetHelio allocates, acceptable here
             const e = Eph.planetHelio('Earth', jd), r = Math.hypot(e[0], e[1], e[2]);
-            g = [e[0] / r * L2_AU, e[1] / r * L2_AU, e[2] / r * L2_AU];
+            A[0] = e[0] / r * L2_AU; A[1] = e[1] / r * L2_AU; A[2] = e[2] / r * L2_AU; g = A;
           }
-          const o = Eph.geoToScene(g);
-          p = [earthW.x + o[0], earthW.y + o[1], earthW.z + o[2]];
+          Eph.geoToScene(g, B);
+          B[0] += earthW.x; B[1] += earthW.y; B[2] += earthW.z;
           // only near Earth: from across the system its label would sit on top of Earth's
           if (cam) c.mesh.visible = cam.position.distanceTo(earthW) < 300;
         }
@@ -150,12 +158,13 @@
       }
     }
 
+    // Runs inside the engine's UpdateLoop tick (pauses with it, positions land the same frame).
     _loop() {
-      const step = () => {
-        try { this._place(); } catch (e) { console.error('Spacecraft update failed', e); return; }
-        requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
+      let dead = false;
+      window.rtAddTick('Spacecraft', () => {
+        if (dead) return;
+        try { this._place(); } catch (e) { dead = true; console.error('Spacecraft update failed', e); }
+      });
     }
   }
 

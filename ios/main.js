@@ -856,6 +856,15 @@ function createUpdateSystems() {
                     if (d < r * 7) body[setter](true);
                     else if (d > r * 11) body[setter](false);
                 };
+                // A drop out of HIGH frees the 8K Mars/Moon at once, whatever the camera
+                // distance (the 7r..11r hysteresis band would otherwise keep them resident).
+                window.addEventListener('rtquality', (e) => {
+                    if (!e.detail || e.detail.prev !== 'high' || e.detail.tier === 'high') return;
+                    const mars = objects.find(o => o.name === 'Mars');
+                    const moon = objects.find(o => o.name === 'Moon');
+                    if (mars && mars.setTexturedDetail) mars.setTexturedDetail(false);
+                    if (moon && moon.setDetail) moon.setDetail(false);
+                });
                 return (dt, rc) => {
                     if (++frame % 20 !== 0 || !rc?.camera) return;
                     apply(objects.find(o => o.name === 'Earth'), 'setEarthDetail');
@@ -1122,6 +1131,19 @@ function timePillText(entry) {
 let timeScaleIndex = 0;
 let timePillEl = null;
 
+// The pill entry for any clock scale: the table row when it is one, otherwise a label made
+// from the real rate (scale 10 = 1 day per second, below 1 = slower than real time).
+function timeEntryForScale(scale) {
+    const hit = TIME_SCALES.find(e => e.scale === scale);
+    if (hit) return hit;
+    let label;
+    if (!(scale > 0)) label = 'TIME ⏸';
+    else if (scale < 1) label = scale.toFixed(2).replace(/0+$/, '') + 'X REAL';
+    else if (scale < 10) label = (+scale.toFixed(1)) + 'X REAL';
+    else { const days = scale / 10; label = (+days.toFixed(days < 10 ? 1 : 0)) + (days === 1 ? ' DAY/S' : ' DAYS/S'); }
+    return { scale, label, speech: label.toLowerCase() };
+}
+
 function createTimeControl() {
     timePillEl = document.createElement('div');
     timePillEl.id = 'time-pill';
@@ -1145,10 +1167,13 @@ function createTimeControl() {
         cycleTimeScale();
     });
     document.body.appendChild(timePillEl);
-    // keep the simulated date on the pill current while time runs fast
+    // keep the pill on the REAL clock scale (set by the pill, the JS API, a tour...) and the
+    // simulated date current while time runs fast
     setInterval(() => {
-        const entry = TIME_SCALES[timeScaleIndex];
-        if (timePillEl && entry.scale !== 1) timePillEl.textContent = timePillText(entry);
+        if (!timePillEl) return;
+        const entry = timeEntryForScale(orbitalMechanics ? orbitalMechanics.timeScale : TIME_SCALES[timeScaleIndex].scale);
+        const text = timePillText(entry);
+        if (timePillEl.textContent !== text) timePillEl.textContent = text;
     }, 250);
 }
 
@@ -1711,8 +1736,7 @@ function createMoon(moonData, parentPlanet) {
         undefined,
         (err) => console.warn('Moon texture failed:', err));
     const moonBump = loader.load('textures/moon/moon_bump_1k.jpg');
-    if (THREE.SRGBColorSpace !== undefined) moonColor.colorSpace = THREE.SRGBColorSpace;
-    else if (THREE.sRGBEncoding !== undefined) moonColor.encoding = THREE.sRGBEncoding;
+    markSRGB(moonColor);
     moonColor.anisotropy = 16;
     moonBump.anisotropy = 16;
 
@@ -1759,8 +1783,7 @@ function createMoon(moonData, parentPlanet) {
                 new THREE.TextureLoader().load('textures/moon/moon_8k.jpg', (tex) => {
                     this._hiLoading = false;
                     if (!this._wantHi) { tex.dispose(); return; }
-                    if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
-                    else if (THREE.sRGBEncoding !== undefined) tex.encoding = THREE.sRGBEncoding;
+                    markSRGB(tex);
                     tex.anisotropy = 16;
                     this._hiTex = tex; moonMat.map = tex; moonMat.needsUpdate = true;
                     console.log('🌑 Moon → 8K (up close)');
@@ -1993,6 +2016,7 @@ function createOrbitLine(radius) {
         opacity: 0.3
     });
     const line = new THREE.Line(geometry, material);
+    line.userData.annotation = true;   // overlay, hidden by the clean frame
     rendererCore.scene.add(line);
     orbitLines.push(line);
 }
@@ -2008,6 +2032,7 @@ function createEphemerisOrbitLine(name) {
         opacity: 0.3
     });
     const line = new THREE.Line(geometry, material);
+    line.userData.annotation = true;   // overlay, hidden by the clean frame
     rendererCore.scene.add(line);
     orbitLines.push(line);
 }
@@ -2126,14 +2151,25 @@ function createComets() {
 // ========== NEBULAE ==========
 nebulae = [];
 
+// Position + radius for a deep-sky object: RA (h) / Dec (deg) direction in the same frame
+// as codex/Deepsky.js, distance sqrt(ly) * 150, radius = half its true apparent diameter.
+function deepSkyPlacement(cfg, raH, decDeg, ly, arcmin) {
+    const ra = raH * 15 * Math.PI / 180, dec = decDeg * Math.PI / 180;
+    const r = Math.sqrt(ly) * 150;
+    const d = new THREE.Vector3(Math.cos(dec) * Math.cos(ra), Math.sin(dec), -Math.cos(dec) * Math.sin(ra));
+    const radius = r * Math.tan((arcmin / 60) * Math.PI / 360);
+    return Object.assign(cfg, { position: d.multiplyScalar(r), radius, scale: radius });
+}
+
 function createNebulae() {
     console.log("☁️ Creating nebulae...");
-    // Deep-sky distances: real nebulae span a degree or two of sky, not half the
-    // viewport. 4x farther keeps them as faint background watercolors.
+    // Real sky directions, distances on the same sqrt(ly) * 150 scale as the stars and the
+    // codex deep-sky layer, and a radius that spans each nebula's true angle from home
+    // (Orion ~65', Carina ~120', the Horsehead's dark cloud with its glowing IC 434 edge ~20').
     const nebulaConfigs = [
-        { name: "Orion Nebula", position: { x: 8000, y: 1200, z: -6000 }, radius: 400, nebulaType: "emission" },
-        { name: "Carina Nebula", position: { x: -10000, y: -800, z: 7200 }, radius: 500, nebulaType: "emission" },
-        { name: "Horsehead Nebula", position: { x: 6000, y: 2000, z: 8800 }, radius: 300, nebulaType: "dark" }
+        deepSkyPlacement({ name: "Orion Nebula", nebulaType: "emission" }, 5.588, -5.39, 1344, 65),
+        deepSkyPlacement({ name: "Carina Nebula", nebulaType: "emission" }, 10.75, -59.87, 8500, 120),
+        deepSkyPlacement({ name: "Horsehead Nebula", nebulaType: "dark" }, 5.683, -2.46, 1375, 20)
     ];
 
     nebulaConfigs.forEach(config => {
@@ -2197,8 +2233,9 @@ function createWarpEffect() {
 function createVolumetricNebulae() {
     console.log("🌌 Creating volumetric nebulae...");
     const volNebulaConfigs = [
-        { name: "Eagle Nebula", position: new THREE.Vector3(9500, 2500, -7500), scale: 150, type: "emission", primaryColor: new THREE.Color(0.9, 0.3, 0.5) },
-        { name: "Lagoon Nebula", position: new THREE.Vector3(-8400, -2000, 8200), scale: 200, type: "emission", primaryColor: new THREE.Color(0.8, 0.2, 0.4) }
+        // same real places and true sizes as the codex deep-sky entries (Eagle ~70', Lagoon ~90')
+        deepSkyPlacement({ name: "Eagle Nebula", type: "emission", primaryColor: new THREE.Color(0.9, 0.3, 0.5) }, 18.313, -13.79, 7000, 70),
+        deepSkyPlacement({ name: "Lagoon Nebula", type: "emission", primaryColor: new THREE.Color(0.8, 0.2, 0.4) }, 18.061, -24.38, 4100, 90)
     ];
 
     volNebulaConfigs.forEach(config => {
@@ -2280,6 +2317,7 @@ function createPlanetHighlights() {
 
 // Clean frame: hides every annotation drawn into the 3D scene (name labels, orbit /
 // constellation / trail lines, the faint label hint rings) so a capture shows only the sky.
+// Lines are opt-in (userData.annotation), so visual line effects such as the warp streaks stay.
 // Debug and trailer use only: URL ?clean=1 or galaxyExplorer.setCleanFrame(true); nothing in
 // the app UI reaches it. Annotations move to layer 31, which the camera never renders, so
 // modules that toggle .visible on their labels every frame can't bring them back.
@@ -2287,7 +2325,7 @@ let cleanFrame = (() => { try { return new URLSearchParams(location.search).get(
 let cleanSweepT = 1;   // first sweep on the first frame
 const CLEAN_LAYER = 31;
 function _isAnnotation(o) {
-    if (o.isLine) return true;   // Line, LineSegments, LineLoop: all overlays in this app
+    if (o.isLine) return !!o.userData.annotation;   // only lines tagged as overlays
     const m = o.material;
     if (o.isSprite && m && m.map && m.map.isCanvasTexture && m.blending === THREE.NormalBlending) return true;
     return false;

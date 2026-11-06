@@ -193,7 +193,7 @@ class Moons {
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.wrapS = THREE.RepeatWrapping;
-        if (THREE.SRGBColorSpace !== undefined) texture.colorSpace = THREE.SRGBColorSpace;
+        markSRGB(texture);
         texture.anisotropy = 8;
 
         // Grey copy of the same canvas works as a cheap bump map

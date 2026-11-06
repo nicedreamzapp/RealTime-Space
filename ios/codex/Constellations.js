@@ -126,7 +126,9 @@
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
       const m = new THREE.LineBasicMaterial({ color: 0x4a86c8, transparent: true, opacity: 0.28, depthWrite: false });
-      this.group.add(new THREE.LineSegments(g, m));
+      const figure = new THREE.LineSegments(g, m);
+      figure.userData.annotation = true;   // overlay: hidden by the clean frame
+      this.group.add(figure);
     }
 
     // Real star positions + distances for one figure (null if unknown).

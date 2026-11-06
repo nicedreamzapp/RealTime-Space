@@ -90,6 +90,24 @@
         const last = A[A.length - 1];
         return last[1] + OUTER_SLOPE * Math.log(r / last[0]);
     }
+    // Exact inverse of mapRadius: scene units from the Sun -> real AU. The one shared
+    // scene-to-AU mapping (Visor irradiance etc. use this, never their own table).
+    function unmapRadius(d) {
+        const A = RADIUS_ANCHORS;
+        if (!(d > 0)) return 0;
+        if (d <= A[0][1]) return A[0][0] * (d / A[0][1]);
+        if (d <= A[1][1]) {
+            return A[0][0] + (A[1][0] - A[0][0]) * (d - A[0][1]) / (A[1][1] - A[0][1]);
+        }
+        for (let i = 1; i < A.length - 1; i++) {
+            if (d <= A[i + 1][1]) {
+                const t = (d - A[i][1]) / (A[i + 1][1] - A[i][1]);
+                return A[i][0] * Math.pow(A[i + 1][0] / A[i][0], t);
+            }
+        }
+        const last = A[A.length - 1];
+        return last[0] * Math.exp((d - last[1]) / OUTER_SLOPE);
+    }
 
     function jdFromMs(ms) { return ms / 86400000 + 2440587.5; }
 
@@ -104,7 +122,7 @@
     }
 
     // Heliocentric position from classical elements (angles in radians), AU, ecliptic J2000.
-    function fromElements(a, e, I, w, Om, M) {
+    function fromElements(a, e, I, w, Om, M, out) {
         let x, y;
         if (e < 1) {
             const E = solveKepler(M, e);
@@ -115,11 +133,11 @@
         }
         const cw = Math.cos(w), sw = Math.sin(w), cO = Math.cos(Om), sO = Math.sin(Om);
         const cI = Math.cos(I), sI = Math.sin(I);
-        return [
-            (cw * cO - sw * sO * cI) * x + (-sw * cO - cw * sO * cI) * y,
-            (cw * sO + sw * cO * cI) * x + (-sw * sO + cw * cO * cI) * y,
-            (sw * sI) * x + (cw * sI) * y
-        ];
+        const o = out || [0, 0, 0];   // optional out array: per-frame callers allocate nothing
+        o[0] = (cw * cO - sw * sO * cI) * x + (-sw * cO - cw * sO * cI) * y;
+        o[1] = (cw * sO + sw * cO * cI) * x + (-sw * sO + cw * cO * cI) * y;
+        o[2] = (sw * sI) * x + (cw * sI) * y;
+        return o;
     }
 
     function planetElements(name, jd) {
@@ -171,16 +189,22 @@
     }
 
     // Ecliptic AU (heliocentric) -> scene units, direction exact, radius compressed.
-    function helioToScene(v) {
+    function helioToScene(v, out) {
+        const o = out || [0, 0, 0];
         const r = Math.hypot(v[0], v[1], v[2]);
-        if (r === 0) return [0, 0, 0];
+        if (r === 0) { o[0] = o[1] = o[2] = 0; return o; }
         const k = mapRadius(r) / r;
-        return [v[0] * k, v[2] * k, -v[1] * k];
+        const x = v[0] * k, y = v[2] * k, z = -v[1] * k;   // v may alias out
+        o[0] = x; o[1] = y; o[2] = z;
+        return o;
     }
     // Ecliptic AU (geocentric) -> scene offset from Earth, linear.
-    function geoToScene(v) {
+    function geoToScene(v, out) {
+        const o = out || [0, 0, 0];
         const k = GEO_UNITS_PER_AU;
-        return [v[0] * k, v[2] * k, -v[1] * k];
+        const x = v[0] * k, y = v[2] * k, z = -v[1] * k;
+        o[0] = x; o[1] = y; o[2] = z;
+        return o;
     }
 
     // ---------------- sim clock ----------------
@@ -213,7 +237,7 @@
 
     window.Ephemeris = {
         ELEMENTS, RADIUS_ANCHORS, GEO_UNITS_PER_AU, SUN_SURFACE_AU,
-        mapRadius, jdFromMs, planetHelio, planetElements, orbitPath, moonGeo,
+        mapRadius, unmapRadius, jdFromMs, planetHelio, planetElements, orbitPath, moonGeo,
         helioToScene, geoToScene, fromElements, solveKepler, rateFor, clock
     };
 })();

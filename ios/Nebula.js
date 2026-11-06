@@ -728,7 +728,8 @@ class Nebula {
             const R = this.radius || 300;
             const d = this.mesh.position.distanceTo(camera.position);
             let fade = 1.25 - (d - 4 * R) / (14 * R);
-            fade = Math.max(0.22, Math.min(1.0, fade));
+            // floor: from home a nebula is a faint smudge at the edge of visibility
+            fade = Math.max(0.1, Math.min(1.0, fade));
             fade = Math.round(fade * 20) / 20;          // quantize: skip no-op traversals
             if (this._fade !== fade) {
                 this._fade = fade;
