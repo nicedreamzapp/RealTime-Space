@@ -341,7 +341,8 @@ class ParticleSystem {
         const sizes = this.points.geometry.attributes.size.array;
         const lifetimes = this.points.geometry.attributes.lifetime.array;
 
-        for (let i = 0; i < this.count; i++) {
+        const active = this.activeCount != null ? this.activeCount : this.count;
+        for (let i = 0; i < active; i++) {
             const lifetimeProgress = (this.time - lifetimes[i]) / this.lifetime;
 
             if (lifetimeProgress >= 1 || lifetimeProgress < 0) {
@@ -389,6 +390,16 @@ class ParticleSystem {
         this.points.geometry.attributes.position.needsUpdate = true;
         this.points.geometry.attributes.size.needsUpdate = true;
         this.points.geometry.attributes.lifetime.needsUpdate = true;
+    }
+
+    // RTQuality tier hook: simulate and draw only the first `scale` share of the particles.
+    // Positions are seeded randomly, so a prefix is an even subsample of the volume.
+    setQualityScale(scale) {
+        if (!this.points) return;
+        const n = Math.max(1, Math.round(this.count * Math.min(1, Math.max(0, scale))));
+        if (n === this.activeCount) return;
+        this.activeCount = n;
+        this.points.geometry.setDrawRange(0, n);
     }
 
     setPosition(x, y, z) {

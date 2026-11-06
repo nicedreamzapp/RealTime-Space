@@ -186,6 +186,8 @@
             'LightingSystem.js',
             'NavigationPhysics.js',
             'OrbitalMechanics.js',
+            'RTQuality.js',
+            'RTHaptics.js',
             'UpdateLoop.js',
             'Starfield.js',
             'Star.js',
@@ -226,7 +228,7 @@
             'TourBuilder.js',
             'main.js'
         ];
-        const APP_VERSION = '2026-11-04a'; // bump to bust browser cache after edits
+        const APP_VERSION = '2026-11-05h'; // bump to bust browser cache after edits
         // Query-string cache busting is for http dev serving only — file:// URLs
         // inside the app bundle don't cache and may not tolerate query params.
         const bust = location.protocol.startsWith('http') ? '?v=' + APP_VERSION : '';

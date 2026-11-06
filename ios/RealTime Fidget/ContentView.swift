@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var spatialAudioEnabled = UserDefaults.standard.object(forKey: "spatialAudioEnabled") as? Bool ?? false
     // Constant ambient drone, off by default (also for players who never touched it).
     @State private var ambientHum = UserDefaults.standard.object(forKey: "ambientHum") as? Bool ?? false
+    @State private var hapticsOn = UserDefaults.standard.object(forKey: GalaxyBridge.hapticsDefaultsKey) as? Bool ?? true
     @State private var cockpitOn = UserDefaults.standard.object(forKey: "cockpitOn") as? Bool ?? true
     // "-shot" launch mode skips the splash for App Store capture. It hides the chrome for
     // clean art frames UNLESS "-keepUI" is also passed (then controls + HUD stay visible).
@@ -326,6 +327,12 @@ struct ContentView: View {
                                         } else {
                                             AudioManager.shared.setAmbientVolume(0.0)
                                         }
+                                    }
+                                toggleRow("Haptics", isOn: $hapticsOn)
+                                    .onChange(of: hapticsOn) { _, newValue in
+                                        UserDefaults.standard.set(newValue, forKey: GalaxyBridge.hapticsDefaultsKey)
+                                        if !newValue { GalaxyBridge.stopFlightHaptics() }
+                                        navigationController.evaluateJavaScript("window.RTHaptics?.setEnabled?.(\(newValue))")
                                     }
                             }
                             .padding(16)
