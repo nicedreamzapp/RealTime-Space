@@ -51,10 +51,10 @@
     // PowerVR (Imagination) and the genuinely entry Mali parts hang on per-pixel noise and big
     // fills (the Cricket's GE8320 froze the app for 10 s with the Sun filling the screen). They
     // get the safe path whatever their RAM: low tier, locked, no GPU readbacks, cheap Sun.
-    // Entry Mali = Midgard T7xx/T8xx, or a G31/G51/G52 whose core count (MP1/MP2, MC1/MC2) is in
+    // Entry Mali = Utgard 4xx, Midgard T6xx/T7xx/T8xx, or a G31/G51/G52 whose core count (MP1/MP2, MC1/MC2) is in
     // the string. A G52 with no core count, or more cores, is not locked: the RAM rule decides.
     const POWERVR_RE = /PowerVR|Imagination|\bIMG\b|Rogue/i;
-    const ENTRY_MALI_RE = /Mali-(?:T[78]\d\d\b|G(?:31|51|52)\s*M[PC][12]\b)/i;
+    const ENTRY_MALI_RE = /Mali-(?:4\d\d\b|T[678]\d\d\b|G(?:31|51|52)\s*M[PC][12]\b)/i;
     function gpuRenderer() {
         try {
             const c = document.createElement('canvas');

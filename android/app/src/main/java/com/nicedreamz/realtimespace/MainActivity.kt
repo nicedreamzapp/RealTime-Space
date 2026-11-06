@@ -58,10 +58,13 @@ class MainActivity : ComponentActivity() {
     private var webContainer: android.widget.FrameLayout? = null
     private lateinit var assetLoader: WebViewAssetLoader
     /** Real renderer crashes (didCrash() == true) in this app session. The first one rebuilds
-     *  the WebView at low tier (?rtq=low); the second shows the native retry message. A renderer
-     *  the system reclaimed for memory (didCrash() == false) is never counted. Memory only. */
+     *  the WebView at low tier (?rtq=low); the second shows the native retry message. Memory only. */
     private var rendererCrashes = 0
-    /** Set after the first real crash: every WebView built after it loads ?rtq=low. */
+    /** Renderers the system reclaimed for memory (didCrash() == false) in this app session,
+     *  counted apart from crashes: the 1st rebuilds at the same tier, the 2nd at low tier, the
+     *  3rd shows the retry message (so a phone that keeps reclaiming never loops). */
+    private var rendererReclaims = 0
+    /** Set after the first real crash or the second reclaim: every WebView built after it loads ?rtq=low. */
     private var forceLowTier = false
     /** The retry message, drawn by Compose as the LAST child of the root Box so it sits above
      *  SpaceChrome and the paywall and receives the taps. */
@@ -207,9 +210,10 @@ class MainActivity : ComponentActivity() {
         loadUrl(ASSET_BASE + "index.html" + if (forceLowTier) "?rtq=low" else "")
     }
 
-    /** The renderer process is gone. Reclaimed by the system (didCrash() == false): rebuild
-     *  silently at the same tier, not a crash. A real crash: the first rebuilds once at low
-     *  tier, the second shows the retry message instead of looping on a GPU that can't cope. */
+    /** The renderer process is gone. Reclaimed by the system (didCrash() == false): the first
+     *  rebuilds silently at the same tier, the second at low tier, the third shows the retry
+     *  message. A real crash: the first rebuilds at low tier, the second shows the message.
+     *  Every rebuild waits ~1 s, so nothing can spin in a tight loop. */
     private fun onRendererGone(dead: WebView, crashed: Boolean) {
         val container = webContainer ?: return
         if (this::bridge.isInitialized) {
@@ -221,14 +225,20 @@ class MainActivity : ComponentActivity() {
         container.removeView(dead)
         try { dead.destroy() } catch (_: Exception) {}
         if (!crashed) {
-            Log.w(TAG, "WebView renderer reclaimed by the system, rebuilding at the same tier")
+            rendererReclaims++
+            Log.w(TAG, "WebView renderer reclaimed by the system ($rendererReclaims this session)")
+            if (rendererReclaims >= 3) { rendererStopped = true; return }
+            if (rendererReclaims == 2) forceLowTier = true
         } else {
             rendererCrashes++
             Log.w(TAG, "WebView renderer crashed ($rendererCrashes this session)")
             if (rendererCrashes >= 2) { rendererStopped = true; return }
             forceLowTier = true
         }
-        if (!isFinishing && !isDestroyed) container.addView(createWebView(this))
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (isFinishing || isDestroyed || webView != null || rendererStopped) return@postDelayed
+            container.addView(createWebView(this))
+        }, 1_000L)
     }
 
     /** Retry from the message: one more WebView at low tier. A further crash shows it again. */
