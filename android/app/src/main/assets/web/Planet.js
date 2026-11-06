@@ -52,9 +52,10 @@ const RT_LOW_TEX_MAX = 1024;
 // at 512 px and RTLod (below) re-decodes the nearest body's maps at 1024 px while you are close
 // to it; bump / elevation maps are held to 256 px and every other image to 512 px.
 const RT_HERO_RE = /textures\/(sun|mercury|venus|earth|mars|jupiter|saturn|uranus|neptune|pluto|moon)\//;
-function rtsIsHero(url) { const u = String(url || ''); return RT_HERO_RE.test(u) && !/bump|elev|normal|spec|rough/i.test(u); }
+function rtsIsHero(url) { const u = String(url || ''); return RT_HERO_RE.test(u) && !/bump|elev|normal|spec|rough|granulation/i.test(u); }
 function rtsLowCapFor(url) {
     const u = String(url || '');
+    if (/FilmLUT/i.test(u)) return Infinity;   // a colour lookup table: resampling would corrupt it
     if (/bump|elev|normal|spec|rough/i.test(u)) return 256;
     return 512;
 }
@@ -84,7 +85,8 @@ const RTLod = {
             const d = cam.distanceTo(this._p) / o.radius;
             if (d < bestD) { bestD = d; best = o; }
         }
-        if (this.cur && this.cur.obj === best) return;
+        // same body: pick up hero maps that loaded after we got close (e.g. at boot)
+        if (this.cur && this.cur.obj === best) { this._acquire(best); return; }
         if (this.cur) this._release();
         if (best) this._acquire(best);
     },
@@ -94,19 +96,23 @@ const RTLod = {
             const ms = Array.isArray(n.material) ? n.material : [n.material];
             for (const m of ms) {
                 if (!m) continue;
-                for (const k of ['map', 'emissiveMap']) if (m[k] && m[k].userData && m[k].userData.rtsHeroSrc) out.push({ holder: m, key: k, mat: m });
+                const hero = (t) => t && t.isTexture && t.userData && t.userData.rtsHeroSrc && !t.userData.rtsHi;
+                for (const k of ['map', 'emissiveMap']) if (hero(m[k])) out.push({ holder: m, key: k, mat: m });
                 if (m.uniforms) for (const k in m.uniforms) {
                     const v = m.uniforms[k] && m.uniforms[k].value;
-                    if (v && v.isTexture && v.userData && v.userData.rtsHeroSrc) out.push({ holder: m.uniforms[k], key: 'value', mat: m });
+                    if (hero(v)) out.push({ holder: m.uniforms[k], key: 'value', mat: m });
                 }
             }
         });
         return out;
     },
     _acquire(obj) {
-        const cur = this.cur = { obj, swaps: [] };
+        if (!this.cur || this.cur.obj !== obj) this.cur = { obj, swaps: [], asked: new Set() };
+        const cur = this.cur;
         for (const sl of this._slots(obj.mesh)) {
             const lo = sl.holder[sl.key], src = lo.userData.rtsHeroSrc;
+            if (cur.asked.has(lo)) continue;   // already loading or swapped
+            cur.asked.add(lo);
             new THREE.ImageLoader().load(src, (img) => {
                 if (this.cur !== cur || typeof createImageBitmap !== 'function') return;
                 const w = img.width, h = img.height, W = Math.min(RT_LOW_TEX_MAX, w);
@@ -117,6 +123,7 @@ const RTLod = {
                         const hi = lo.clone();
                         hi.source = new THREE.Source(bmp);
                         hi.flipY = false;
+                        hi.userData = Object.assign({}, lo.userData, { rtsHi: true });
                         hi.needsUpdate = true;
                         sl.holder[sl.key] = hi;
                         if (sl.key !== 'value') sl.mat.needsUpdate = true;
@@ -201,7 +208,13 @@ function rtsUploadNow(tex) {
         const loader = new THREE.ImageLoader(this.manager);
         loader.setCrossOrigin(this.crossOrigin);
         loader.setPath(this.path);
-        loader.load(url, (image) => {
+        let tries = share ? 2 : 1;   // a deep-sky / exoplanet map that fails is retried once
+        const fail = (e) => {
+            if (--tries > 0) { setTimeout(() => loader.load(url, ok, onProgress, fail), 1500); return; }
+            if (entry) shared.delete(url);   // a later load starts afresh
+            if (onError) onError(e);
+        };
+        const ok = (image) => {
             const queue = () => rtsCapImage(image, texture.flipY, (img, flipped) => RTTexQueue.push(() => {
                 if (rtsIsHero(url)) texture.userData.rtsHeroSrc = url, texture.userData.rtsFlip = texture.flipY;
                 texture.image = img;
@@ -212,7 +225,8 @@ function rtsUploadNow(tex) {
                 rtsUploadNow(texture);
             }), rtsLowCapFor(url));
             if (image && image.decode) image.decode().then(queue, queue); else queue();
-        }, onProgress, onError);
+        };
+        loader.load(url, ok, onProgress, fail);
         return texture;
     };
 })();

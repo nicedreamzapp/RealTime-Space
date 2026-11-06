@@ -188,12 +188,12 @@ class Star {
         try { if (b.quad) { b.quad.geometry.dispose(); b.quad.material.dispose(); } } catch (_) {}
         try { if (b.gran) b.gran.dispose(); } catch (_) {}
         try { if (b.granQuad) { b.granQuad.geometry.dispose(); b.granQuad.material.dispose(); } } catch (_) {}
-        // the shipped maps (low tier / safe GPU) are textures, not targets
-        if (b.asset && this._bakedUniforms) {
-            for (const k of ['uMap', 'uGranMap']) {
-                const t = this._bakedUniforms[k].value;
-                if (t && t.dispose) { try { t.dispose(); } catch (_) {} }
-            }
+        // the shipped maps (low tier / safe GPU) are textures, not targets. RTLod may have swapped
+        // a 1024 px copy of the photosphere map into uMap: hand the Sun back first (restores the
+        // 512 px map and frees the copy), then free the two textures this Star loaded itself.
+        if (b.asset) {
+            if (window.RTLod && window.RTLod.cur && window.RTLod.cur.obj === this) window.RTLod._release();
+            for (const t of [b.mapTex, b.granTex]) if (t) { try { t.dispose(); } catch (_) {} }
         }
     }
 
@@ -208,7 +208,7 @@ class Star {
     }
 
     _loadBakedAsset() {
-        this._bake = { done: true, asset: true };
+        const bake = this._bake = { done: true, asset: true, mapTex: null, granTex: null };
         const bu = this._getBakedMat().uniforms;
         const load = (path, wrapT, onTex) => new THREE.TextureLoader().load(path, (t) => {
             t.wrapS = THREE.RepeatWrapping; t.wrapT = wrapT;
@@ -217,8 +217,11 @@ class Star {
             onTex(t);
         }, undefined, (e) => console.warn('Sun map load failed:', path, e));
         // RTTexQueue (Planet.js) uploads each one on its own frame on this path
-        load('textures/sun/sun_granulation_512.jpg', THREE.RepeatWrapping, (t) => { bu.uGranMap.value = t; });
-        load('textures/sun/sun_photosphere_1k.jpg', THREE.ClampToEdgeWrapping, (t) => {
+        // a reset while loading (context restore) drops the stale texture instead of using it
+        const live = () => this._bake === bake;
+        bake.granTex = load('textures/sun/sun_granulation_512.jpg', THREE.RepeatWrapping, (t) => { if (live()) bu.uGranMap.value = t; else t.dispose(); });
+        bake.mapTex = load('textures/sun/sun_photosphere_1k.jpg', THREE.ClampToEdgeWrapping, (t) => {
+            if (!live()) { t.dispose(); return; }
             bu.uMap.value = t; bu.uReady.value = 1;
         });
     }

@@ -192,7 +192,9 @@ class AsteroidBelt {
         }
 
         // Create highly irregular geometry - real asteroids are NOT spherical
-        const detail = size > 0.3 ? 3 : (size > 0.1 ? 2 : 1);
+        // Low tier / safe GPU: one subdivision less (a quarter of the vertices; the 650 rocks
+        // were ~11 MB of vertex buffers on a 3 GB PowerVR phone)
+        const detail = Math.max(0, (size > 0.3 ? 3 : (size > 0.1 ? 2 : 1)) - ((window.rtsLowGPU && window.rtsLowGPU()) ? 1 : 0));
         const geometry = new THREE.IcosahedronGeometry(size, detail);
         const positions = geometry.attributes.position;
         const colors = new Float32Array(positions.count * 3);

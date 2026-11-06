@@ -2,7 +2,6 @@ package com.nicedreamz.realtimespace
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -58,6 +57,7 @@ import android.content.res.Configuration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.hypot
@@ -78,16 +78,14 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
     // Android Back / back-gesture closes the panel instead of quitting the app.
     BackHandler(enabled = showPanel) { showPanel = false }
 
-    // Hold the web 3D loop while the panel opens, closes, animates or scrolls, and release it
-    // ~300 ms after the last of those ends. On PowerVR every native frame waits on the WebView's
-    // GL work in the same RenderThread chain, so one long WebGL frame during a scroll used to
+    // Low tier / safe GPU only: hold the web 3D loop while the panel opens, closes or scrolls,
+    // and release it ~300 ms after the last of those ends (medium / high keep rendering). On
+    // PowerVR every native frame waits on the WebView's GL work in the same RenderThread chain, so one long WebGL frame during a scroll used to
     // freeze the UI thread into an ANR; with the loop held the GPU is idle while native draws.
     val panelScroll = rememberScrollState()
-    val panelVis = remember { MutableTransitionState(false) }
-    panelVis.targetState = showPanel
     var toggling by remember { mutableStateOf(false) }
     LaunchedEffect(showPanel) { toggling = true; withFrameNanos { }; withFrameNanos { }; toggling = false }
-    val chromeBusy = toggling || (!state.lowGpu && !panelVis.isIdle) || panelScroll.isScrollInProgress
+    val chromeBusy = state.lowGpu && (toggling || panelScroll.isScrollInProgress)
     LaunchedEffect(chromeBusy) {
         if (chromeBusy) bridge.holdLoop("chrome", true)
         else { delay(300); bridge.holdLoop("chrome", false) }
@@ -118,9 +116,11 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
                         bottom = if (landscape) 100.dp else 150.dp
                     )
                         .offset { IntOffset(if (showPanel) 0 else 100_000, 0) }
+                        // closed and off screen: out of the accessibility tree too (TalkBack)
+                        .then(if (showPanel) Modifier else Modifier.clearAndSetSemantics { })
                 ) { NavigatePanel(state, bridge, store, panelScroll, onUnlock = { showPanel = false; onUnlock() }) }
             } else AnimatedVisibility(
-                visibleState = panelVis,
+                visible = showPanel,
                 modifier = Modifier.align(Alignment.TopEnd).padding(
                     top = 8.dp,
                     end = (12 + radarDp + 8).dp,
@@ -128,7 +128,7 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
                 ),
                 enter = slideInHorizontally { it } + fadeIn(),
                 exit = slideOutHorizontally { it } + fadeOut()
-            ) { NavigatePanel(state, bridge, store, panelScroll, onUnlock = { showPanel = false; onUnlock() }) }
+            ) { NavigatePanel(state, bridge, store, rememberScrollState(), onUnlock = { showPanel = false; onUnlock() }) }
 
             // ---------- TOP-RIGHT RAIL: radar, menu, view-mode ----------
             Column(

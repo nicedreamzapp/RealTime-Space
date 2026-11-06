@@ -70,7 +70,7 @@ class UpdateLoop {
         }
 
         this.isRunning = true;
-        this.isPaused = false;
+        this.isPaused = this._holds.size > 0;   // a hold placed before start() still holds
         this.lastTime = performance.now();
         this.frameCount = 0;
         this.totalTime = 0;

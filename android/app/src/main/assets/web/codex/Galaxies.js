@@ -97,9 +97,9 @@
       // Dense clouds — scale star count with apparent size (hero galaxies get far more).
       // Counts doubled 2026-07-06: flying INSIDE one felt sparse — the whole point of
       // approaching a galaxy is being surrounded by its stars.
-      // Low tier / safe GPU: 35% of the stars, each drawn 1.4x wider so the cloud keeps
+      // Low tier / safe GPU: 25% of the stars, each drawn 1.6x wider so the cloud keeps
       // about the same glow (a million points a frame was a large share of the PowerVR's frame).
-      const lowF = (window.rtsLowGPU && window.rtsLowGPU()) ? 0.35 : 1;
+      const lowF = (window.rtsLowGPU && window.rtsLowGPU()) ? 0.25 : 1;
       const N = Math.round((kind === 'irregular' ? 30000 : kind === 'elliptical' ? 42000 : 62000) * size * lowF);
       const pos = new Float32Array(N * 3), col = new Float32Array(N * 3), siz = new Float32Array(N);
 
@@ -194,7 +194,7 @@
         const [rx, ry, rz] = rot(x, y, z);
         pos[i * 3] = rx; pos[i * 3 + 1] = ry; pos[i * 3 + 2] = rz;   // relative — mesh carries the center
         col[i * 3] = base[0] * bright; col[i * 3 + 1] = base[1] * bright; col[i * 3 + 2] = base[2] * bright;
-        siz[i] = lowF < 1 ? psize * 1.4 : psize;
+        siz[i] = lowF < 1 ? psize * 1.6 : psize;
       }
 
       const g = new THREE.BufferGeometry();
