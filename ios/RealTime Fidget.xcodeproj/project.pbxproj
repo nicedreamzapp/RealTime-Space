@@ -45,6 +45,7 @@
 		99B70EE62E8BBD84003F9928 /* Vector3D.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B70EE52E8BBD75003F9928 /* Vector3D.swift */; };
 		99CCC0012EEAFF0100000001 /* BlackHole.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0002EEAFF0100000001 /* BlackHole.js */; };
 		99CCC0032EEAFF0100000002 /* WarpEffect.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0022EEAFF0100000002 /* WarpEffect.js */; };
+		99CAFE0B2EEB0C0100000001 /* CameraOptics.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CAFE0A2EEB0C0100000001 /* CameraOptics.js */; };
 		ABC9F9A6DB76610A17588B94 /* TourText.js in Resources */ = {isa = PBXBuildFile; fileRef = 305F6F5F4E3B9AC527F1A731 /* TourText.js */; };
 		84D4972386B7FE3C94C7B3C5 /* TourBuilder.js in Resources */ = {isa = PBXBuildFile; fileRef = 4F0168116DB842FAB6403533 /* TourBuilder.js */; };
 		99CCC0052EEAFF0100000002 /* ScenicTour.js in Resources */ = {isa = PBXBuildFile; fileRef = 99CCC0042EEAFF0100000002 /* ScenicTour.js */; };
@@ -122,6 +123,7 @@
 		99D56C082E82D8E9003CF912 /* GalaxyControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyControlView.swift; sourceTree = "<group>"; };
 		99CCC0002EEAFF0100000001 /* BlackHole.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = BlackHole.js; sourceTree = "<group>"; };
 		99CCC0022EEAFF0100000002 /* WarpEffect.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = WarpEffect.js; sourceTree = "<group>"; };
+		99CAFE0A2EEB0C0100000001 /* CameraOptics.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = CameraOptics.js; sourceTree = "<group>"; };
 		305F6F5F4E3B9AC527F1A731 /* TourText.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = TourText.js; sourceTree = "<group>"; };
 		4F0168116DB842FAB6403533 /* TourBuilder.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = TourBuilder.js; sourceTree = "<group>"; };
 		99CCC0042EEAFF0100000002 /* ScenicTour.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ScenicTour.js; sourceTree = "<group>"; };
@@ -209,6 +211,7 @@
 			children = (
 				99CCC0002EEAFF0100000001 /* BlackHole.js */,
 				99CCC0022EEAFF0100000002 /* WarpEffect.js */,
+				99CAFE0A2EEB0C0100000001 /* CameraOptics.js */,
 				305F6F5F4E3B9AC527F1A731 /* TourText.js */,
 				4F0168116DB842FAB6403533 /* TourBuilder.js */,
 				99CCC0042EEAFF0100000002 /* ScenicTour.js */,
@@ -388,6 +391,7 @@
 			files = (
 				99CCC0012EEAFF0100000001 /* BlackHole.js in Resources */,
 				99CCC0032EEAFF0100000002 /* WarpEffect.js in Resources */,
+				99CAFE0B2EEB0C0100000001 /* CameraOptics.js in Resources */,
 				ABC9F9A6DB76610A17588B94 /* TourText.js in Resources */,
 				84D4972386B7FE3C94C7B3C5 /* TourBuilder.js in Resources */,
 				99CCC0052EEAFF0100000002 /* ScenicTour.js in Resources */,

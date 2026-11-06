@@ -87,6 +87,9 @@ class Star {
         // Camera-artifact effects DISABLED — the gray X cross (Hubble diffraction
         // spikes) and the horizontal white band (anamorphic movie-lens streak) are
         // things cameras see, not eyes. They made the sun view a mess of fake rays.
+        // The old 4-point sprite spikes stay off. The Sun's diffraction spikes and lens
+        // ghosts now come from the camera itself (CameraOptics.js, post-process): JWST
+        // 6+2 geometry, occlusion-tested, dimmed by this star's auto-lens filter.
         // this._createDiffractionSpikes();
         // this._createLensFlare();
         this.flareElements = [];   // update() iterates this — keep it defined

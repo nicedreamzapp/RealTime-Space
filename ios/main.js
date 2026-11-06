@@ -15,6 +15,7 @@ window.addEventListener('unhandledrejection', function(event) {
 console.log("✅ main.js loaded - HUBBLE-QUALITY Edition");
 
 let rendererCore, lighting, navPhysics, orbitalMechanics, loop, starfield, hygStarfield;
+let cameraOptics = null;   // CameraOptics.js: auto-exposure, JWST spikes, sun flare, CA, grain
 let hud, radar;
 let asteroidBelt, comets, nebulae, ambientParticles;
 let objects = [];
@@ -177,6 +178,21 @@ function initGalaxy() {
                 const renderPass = new RenderPass(rendererCore.scene, rendererCore.camera);
                 composer.addPass(renderPass);
 
+                // Spacecraft camera optics (CameraOptics.js). The exposure pass sits right
+                // after the scene render, before bloom, so a stopped-down camera also
+                // blooms less, exactly like a real sensor.
+                if (typeof CameraOptics !== 'undefined' && ShaderPass) {
+                    try {
+                        cameraOptics = new CameraOptics(rendererCore);
+                        cameraOptics.qualityProvider = () => (loop && loop.getQualityLevel) ? loop.getQualityLevel() : 1;
+                        composer.addPass(cameraOptics.createExposurePass());
+                        window.cameraFX = cameraOptics;
+                    } catch (e) {
+                        console.warn("CameraOptics exposure pass skipped:", e);
+                        cameraOptics = null;
+                    }
+                }
+
                 // Add bloom pass if available - subtle, realistic bloom for stars
                 if (typeof UnrealBloomPass !== 'undefined') {
                     const bloomPass = new UnrealBloomPass(
@@ -266,6 +282,14 @@ function initGalaxy() {
                     const godRaysPass = new ShaderPass(godRaysShader);
                     composer.addPass(godRaysPass);
                     rendererCore.godRaysPass = godRaysPass;
+                }
+
+                // Sun spikes + lens-flare ghosts (occlusion-tested), edge chromatic
+                // aberration and sensor grain: one pass, after the light shafts and before
+                // the film grade.
+                if (cameraOptics) {
+                    try { composer.addPass(cameraOptics.createLensPass()); }
+                    catch (e) { console.warn("CameraOptics lens pass skipped:", e); }
                 }
 
                 // Add LUT shader pass if LUT texture is loaded
@@ -651,8 +675,13 @@ function createUpdateSystems() {
         // Auto-exposure system update
         {
             name: "AutoExposure",
-            update: (dt) => {
-                if (rendererExposure) {
+            update: (dt, rc) => {
+                // With post-processing live the camera meters the real frame
+                // (CameraOptics); the old distance heuristic only runs on the
+                // direct-render fallback, where there is no frame to meter.
+                if (cameraOptics && rendererCore?.useComposer) {
+                    cameraOptics.update(dt, rc?.camera || rendererCore.camera);
+                } else if (rendererExposure) {
                     rendererExposure.update(dt);
                 }
             }
@@ -1673,6 +1702,7 @@ function createSolarSystem() {
     sun.mesh.position.set(0, 0, 0);
     rendererCore.scene.add(sun.mesh);
     objects.push(sun);
+    if (cameraOptics) cameraOptics.setSun(sun);
 
     // THE missing piece: actually light the solar system from the sun.
     // (addStarLight existed but was never called — every PBR planet was
@@ -1734,6 +1764,8 @@ function createSolarSystem() {
 
     // Add Earth's moon — and wire eclipse shadows both ways
     const earth = objects.find(o => o.name === "Earth");
+    // Camera spike reach is scaled by the Sun's apparent brightness relative to Earth's distance.
+    if (earth && cameraOptics) cameraOptics.setReferenceDistance(earth.mesh.position.length());
     if (earth) {
         const moon = createMoon({ name: "Moon", radius: 0.4, color: 0xaaaaaa, distance: 5, period: 27 }, earth);
         objects.push(moon);
@@ -1825,6 +1857,7 @@ function createStarfield() {
         const mesh = hygStarfield.getMesh();
         if (mesh) {
             rendererCore.scene.add(mesh);
+            if (cameraOptics) cameraOptics.setStarfield(hygStarfield);
             console.log(`✨ Real HYG sky: ${hygStarfield.starCount} stars at true positions`);
         }
     } else {
@@ -2152,6 +2185,14 @@ function exposeFlyToAPI() {
         navPhysics.maxSpeed = speed;
         navPhysics.thrustPower = speed * 2.4; // snappier acceleration (was 1.6) so a held thrust reaches speed fast
         console.log(`⚙️ Max speed set to ${speed}`);
+    };
+
+    // Camera optics toggles: name = autoExposure | spikes | flare | ca | grain
+    window.galaxyExplorer.setCameraEffect = function(name, on) {
+        return cameraOptics ? cameraOptics.set(name, on) : false;
+    };
+    window.galaxyExplorer.setCameraQuality = function(tier) {   // 'high' | 'medium' | 'low' | 'auto'
+        if (cameraOptics) cameraOptics.setTier(tier);
     };
 
     window.galaxyExplorer.centerOnEarth = function() {

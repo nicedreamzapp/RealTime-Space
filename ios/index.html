@@ -183,6 +183,7 @@
 
         const scripts = [
             'RendererCore.js',
+            'CameraOptics.js',
             'LightingSystem.js',
             'NavigationPhysics.js',
             'OrbitalMechanics.js',
@@ -226,7 +227,7 @@
             'TourBuilder.js',
             'main.js'
         ];
-        const APP_VERSION = '2026-11-04a'; // bump to bust browser cache after edits
+        const APP_VERSION = '2026-11-05cam'; // bump to bust browser cache after edits
         // Query-string cache busting is for http dev serving only — file:// URLs
         // inside the app bundle don't cache and may not tolerate query params.
         const bust = location.protocol.startsWith('http') ? '?v=' + APP_VERSION : '';
