@@ -64,7 +64,9 @@ class RendererCore {
                 // GL handles died with the lost context (WebKit logs an error for deleting one).
                 if (this.composer) this.composer.setSize(w, h);
                 if (window.cameraFX && window.cameraFX.onContextRestored) window.cameraFX.onContextRestored();
-                this.initEnvironmentMap();   // the PMREM map's contents were in the lost context
+                // the PMREM map's contents were in the lost context. The panorama is 2048x1024
+                // (~8 MB decoded, despite the file name), so re-decoding it is cheap.
+                this.initEnvironmentMap();
                 console.log('✅ WebGL context restored');
             } catch (err) {
                 console.error('❌ WebGL restore step failed:', err);
@@ -152,8 +154,9 @@ class RendererCore {
     }
 
     initEnvironmentMap() {
-        // Real 8K Milky Way panorama (Solar System Scope, CC BY 4.0) — now used ONLY for
-        // PMREM image-based lighting. It is no longer the visible sky (see below).
+        // Milky Way panorama (Solar System Scope, CC BY 4.0; the bundled file is 2048x1024
+        // even though it is named _8k) — used ONLY for PMREM image-based lighting. It is no
+        // longer the visible sky (see below).
         const loader = new THREE.TextureLoader();
         loader.load(
             'textures/starfield/milky_way_8k.jpg',
@@ -177,7 +180,7 @@ class RendererCore {
                 const envMap = pmrem.fromEquirectangular(texture).texture;
                 this.scene.environment = envMap;
                 pmrem.dispose();
-                texture.dispose(); // no longer the background — free the ~130MB 8K texture
+                texture.dispose(); // no longer the background — free the decoded panorama
 
                 console.log("✨ Milky Way IBL ready (panorama lights the scene, sky is real stars only)");
             },

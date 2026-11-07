@@ -72,7 +72,7 @@ class Star {
         // so no stale handle is touched after the restore) and again on restore, and the map
         // is baked from scratch on the restored context.
         this._onTier = () => this._applyTier();
-        this._onGL = (e) => { if (e.detail) this._resetBake(); };
+        this._onGL = (e) => { if (e.detail) { this._resetBake(); this._drawChecked = false; } };
         window.addEventListener('rtquality', this._onTier);
         window.addEventListener('rtglcontext', this._onGL);
     }
@@ -303,9 +303,9 @@ class Star {
         renderer.setRenderTarget(prevRT);
         renderer.autoClear = prevAuto;
         b.row += b.rows;
-        // Once, after the first strip: the three bake/draw programs must have linked. A
-        // driver that fails one would leave a black Sun, so update() falls back to the
-        // per-pixel photosphere instead. (One status read per program, never per frame.)
+        // Once, after the first strip: both bake programs (just drawn, so these are the real
+        // ones) must have linked. A driver that fails one would leave a black Sun, so update()
+        // falls back to the per-pixel photosphere instead. (One status read each, not per frame.)
         if (!b.checked) {
             b.checked = true;
             if (!this._bakeProgramsOK(renderer, [b.granQuad.material, b.quad.material])) throw new Error('Sun bake shader did not link');
@@ -318,24 +318,17 @@ class Star {
         }
     }
 
-    // True when every material's program linked. Bake materials were just rendered (their
-    // program is current); the draw material is compiled on a scratch scene if the Sun has
-    // not drawn it yet.
+    // True when every material's program linked. Called right after those materials were
+    // drawn, so the program checked is the one three.js actually built and uses for them
+    // (renderer.properties.currentProgram), not a stand-in compiled on a scratch scene.
     _bakeProgramsOK(renderer, mats) {
         try {
             const gl = renderer.getContext();
-            const linked = (m) => {
+            return mats.every((m) => {
                 const pr = renderer.properties.get(m).currentProgram;
                 if (!pr || !pr.program) return false;
                 return gl.getProgramParameter(pr.program, gl.LINK_STATUS) !== false;
-            };
-            const dm = this._getBakedMat();
-            if (!renderer.properties.get(dm).currentProgram && this.core) {
-                const sc = new THREE.Scene();
-                sc.add(new THREE.Mesh(this.core.geometry, dm));
-                renderer.compile(sc, this._bake && this._bake.cam || new THREE.Camera());
-            }
-            return mats.concat([dm]).every(linked);
+            });
         } catch (e) { return false; }
     }
 
@@ -693,6 +686,21 @@ class Star {
                 this.coronaUniforms.uGain.value = 1.0 + 5.0 * (1 - this._filter);
                 this.coronaUniforms.uFilt.value = this._filter;
                 this.coronaUniforms.time.value = this.time;
+            }
+        }
+
+        // The baked draw material's own program, checked once after its first real draw in the
+        // scene (three.js keys it on the scene's lights, fog and renderer state, so only the
+        // program it actually built is worth checking). Failed: per-pixel photosphere instead.
+        if (this._lowSun && !this._bakeBroken && !this._drawChecked && this.core && this._bakedMat &&
+            this.core.material === this._bakedMat && rendererCore && rendererCore.renderer && !rendererCore.contextLost &&
+            rendererCore.renderer.properties.get(this._bakedMat).currentProgram) {
+            this._drawChecked = true;
+            if (!this._bakeProgramsOK(rendererCore.renderer, [this._bakedMat])) {
+                console.warn('Sun: baked photosphere program did not link, using the per-pixel photosphere');
+                this._disposeBake(); this._bake = { done: true, failed: true };
+                this._bakeBroken = true;
+                if (this._fullMat) this.core.material = this._fullMat;
             }
         }
 
