@@ -2821,6 +2821,34 @@ function exposeFlyToAPI() {
         window.galaxyExplorer.startScenicTour();
     };
 
+    // Android Back (MainActivity asks this before leaving the app). Closes the top-most web
+    // overlay, or ends a running tour back to free flight, and returns true; returns false only
+    // in the plain flight view (helm/cockpit, visor or chase with nothing open), so Back exits.
+    window.rtsBack = function() {
+        const shown = (el) => !!(el && el.classList && el.classList.contains('show'));
+        const ld = window.liveData;
+        if (ld && shown(ld.el)) { ld.close(); return true; }
+        const cx = window.codex;
+        if (cx) {
+            if (shown(cx.card)) { cx.hideCard(); return true; }
+            for (const el of [cx.destEl, cx.mapEl, cx.guide]) {
+                if (shown(el)) {
+                    const x = el.querySelector('.cx-close');
+                    if (x) x.click(); else { el.classList.remove('show'); cx._chrome?.(false); }
+                    return true;
+                }
+            }
+        }
+        const tb = window.tourBuilder;
+        if (tb) {
+            if (shown(tb.picker)) { tb.close(); return true; }
+            if (shown(tb.done) || (tb.tour && tb.tour.classList.contains('fin'))) { tb._finish(); return true; }
+            if (tb.running) { tb.end(); if (tb.running) tb._finish(); return true; }
+        }
+        if (scenicTour && scenicTour.active) { scenicTour.stop('user'); return true; }
+        return false;
+    };
+
 
     // Time acceleration (also driveable from Swift)
     window.galaxyExplorer.cycleTimeScale = cycleTimeScale;

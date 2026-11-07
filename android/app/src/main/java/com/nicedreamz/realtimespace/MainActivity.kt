@@ -16,6 +16,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -111,6 +112,8 @@ class MainActivity : ComponentActivity() {
         assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
+
+        installBackHandler()
 
         setContent {
           // Unlock screen opened early from the ⋯ panel (dismissable); auto-closes on purchase.
@@ -249,6 +252,47 @@ class MainActivity : ComponentActivity() {
         forceLowTier = true
         val container = webContainer ?: return
         if (webView == null && !isFinishing && !isDestroyed) container.addView(createWebView(this))
+    }
+
+    /** Back / back gesture. Registered before setContent, so the Compose BackHandlers (⋯ panel,
+     *  dismissable unlock screen) are added later and get Back first. Otherwise the web layer
+     *  decides: window.rtsBack() closes its top-most overlay or ends a tour and returns true;
+     *  only when it returns false (plain flight view, nothing open) does Back leave the app the
+     *  normal way. No answer within 1.5 s (renderer gone or stuck) also leaves. */
+    private var backPending = false
+    private fun installBackHandler() {
+        val cb = object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val wv = webView
+                if (wv == null || !state.engineReady) { exitByBack(this); return }
+                if (backPending) return
+                backPending = true
+                val main = Handler(Looper.getMainLooper())
+                var answered = false
+                val timeout = Runnable {
+                    if (answered) return@Runnable
+                    answered = true; backPending = false
+                    Log.w(TAG, "Back: web layer did not answer, leaving")
+                    exitByBack(this)
+                }
+                main.postDelayed(timeout, 1_500L)
+                wv.evaluateJavascript("(function(){try{return !!(window.rtsBack&&window.rtsBack());}catch(e){return false;}})()") { r ->
+                    if (answered) return@evaluateJavascript
+                    answered = true; backPending = false
+                    main.removeCallbacks(timeout)
+                    if (r != "true") exitByBack(this)
+                }
+            }
+        }
+        onBackPressedDispatcher.addCallback(this, cb)
+    }
+
+    /** Hand Back to the system default (finish / move the task back), then re-arm. */
+    private fun exitByBack(cb: OnBackPressedCallback) {
+        if (isFinishing || isDestroyed) return
+        cb.isEnabled = false
+        onBackPressedDispatcher.onBackPressed()
+        cb.isEnabled = true
     }
 
     override fun onPause() {
