@@ -854,7 +854,7 @@ function layoutPlanetLabel(ph, camera, opacity) {
 function installPlanetLabelLayout(scene, mainCamera) {
     let lastFrame = -1;
     scene.onBeforeRender = (renderer, sc, camera) => {
-        if (camera !== mainCamera || !planetHighlights.length) return;
+        if (camera !== mainCamera) return;
         const f = (typeof loop !== 'undefined' && loop) ? loop.frameCount : performance.now();
         if (f === lastFrame) return;
         lastFrame = f;
@@ -871,6 +871,10 @@ function installPlanetLabelLayout(scene, mainCamera) {
             layoutPlanetLabel(ph, camera, opacity);
             ph.label.updateMatrixWorld(true);
         });
+        // the ISS marker and its label, after Earth's name box is laid out for this frame
+        if (window.issTracker && window.issTracker.place) {
+            try { window.issTracker.place(camera); } catch (e) { console.warn('ISS place failed:', e); }
+        }
     };
 }
 

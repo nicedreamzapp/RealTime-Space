@@ -86,7 +86,7 @@ class Star {
         const low = Star._wantsLowSun();
         if (low === this._lowSun) return;
         this._lowSun = low;
-        if (this.core) this.core.material = low ? this._getBakedMat() : this._fullMat;
+        if (this.core) this.core.material = (low && !this._bakeBroken) ? this._getBakedMat() : this._fullMat;
         if (this.corona) {
             const m = this.corona.material;
             m.defines = Object.assign({}, m.defines);
@@ -303,12 +303,40 @@ class Star {
         renderer.setRenderTarget(prevRT);
         renderer.autoClear = prevAuto;
         b.row += b.rows;
+        // Once, after the first strip: the three bake/draw programs must have linked. A
+        // driver that fails one would leave a black Sun, so update() falls back to the
+        // per-pixel photosphere instead. (One status read per program, never per frame.)
+        if (!b.checked) {
+            b.checked = true;
+            if (!this._bakeProgramsOK(renderer, [b.granQuad.material, b.quad.material])) throw new Error('Sun bake shader did not link');
+        }
         if (last) {
             b.done = true;
             const bu = this._getBakedMat().uniforms;
             bu.uMap.value = b.rt.texture;
             bu.uReady.value = 1;
         }
+    }
+
+    // True when every material's program linked. Bake materials were just rendered (their
+    // program is current); the draw material is compiled on a scratch scene if the Sun has
+    // not drawn it yet.
+    _bakeProgramsOK(renderer, mats) {
+        try {
+            const gl = renderer.getContext();
+            const linked = (m) => {
+                const pr = renderer.properties.get(m).currentProgram;
+                if (!pr || !pr.program) return false;
+                return gl.getProgramParameter(pr.program, gl.LINK_STATUS) !== false;
+            };
+            const dm = this._getBakedMat();
+            if (!renderer.properties.get(dm).currentProgram && this.core) {
+                const sc = new THREE.Scene();
+                sc.add(new THREE.Mesh(this.core.geometry, dm));
+                renderer.compile(sc, this._bake && this._bake.cam || new THREE.Camera());
+            }
+            return mats.concat([dm]).every(linked);
+        } catch (e) { return false; }
     }
 
     // Deterministic active regions: a few spot groups in the two activity belts (5-35 deg
@@ -668,14 +696,19 @@ class Star {
             }
         }
 
-        if (this._lowSun && rendererCore && rendererCore.renderer && !rendererCore.contextLost &&
+        if (this._lowSun && !this._bakeBroken && rendererCore && rendererCore.renderer && !rendererCore.contextLost &&
             !(this._bake && this._bake.done)) {
             let failed = false;
             try { this._bakeStep(rendererCore.renderer); }
             catch (e) { failed = true; console.warn('Sun bake skipped:', e); }
             finally {
-                // a failed bake frees its targets and stays on the plain limb-darkened disk
-                if (failed) { this._disposeBake(); this._bake = { done: true, failed: true }; }
+                // a failed bake frees its targets; the Sun switches to the per-pixel photosphere
+                // for the rest of the session (the baked draw path may be the broken part)
+                if (failed) {
+                    this._disposeBake(); this._bake = { done: true, failed: true };
+                    this._bakeBroken = true;
+                    if (this.core && this._fullMat) this.core.material = this._fullMat;
+                }
             }
         }
 

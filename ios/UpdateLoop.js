@@ -109,9 +109,13 @@ class UpdateLoop {
 
         try {
             // Check for WebGL context loss
+            // WebGL context lost: idle (no updates, no draws) until it is restored, but keep
+            // the rAF chain alive so the loop resumes by itself (returning without re-arming
+            // froze the app for good after any GPU reset).
             const gl = this.rendererCore?.renderer?.getContext?.();
-            if (gl && gl.isContextLost && gl.isContextLost()) {
-                console.error("❌ WebGL context lost!");
+            if (this.rendererCore?.contextLost || (gl && gl.isContextLost && gl.isContextLost())) {
+                this.lastTime = currentTime;
+                requestAnimationFrame(this.loop);
                 return;
             }
 

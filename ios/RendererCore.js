@@ -34,8 +34,44 @@ class RendererCore {
         this.initEnvironmentMap();
         this.initPostProcessing();
         this.setupResizeHandler();
+        this.setupContextLossHandler();
 
         console.log("✅ RendererCore initialized with HUBBLE-QUALITY settings");
+    }
+
+    // ---- WebGL context loss (GPU reset, memory pressure, backgrounding) ----
+    // Lost: preventDefault (asks WebKit to restore the context), the UpdateLoop idles with its
+    // rAF chain alive, and 'rtglcontext' tells the Sun to drop its baked map. Restored: three.js
+    // has already rebuilt its GL state (its own listener was registered first, by the
+    // renderer); the PMREM environment and the exposure meter's readback buffer only existed
+    // in the lost context, so they are rebuilt, and 'rtglcontext' makes the Sun bake again.
+    setupContextLossHandler() {
+        this.contextLost = false;
+        this.contextLossCount = 0;
+        this.canvas.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            this.contextLost = true;
+            this.contextLossCount++;
+            console.warn('⚠️ WebGL context lost — render loop idle, waiting for restore');
+            try { window.dispatchEvent(new CustomEvent('rtglcontext', { detail: { lost: true } })); } catch (_) {}
+        }, false);
+        this.canvas.addEventListener('webglcontextrestored', () => {
+            try {
+                const w = window.innerWidth, h = window.innerHeight;
+                this.renderer.setSize(w, h);
+                // Render targets need nothing: three.js rebuilt its property tables, so each
+                // target is set up again on its next use. Old objects are NOT disposed: their
+                // GL handles died with the lost context (WebKit logs an error for deleting one).
+                if (this.composer) this.composer.setSize(w, h);
+                if (window.cameraFX && window.cameraFX.onContextRestored) window.cameraFX.onContextRestored();
+                this.initEnvironmentMap();   // the PMREM map's contents were in the lost context
+                console.log('✅ WebGL context restored');
+            } catch (err) {
+                console.error('❌ WebGL restore step failed:', err);
+            }
+            this.contextLost = false;
+            try { window.dispatchEvent(new CustomEvent('rtglcontext', { detail: { lost: false } })); } catch (_) {}
+        }, false);
     }
 
     initScene() {
