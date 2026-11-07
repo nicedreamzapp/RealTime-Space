@@ -126,16 +126,23 @@ function initGalaxy() {
             lutTexture = null;
             try {
                 const loader = new THREE.TextureLoader();
+                // LUT is DATA, not an image: no mipmaps (on Android a mip chain built from
+                // the strip turned the whole frame to yellow noise), no sRGB decode (raw
+                // lookup values), plain linear filtering between entries, no anisotropy.
+                // Set on the texture object BEFORE the image arrives, so no upload of it can
+                // ever happen with the stock mipmap defaults, and again in onLoad.
+                const lutAsData = (t) => {
+                    t.generateMipmaps = false;
+                    t.minFilter = THREE.LinearFilter;
+                    t.magFilter = THREE.LinearFilter;
+                    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+                    t.anisotropy = 1;
+                    if (THREE.NoColorSpace !== undefined) t.colorSpace = THREE.NoColorSpace;
+                };
                 lutTexture = loader.load(
                     'FilmLUT.png',
                     function(texture) {
-                        // LUT is DATA, not an image: no mipmaps (they smear the 32-row
-                        // table into black), no sRGB decode (raw lookup values), plain
-                        // linear filtering for smooth interpolation between entries.
-                        texture.generateMipmaps = false;
-                        texture.minFilter = THREE.LinearFilter;
-                        texture.magFilter = THREE.LinearFilter;
-                        if (THREE.NoColorSpace !== undefined) texture.colorSpace = THREE.NoColorSpace;
+                        lutAsData(texture);
                         texture.needsUpdate = true;
                         lutTexture = texture;
                         console.log("🎨 LUT texture loaded");
@@ -147,6 +154,7 @@ function initGalaxy() {
                         //console.log("⚠️ LUT texture not found or failed to load");
                     }
                 );
+                if (lutTexture) lutAsData(lutTexture);
             } catch (e) {
                 lutTexture = null;
             }
@@ -542,6 +550,7 @@ function initGalaxy() {
         // Create rich solar system
         createSolarSystem();
         createPlanetHighlights();
+        installPlanetLabelLayout(rendererCore.scene, rendererCore.camera);
 
         // Enhanced starfield with accurate colors
         createStarfield();
@@ -816,17 +825,53 @@ function layoutPlanetLabel(ph, camera, opacity) {
     ph._box = textBox(px, py, h);
 
     // Back to the world: a point on the ray through (px, py), just in front of the planet so
-    // the planet's own surface never hides the label it carries.
-    const dist = Math.max(depth - R * 1.05, depth * 0.5);
+    // the planet's own surface never hides the label it carries. Close in (inside ~2 radii)
+    // the label is often slid onto the disk, and the old "half the depth" point then sat
+    // under the near surface, so the depth test hid the planet's own name: the point now
+    // stops short of where that ray first meets the planet (its atmosphere shell included).
     const ndcX = px / W * 2 - 1, ndcY = 1 - py / H * 2;
     const p = _lbl.v.set(ndcX, ndcY, 0.5).unproject(camera).sub(camera.position).normalize();
-    const along = dist / Math.max(1e-6, p.dot(fwd));
+    const pf = Math.max(1e-6, p.dot(fwd));
+    let along = Math.max(depth - R * 1.05, depth * 0.5) / pf;
+    const Ro = R * 1.06, tc = p.x * (C.x - camera.position.x) + p.y * (C.y - camera.position.y) + p.z * (C.z - camera.position.z);
+    const disc = tc * tc - (d * d - Ro * Ro);
+    if (disc > 0) { const tHit = tc - Math.sqrt(disc); if (tHit > 0) along = Math.min(along, tHit * 0.9); }
+    along = Math.max(along, (camera.near || 0.1) * 4);
+    const dist = along * pf;                                 // depth of the label point
     const world = p.multiplyScalar(along).add(camera.position);
     const k = h * 2 * dist * tanH / H;                       // sprite height in world units
     const ws = planet.mesh.getWorldScale(_lbl.s);
     planet.mesh.worldToLocal(world);
     label.position.copy(world);
     label.scale.set(4 * k / (ws.x || 1), k / (ws.y || 1), 1);
+}
+
+// The labels are laid out against the exact camera and planet positions the frame is drawn
+// with: scene.onBeforeRender runs inside renderer.render after the scene's and camera's world
+// matrices are final and before culling, on the composer and direct paths alike. (Laid out in
+// an update system they trailed the view by a frame: the camera follow, FlyTo, the tour and
+// the planets' own orbit steps all run after it.) Once per frame, main camera only.
+function installPlanetLabelLayout(scene, mainCamera) {
+    let lastFrame = -1;
+    scene.onBeforeRender = (renderer, sc, camera) => {
+        if (camera !== mainCamera || !planetHighlights.length) return;
+        const f = (typeof loop !== 'undefined' && loop) ? loop.frameCount : performance.now();
+        if (f === lastFrame) return;
+        lastFrame = f;
+        planetHighlights.forEach(ph => {
+            if (!ph.planet.mesh) return;
+            ph.label.quaternion.copy(camera.quaternion);       // always face camera
+            const dist = camera.position.distanceTo(ph.planet.mesh.getWorldPosition(_lbl.c));
+            // Label opacity fades from 1 at 600 units to 0 at 1200 units
+            let opacity = 0;
+            if (dist <= 600) opacity = 1;
+            else if (dist < 1200) opacity = 1 - (dist - 600) / 600;
+            opacity = Math.min(Math.max(opacity, 0), 1);
+            ph.label.material.opacity = opacity;
+            layoutPlanetLabel(ph, camera, opacity);
+            ph.label.updateMatrixWorld(true);
+        });
+    };
 }
 
 // True when this WebGL context can render into RGBA16F targets (what THREE.HalfFloatType
@@ -1144,22 +1189,11 @@ function createUpdateSystems() {
                 if (!rc?.camera) return;
 
                 planetHighlights.forEach(ph => {
-                    // Always face camera
-                    ph.label.quaternion.copy(rc.camera.quaternion);
-
+                    // (the name labels are laid out in installPlanetLabelLayout's render hook)
+                    if (!ph.glow) return;
                     // Compute distance from camera to planet center
                     const dist = rc.camera.position.distanceTo(ph.planet.mesh.getWorldPosition(new THREE.Vector3()));
 
-                    // Label opacity fades from 1 at 600 units to 0 at 1200 units
-                    let opacity = 0;
-                    if (dist <= 600) opacity = 1;
-                    else if (dist < 1200) opacity = 1 - (dist - 600) / 600;
-                    opacity = Math.min(Math.max(opacity, 0), 1);
-
-                    ph.label.material.opacity = opacity;
-                    layoutPlanetLabel(ph, rc.camera, opacity);
-
-                    if (!ph.glow) return;
                     // Gentle pulse. The ring geometry is already sized to the planet's
                     // radius — scaling by radius again blew the Sun's ring up to ~900
                     // units and draped giant teal sheets across the whole sky.

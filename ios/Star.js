@@ -639,7 +639,11 @@ class Star {
             this._filter = (this._filter || 0) + (target - (this._filter || 0)) * Math.min(1, deltaTime * 3.5);
             if (this.surfaceUniforms) this.surfaceUniforms.uFilter.value = this._filter;
             window.__sunFilter = this._filter;   // god rays + camera optics read it
-            if (this.surfaceUniforms) this.surfaceUniforms.uLDR.value = window.__rtHDR === false ? 1.0 : 0.0;
+            // No headroom either when the frame is drawn directly (no composer: the black-frame
+            // fallback or no post support): there is no HDR target and no auto-exposure, so the
+            // 1.6x filtered disk would clip flat at white. Scale it under 1.0 as on 8-bit.
+            const direct = !(typeof rendererCore !== 'undefined' && rendererCore && rendererCore.useComposer && rendererCore.composer);
+            if (this.surfaceUniforms) this.surfaceUniforms.uLDR.value = (window.__rtHDR === false || direct) ? 1.0 : 0.0;
 
             if (this.coronaUniforms) {
                 const R = this.radius;

@@ -64,7 +64,8 @@ class UpdateLoop {
         }
 
         this.isRunning = true;
-        this.isPaused = false;
+        // isPaused is left as it is: a pause() placed before start() (e.g. the app went to
+        // the background during boot) still holds until resume().
         this.lastTime = performance.now();
         this.frameCount = 0;
         this.totalTime = 0;

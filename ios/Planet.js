@@ -4,6 +4,30 @@
 // (Rayleigh + Mie + ozone), cloud shadows, airglow and a volumetric aurora; every other
 // atmosphere is a simple view-angle limb glow (not a scattering model).
 
+// A deep-sky / exoplanet / star map (codex/cosmos/) whose load fails is retried once after
+// 1.5 s into the same texture object, so a transient read failure does not leave that body
+// blank for the whole session. Every other URL goes through the stock loader untouched.
+(function patchCosmosRetry() {
+    if (typeof THREE === 'undefined' || !THREE.TextureLoader || THREE.TextureLoader.prototype.__rtsCosmosRetry) return;
+    const stock = THREE.TextureLoader.prototype.load;
+    THREE.TextureLoader.prototype.load = function (url, onLoad, onProgress, onError) {
+        if (!/(^|\/)cosmos\//.test(String(url))) return stock.call(this, url, onLoad, onProgress, onError);
+        const self = this;
+        const texture = stock.call(this, url, onLoad, onProgress, () => setTimeout(() => {
+            const loader = new THREE.ImageLoader(self.manager);
+            loader.setCrossOrigin(self.crossOrigin);
+            loader.setPath(self.path);
+            loader.load(url, (image) => {
+                texture.image = image;
+                texture.needsUpdate = true;
+                if (onLoad) onLoad(texture);
+            }, onProgress, onError);
+        }, 1500));
+        return texture;
+    };
+    THREE.TextureLoader.prototype.__rtsCosmosRetry = true;
+})();
+
 // Shared GLSL: soft eclipse shadows cast by spherical occluders (moons/planets) and
 // ring-plane shadows (Saturn's rings on the planet). The penumbra is approximated by
 // comparing the angular radii of the sun and occluder discs as seen from the fragment.

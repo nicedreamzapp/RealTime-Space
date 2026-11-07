@@ -92,6 +92,21 @@
       g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
       const t = new window.THREE.CanvasTexture(c); return t;
     }
+    // True when the ISS label (26 px sprite, glyphs ~110 x 14 px) placed above the marker
+    // would overlap the Earth name label's on-screen text box (laid out in main.js).
+    _overEarthName(cam) {
+      try {
+        if (typeof planetHighlights === 'undefined') return false;
+        const ph = planetHighlights.find(h => h.planet && h.planet.name === 'Earth');
+        const b = ph && ph._box;
+        if (!b || !ph.label.visible || ph.label.material.opacity < 0.02) return false;
+        const v = this._tmp2 || (this._tmp2 = new window.THREE.Vector3());
+        v.copy(this.marker.position).project(cam);
+        if (v.z > 1) return false;
+        const x = (v.x * 0.5 + 0.5) * window.innerWidth, y = (0.5 - v.y * 0.5) * window.innerHeight - 26 * 0.8;
+        return x - 58 < b.x1 && x + 58 > b.x0 && y - 9 < b.y1 && y + 9 > b.y0;
+      } catch (e) { return false; }
+    }
     _labelTexture(text) {
       const c = document.createElement('canvas'); c.width = 340; c.height = 64;
       const g = c.getContext('2d');
@@ -143,15 +158,18 @@
             const dEarth = this._tmp.distanceTo(cam.position);
             const vis = dEarth < this.earthRadius * 40;
             this.marker.visible = vis;
-            // Keep the label a label: world-sized, it grew to a ~60 px headline when flying
-            // near Earth. Cap its on-screen height at ~16 px (CSS), whatever the distance.
+            // Keep the label a label at one readable on-screen size whatever the distance:
+            // world-sized it grew to a ~60 px headline near Earth, and the old 16 px sprite
+            // cap left the glyphs (about half the sprite's height) at ~7 px. The sprite is
+            // now held at 26 CSS px, so the text reads at ~12 px.
             if (vis && this._label) {
               const dL = this.marker.position.distanceTo(cam.position);
               const tanH = Math.tan((cam.fov || 60) * Math.PI / 360);
-              const hMax = 16 * 2 * dL * tanH / Math.max(1, window.innerHeight);
-              const h = Math.min(this.earthRadius * 0.225, hMax);
+              const h = 26 * 2 * dL * tanH / Math.max(1, window.innerHeight);
               this._label.scale.set(h * (1.2 / 0.225), h, 1);
-              this._label.position.y = Math.min(this.earthRadius * 0.18, h * 0.8);
+              // just above the marker, same screen gap at any range; dropped below it when
+              // that spot would sit on Earth's own name label
+              this._label.position.y = this._overEarthName(cam) ? -h * 0.8 : h * 0.8;
             }
           }
         }
