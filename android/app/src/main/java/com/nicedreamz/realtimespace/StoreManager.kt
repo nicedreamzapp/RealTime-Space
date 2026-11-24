@@ -2,6 +2,8 @@ package com.nicedreamz.realtimespace
 
 import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import java.security.MessageDigest
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -75,15 +77,27 @@ class StoreManager(private val activity: Activity) {
         private set
     var errorMessage by mutableStateOf<String?>(null)
         private set
+    /** Neutral status line on the unlock screen (restore result, pending purchase). */
+    var infoMessage by mutableStateOf<String?>(null)
+        private set
 
     private var billingReady = false
+    private var connecting = false
     private var details: ProductDetails? = null
+    private val main = Handler(Looper.getMainLooper())
+    /** Reconnect backoff after Play's billing service drops: 1, 2, 4 ... 30 s. */
+    private var reconnectDelayMs = 1_000L
+    /** A restore tapped while billing was down: run it (and report) once connected. */
+    private var restoreWhenReady = false
 
     private val purchasesUpdated = PurchasesUpdatedListener { result, purchases ->
         when (result.responseCode) {
             BillingClient.BillingResponseCode.OK ->
                 purchases?.forEach { handlePurchase(it) }
-            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> grantUnlock()
+            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
+                grantUnlock()
+                refreshEntitlement()   // picks up and acknowledges the owned purchase
+            }
             BillingClient.BillingResponseCode.USER_CANCELED -> { /* their call */ }
             else -> errorMessage = "Purchase didn't complete — you were not charged."
         }
@@ -105,16 +119,44 @@ class StoreManager(private val activity: Activity) {
     }
 
     private fun connect() {
+        if (billingReady || connecting) return
+        connecting = true
         billing.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(result: BillingResult) {
-                billingReady = result.responseCode == BillingClient.BillingResponseCode.OK
-                if (billingReady) {
-                    refreshEntitlement()
-                    loadProduct()
+                main.post {
+                    connecting = false
+                    billingReady = result.responseCode == BillingClient.BillingResponseCode.OK
+                    if (billingReady) {
+                        reconnectDelayMs = 1_000L
+                        if (restoreWhenReady) { restoreWhenReady = false; refreshEntitlement(report = true) }
+                        else refreshEntitlement()
+                        loadProduct()
+                    } else if (restoreWhenReady) {
+                        restoreWhenReady = false
+                        infoMessage = null
+                        errorMessage = "Google Play isn't connected right now. Check your connection and try again."
+                    }
                 }
             }
-            override fun onBillingServiceDisconnected() { billingReady = false }
+            override fun onBillingServiceDisconnected() {
+                // Play's service dropped (Play Store updated, killed, or offline): reconnect
+                // with backoff so a purchase finished in the meantime still gets granted.
+                main.post {
+                    connecting = false
+                    billingReady = false
+                    val wait = reconnectDelayMs
+                    reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(30_000L)
+                    main.postDelayed({ if (!activity.isFinishing && !activity.isDestroyed) connect() }, wait)
+                }
+            }
         })
+    }
+
+    /** Foreground return: roll the trial day and re-check Play for purchases that finished
+     *  while we were away (pending ones that cleared, a purchase made on another screen). */
+    fun onResume() {
+        refreshTrial()
+        if (billingReady) refreshEntitlement() else connect()
     }
 
     /** Call at launch and on every foreground return — the day can roll over. */
@@ -125,16 +167,32 @@ class StoreManager(private val activity: Activity) {
         locked = !isUnlocked && daysRemaining <= 0
     }
 
-    private fun refreshEntitlement() {
+    /** Ask Play what this account owns. With report = true (Restore), always leave a message:
+     *  restored, still pending, nothing found, or Play didn't answer. */
+    private fun refreshEntitlement(report: Boolean = false) {
         billing.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
                 .setProductType(BillingClient.ProductType.INAPP).build()
         ) { result, purchases ->
-            if (result.responseCode != BillingClient.BillingResponseCode.OK) return@queryPurchasesAsync
-            purchases.filter {
-                it.products.contains(PRODUCT_ID) &&
-                    it.purchaseState == Purchase.PurchaseState.PURCHASED
-            }.forEach { handlePurchase(it) }
+            main.post {
+                if (result.responseCode != BillingClient.BillingResponseCode.OK) {
+                    if (report) { infoMessage = null; errorMessage = "Google Play didn't answer. Check your connection and try again." }
+                    return@post
+                }
+                val ours = purchases.filter { it.products.contains(PRODUCT_ID) }
+                ours.forEach { handlePurchase(it) }
+                if (!report) return@post
+                when {
+                    ours.any { it.purchaseState == Purchase.PurchaseState.PURCHASED } ->
+                        infoMessage = "Purchase restored. Thanks for supporting RealTime Space!"
+                    ours.any { it.purchaseState == Purchase.PurchaseState.PENDING } ->
+                        infoMessage = "Your purchase is still pending with Google Play. It unlocks as soon as it clears."
+                    else -> {
+                        infoMessage = null
+                        errorMessage = "No previous purchase found for this Google account."
+                    }
+                }
+            }
         }
     }
 
@@ -158,20 +216,30 @@ class StoreManager(private val activity: Activity) {
 
     private fun handlePurchase(purchase: Purchase) {
         if (!purchase.products.contains(PRODUCT_ID)) return
+        if (purchase.purchaseState == Purchase.PurchaseState.PENDING) {
+            // Cash / slow payment methods: Play confirms later. onResume and the listener
+            // pick it up when it clears; nothing is granted until then.
+            main.post { infoMessage = "Your purchase is pending with Google Play. It unlocks as soon as it clears." }
+            return
+        }
         if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) return
+        // Grant first, then acknowledge. An acknowledge that fails is retried on the next
+        // refresh (launch, resume, restore): Play refunds purchases left unacknowledged for
+        // 3 days, so every refresh re-sends it until it sticks.
+        main.post { grantUnlock() }
         if (!purchase.isAcknowledged) {
             billing.acknowledgePurchase(
                 AcknowledgePurchaseParams.newBuilder()
                     .setPurchaseToken(purchase.purchaseToken).build()
             ) { _ -> }
         }
-        grantUnlock()
     }
 
     private fun grantUnlock() {
         prefs.edit().putBoolean(KEY_UNLOCKED, true).apply()
         isUnlocked = true
         locked = false
+        errorMessage = null
     }
 
     /**
@@ -209,6 +277,7 @@ class StoreManager(private val activity: Activity) {
 
     fun buy() {
         errorMessage = null
+        infoMessage = null
         val pd = details
         if (!billingReady || pd == null) {
             errorMessage = "Can't reach Google Play — check your connection and try again."
@@ -228,8 +297,34 @@ class StoreManager(private val activity: Activity) {
 
     fun restore() {
         errorMessage = null
-        if (!billingReady) { connect(); return }
-        refreshEntitlement()
+        infoMessage = "Checking Google Play…"
+        if (!billingReady) {
+            restoreWhenReady = true
+            connect()
+            // Still not connected after 8 s: say so instead of leaving the button silent.
+            main.postDelayed({
+                if (restoreWhenReady && !billingReady) {
+                    restoreWhenReady = false
+                    infoMessage = null
+                    errorMessage = "Google Play isn't connected right now. Check your connection and try again."
+                }
+            }, 8_000L)
+            return
+        }
+        refreshEntitlement(report = true)
+    }
+
+    /** Last 10 days of the free voyage (day 50 on), not owned: the small notice is due. */
+    val trialEndingSoon: Boolean
+        get() = !isUnlocked && !locked && daysRemaining in 1..10
+
+    /** At most once per calendar day. */
+    fun claimTrialNotice(): Boolean {
+        if (!trialEndingSoon) return false
+        val today = System.currentTimeMillis() / 86_400_000L
+        if (prefs.getLong("trial_notice_day", -1L) == today) return false
+        prefs.edit().putLong("trial_notice_day", today).apply()
+        return true
     }
 }
 
@@ -307,6 +402,10 @@ fun PaywallOverlay(store: StoreManager, visible: Boolean = store.locked, onClose
             TextButton(onClick = { onClose?.invoke() }) {
                 Text("Not now — keep exploring free", color = Color(0xFF8FA3C8))
             }
+        }
+        store.infoMessage?.let {
+            Text(it, color = Color(0xFF9FE3FF), fontSize = 13.sp, textAlign = TextAlign.Center,
+                 modifier = Modifier.padding(top = 10.dp))
         }
         store.errorMessage?.let {
             Text(it, color = Color(0xFFFF7A7A), fontSize = 13.sp, textAlign = TextAlign.Center,

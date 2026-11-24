@@ -364,3 +364,32 @@
     window.RTQuality = RTQuality;
     console.log(`🎚️ RTQuality start tier: ${RTQuality.tier} (${start.why})${RTQuality.locked ? ' [locked]' : ''}${CHEAP_SUN ? ' [cheap Sun]' : ''} GPU: ${GPU || 'unknown'}`);
 })();
+
+// RTMotion - the system Reduce Motion setting, for every effect that moves the picture on
+// its own (camera shake, warp streaks, lens-flare ghosts, sensor grain).
+//   window.RTMotion.reduced      true when the player asked the system for less motion
+//   window.addEventListener('rtmotion', e => e.detail.reduced)   fired when it changes
+// Sources: the CSS media query (WKWebView and Android WebView both follow the system
+// setting), plus a native hint: iOS injects __RT_DEVICE.reduceMotion (UIAccessibility) and
+// calls RTMotion.set() when it changes; Android does the same from the animator scale.
+(function () {
+    const mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+    let nativeHint = !!(window.__RT_DEVICE && window.__RT_DEVICE.reduceMotion);
+    const RTMotion = {
+        reduced: false,
+        set(on) { nativeHint = !!on; update(); }
+    };
+    function update() {
+        const next = nativeHint || !!(mq && mq.matches);
+        if (next === RTMotion.reduced) return;
+        RTMotion.reduced = next;
+        try { window.dispatchEvent(new CustomEvent('rtmotion', { detail: { reduced: next } })); } catch (_) {}
+    }
+    update();
+    if (mq) {
+        if (mq.addEventListener) mq.addEventListener('change', update);
+        else if (mq.addListener) mq.addListener(update);
+    }
+    window.RTMotion = RTMotion;
+    if (RTMotion.reduced) console.log('🎚️ Reduce Motion on: shake, warp, flare and grain toned down');
+})();

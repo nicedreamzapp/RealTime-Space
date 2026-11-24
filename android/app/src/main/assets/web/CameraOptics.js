@@ -451,7 +451,9 @@ class CameraOptics {
         const u = lp.uniforms;
         const cfg = this.cfg;
         const caOn = this.prefs.ca && cfg.ca > 0;
-        const grainOn = this.prefs.grain && cfg.grain > 0;
+        // Reduce Motion (RTMotion): no per-frame grain (it shimmers), fainter flare ghosts.
+        const calm = !!(window.RTMotion && window.RTMotion.reduced);
+        const grainOn = this.prefs.grain && cfg.grain > 0 && !calm;
         u.uCA.value = caOn ? cfg.ca : 0;
         u.uGrain.value = grainOn ? cfg.grain : 0;
         u.uGain.value = Math.sqrt(this.exposure);
@@ -502,7 +504,7 @@ class CameraOptics {
                 u.uSpikeAmp.value = this.prefs.spikes ? 2.4 * nd : 0;
                 // Ghosts: multi-coated optics put each ghost at ~0.1-1% of the source; 0.02
                 // keeps them faint coloured irises (Hubble/ISS flare frames), not discs (was 0.035).
-                u.uGhostAmp.value = this.prefs.flare ? 0.02 * nd * Math.min(1, Math.pow(flux, 0.5)) : 0;
+                u.uGhostAmp.value = this.prefs.flare ? (calm ? 0.35 : 1) * 0.02 * nd * Math.min(1, Math.pow(flux, 0.5)) : 0;
                 u.uGhosts.value = cfg.ghosts;
                 // a disk that fills the frame isn't a point source: fade the optics out
                 sunAmt = edge * (1 - THREE.MathUtils.smoothstep(rUV, 0.22, 0.45));

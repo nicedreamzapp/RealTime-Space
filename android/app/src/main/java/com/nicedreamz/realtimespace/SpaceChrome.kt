@@ -118,7 +118,7 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
                         .offset { IntOffset(if (showPanel) 0 else 100_000, 0) }
                         // closed and off screen: out of the accessibility tree too (TalkBack)
                         .then(if (showPanel) Modifier else Modifier.clearAndSetSemantics { })
-                ) { NavigatePanel(state, bridge, store, panelScroll, onUnlock = { showPanel = false; onUnlock() }) }
+                ) { NavigatePanel(state, bridge, store, panelScroll, onUnlock = { showPanel = false; onUnlock() }, onClose = { showPanel = false }) }
             } else AnimatedVisibility(
                 visible = showPanel,
                 modifier = Modifier.align(Alignment.TopEnd).padding(
@@ -128,7 +128,7 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
                 ),
                 enter = slideInHorizontally { it } + fadeIn(),
                 exit = slideOutHorizontally { it } + fadeOut()
-            ) { NavigatePanel(state, bridge, store, rememberScrollState(), onUnlock = { showPanel = false; onUnlock() }) }
+            ) { NavigatePanel(state, bridge, store, rememberScrollState(), onUnlock = { showPanel = false; onUnlock() }, onClose = { showPanel = false }) }
 
             // ---------- TOP-RIGHT RAIL: radar, menu, view-mode ----------
             Column(
@@ -143,6 +143,10 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
                 // (index.html .cx-controls top).
                 TourButton { showPanel = false; bridge.openTour(); bridge.haptic("light") }
             }
+
+            // ---------- FREE VOYAGE ENDING SOON ----------
+            TrialNotice(store, onUnlock = { showPanel = false; onUnlock() },
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = if (landscape) 10.dp else 56.dp))
 
             // ---------- BOTTOM CONSOLE ----------
             Row(
@@ -359,7 +363,7 @@ private fun SpeedPill(state: SpaceState, bridge: WebBridge) {
 }
 
 @Composable
-private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreManager, scroll: ScrollState, onUnlock: () -> Unit) {
+private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreManager, scroll: ScrollState, onUnlock: () -> Unit, onClose: () -> Unit) {
     Column(
         Modifier.width(210.dp).clip(RoundedCornerShape(14.dp)).background(PanelFill)
             .border(1.dp, CyanBorder, RoundedCornerShape(14.dp))
@@ -379,6 +383,10 @@ private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreMana
                 color = Cyan.copy(alpha = 0.6f), fontSize = 9.sp, fontFamily = Mono
             )
         }
+        Spacer(Modifier.height(2.dp))
+        SectionHeader("EXPLORE")
+        PanelAction("🏅  Missions & Badges") { onClose(); bridge.showMissions(); bridge.haptic("light") }
+        PanelAction("📷  Photo Mode") { onClose(); bridge.capturePhoto(); bridge.haptic("light") }
         Spacer(Modifier.height(2.dp))
         SectionHeader("DISPLAY")
         ToggleRow("Orbit Lines", state.orbitLines) { state.orbitLines = it; bridge.setOrbitLinesVisible(it) }
@@ -402,6 +410,45 @@ private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreMana
                 "→  $name", color = Cyan.copy(alpha = 0.9f), fontSize = 11.sp, fontFamily = Mono, fontWeight = FontWeight.Medium,
                 modifier = Modifier.fillMaxWidth().clickable { bridge.flyToByName(name); bridge.haptic("light") }.padding(vertical = 4.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun PanelAction(label: String, onClick: () -> Unit) =
+    Text(
+        label, color = Cyan.copy(alpha = 0.9f), fontSize = 11.sp, fontFamily = Mono, fontWeight = FontWeight.Medium,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp)).background(Cyan.copy(alpha = 0.10f))
+            .border(1.dp, Cyan.copy(alpha = 0.45f), RoundedCornerShape(7.dp))
+            .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp)
+    )
+
+/** Last 10 days of the free voyage: a small pill under the top edge, once a day, gone after
+ *  7 s; tapping it opens the unlock screen. */
+@Composable
+private fun TrialNotice(store: StoreManager, onUnlock: () -> Unit, modifier: Modifier = Modifier) {
+    var show by remember { mutableStateOf(false) }
+    LaunchedEffect(store.daysRemaining, store.isUnlocked) {
+        if (show) return@LaunchedEffect
+        delay(2_500)
+        if (store.claimTrialNotice()) {
+            show = true
+            delay(7_000)
+            show = false
+        }
+    }
+    AnimatedVisibility(visible = show && store.trialEndingSoon, modifier = modifier, enter = fadeIn(), exit = fadeOut()) {
+        val d = store.daysRemaining
+        Row(
+            Modifier.clip(RoundedCornerShape(50)).background(PanelFill)
+                .border(1.dp, CyanBorder, RoundedCornerShape(50))
+                .clickable { show = false; onUnlock() }
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("$d day${if (d == 1) "" else "s"} left in your free voyage", color = Color.White.copy(alpha = 0.92f), fontSize = 12.sp)
+            Spacer(Modifier.width(6.dp))
+            Text("Unlock", color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

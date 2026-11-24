@@ -41,7 +41,7 @@
         try {
             var di = window.AndroidBridge && window.AndroidBridge.deviceInfo ? JSON.parse(window.AndroidBridge.deviceInfo()) : null;
             if (di) window.__RT_DEVICE = { platform: 'android', model: di.model || '', manufacturer: di.manufacturer || '',
-                memGB: (di.totalMB || 0) / 1024, lowRam: !!di.lowRam, sdk: di.sdk || 0, haptics: di.haptics !== false };
+                memGB: (di.totalMB || 0) / 1024, lowRam: !!di.lowRam, sdk: di.sdk || 0, haptics: di.haptics !== false, reduceMotion: !!di.reduceMotion };
         } catch(e){}
         // Real system-bar + cutout insets from MainActivity.pushInsets (CSS px). The web files
         // use var(--sai-*) where iOS uses env(safe-area-inset-*), which WebView reports as 0.

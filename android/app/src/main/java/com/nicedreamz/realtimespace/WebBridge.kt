@@ -1,6 +1,14 @@
 package com.nicedreamz.realtimespace
 
+import android.content.ClipData
+import android.content.ContentValues
+import android.content.Intent
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
+import androidx.core.content.FileProvider
+import java.io.File
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
@@ -88,13 +96,81 @@ class WebBridge(
                     main.post { state.lowGpu = low }
                 }
                 "FETCH" -> doFetch(o.optString("url"), o.optString("reqId"))
-                "PHOTO" -> Log.d(TAG, "PHOTO capture received (share TODO)")
+                "PHOTO" -> sharePhoto(o.optString("dataURL"))
                 "AUDIO" -> { /* Web Audio is procedural on the web side; native no-op */ }
                 else -> { /* logged/unknown */ }
             }
         } catch (e: Exception) {
             Log.w(TAG, "postMessage parse error: ${e.message}")
         }
+    }
+
+    /** Photo Mode: the web layer sends the watermarked frame as a data URL. Decode it off the
+     *  main thread, keep a copy in the app cache (shared through FileProvider, no storage
+     *  permission), save it to Pictures/RealTime Space on Android 10+ (MediaStore needs no
+     *  permission there), then open the share sheet. */
+    private fun sharePhoto(dataURL: String) {
+        val ctx = webView?.context ?: return
+        val comma = dataURL.indexOf(',')
+        if (!dataURL.startsWith("data:image/") || comma < 0) return
+        val jpeg = dataURL.startsWith("data:image/jpeg")
+        val ext = if (jpeg) "jpg" else "png"
+        val mime = if (jpeg) "image/jpeg" else "image/png"
+        Thread {
+            try {
+                val bytes = Base64.decode(dataURL.substring(comma + 1), Base64.DEFAULT)
+                val dir = File(ctx.cacheDir, "photos").apply { mkdirs() }
+                // Keep the cache small: only the last few shots stay.
+                dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(4)?.forEach { it.delete() }
+                val name = "RealTimeSpace-${System.currentTimeMillis()}.$ext"
+                val file = File(dir, name)
+                file.writeBytes(bytes)
+
+                var saved = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        val values = ContentValues().apply {
+                            put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                            put(MediaStore.Images.Media.MIME_TYPE, mime)
+                            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/RealTime Space")
+                            put(MediaStore.Images.Media.IS_PENDING, 1)
+                        }
+                        val cr = ctx.contentResolver
+                        val uri = cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                        if (uri != null) {
+                            cr.openOutputStream(uri)?.use { it.write(bytes) }
+                            values.clear()
+                            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                            cr.update(uri, values, null, null)
+                            saved = true
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "PHOTO save to Pictures failed: ${e.message}")
+                    }
+                }
+
+                val shareUri = FileProvider.getUriForFile(ctx, ctx.packageName + ".photos", file)
+                main.post {
+                    try {
+                        if (saved) Toast.makeText(ctx, "Saved to Pictures", Toast.LENGTH_SHORT).show()
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = mime
+                            putExtra(Intent.EXTRA_STREAM, shareUri)
+                            clipData = ClipData.newRawUri("", shareUri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        val chooser = Intent.createChooser(send, "Share your shot").apply {
+                            if (ctx !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        ctx.startActivity(chooser)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "PHOTO share failed: ${e.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "PHOTO decode failed: ${e.message}")
+            }
+        }.start()
     }
 
     @JavascriptInterface
@@ -231,6 +307,8 @@ class WebBridge(
         call("window.galaxyExplorer&&window.galaxyExplorer.flyToNearestPlanet&&window.galaxyExplorer.flyToNearestPlanet()")
     fun setWarpDrive(b: Boolean) =
         call("window.galaxyExplorer&&window.galaxyExplorer.setWarpDrive&&window.galaxyExplorer.setWarpDrive($b)")
+    fun showMissions() =
+        call("window.galaxyExplorer&&window.galaxyExplorer.showMissions&&window.galaxyExplorer.showMissions()")
     fun capturePhoto(scale: Float = 1.5f) =
         call("window.galaxyExplorer&&window.galaxyExplorer.capturePhoto&&window.galaxyExplorer.capturePhoto($scale)")
     /** Hold or release the web 3D loop for one reason (UpdateLoop.hold): no updates, draws or

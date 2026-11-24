@@ -309,11 +309,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (this::store.isInitialized) store.refreshTrial()
+        // Rolls the trial day and re-queries Play (a pending purchase may have cleared).
+        if (this::store.isInitialized) store.onResume()
         webView?.let { wv ->
             wv.resumeTimers()
             wv.onResume()
             wv.evaluateJavascript("window.rtsHold&&window.rtsHold('app',false)", null)
+            // Remove animations may have changed in Settings while we were away.
+            wv.evaluateJavascript("window.RTMotion&&window.RTMotion.set(${reduceMotion()})", null)
         }
     }
 
@@ -344,6 +347,10 @@ class MainActivity : ComponentActivity() {
         return am.isLowRamDevice || mi.totalMem / (1024.0 * 1024 * 1024) <= 4.2
     }
 
+    /** System "Remove animations" (animator duration scale 0): RTMotion tones down shake,
+     *  warp, flare and grain, the same as iOS Reduce Motion. */
+    private fun reduceMotion(): Boolean = !android.animation.ValueAnimator.areAnimatorsEnabled()
+
     /** Memory facts for the web texture budget: low-RAM flag, per-app heap class, total RAM. */
     private fun deviceInfoJson(): String {
         val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
@@ -354,7 +361,7 @@ class MainActivity : ComponentActivity() {
         val haptics = getSharedPreferences("settings", MODE_PRIVATE).getBoolean("haptics", true)
         val json = "{\"lowRam\":${am.isLowRamDevice},\"memClassMB\":${am.memoryClass},\"totalMB\":${mi.totalMem / (1024 * 1024)}," +
             "\"model\":${q(Build.MODEL ?: "")},\"manufacturer\":${q(Build.MANUFACTURER ?: "")},\"sdk\":${Build.VERSION.SDK_INT}," +
-            "\"haptics\":$haptics}"
+            "\"haptics\":$haptics,\"reduceMotion\":${reduceMotion()}}"
         Log.i(TAG, "device info: $json")
         return json
     }

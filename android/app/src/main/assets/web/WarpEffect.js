@@ -346,8 +346,9 @@ class WarpEffect {
     update(deltaTime, cameraPosition, cameraDirection) {
         this.time += deltaTime;
 
-        // Smooth intensity transition
-        const intensityDiff = this.targetIntensity - this.intensity;
+        // Smooth intensity transition (Reduce Motion: streaks held to a faint quarter)
+        const target = (window.RTMotion && window.RTMotion.reduced) ? this.targetIntensity * 0.25 : this.targetIntensity;
+        const intensityDiff = target - this.intensity;
         this.intensity += intensityDiff * Math.min(1, deltaTime * this.rampSpeed);
 
         // Update all uniforms
