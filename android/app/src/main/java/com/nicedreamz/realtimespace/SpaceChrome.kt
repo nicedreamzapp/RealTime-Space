@@ -433,8 +433,9 @@ private fun TrialNotice(store: StoreManager, onUnlock: () -> Unit, modifier: Mod
         delay(2_500)
         if (store.claimTrialNotice()) {
             show = true
-            delay(7_000)
-            show = false
+            // try/finally: a restart of this effect (day rollover, unlock) cancels the delay,
+            // and the pill must still go away.
+            try { delay(7_000) } finally { show = false }
         }
     }
     AnimatedVisibility(visible = show && store.trialEndingSoon, modifier = modifier, enter = fadeIn(), exit = fadeOut()) {

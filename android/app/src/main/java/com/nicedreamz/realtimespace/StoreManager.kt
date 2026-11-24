@@ -321,7 +321,7 @@ class StoreManager(private val activity: Activity) {
     /** At most once per calendar day. */
     fun claimTrialNotice(): Boolean {
         if (!trialEndingSoon) return false
-        val today = System.currentTimeMillis() / 86_400_000L
+        val today = java.time.LocalDate.now().toEpochDay()   // the phone's local calendar day
         if (prefs.getLong("trial_notice_day", -1L) == today) return false
         prefs.edit().putLong("trial_notice_day", today).apply()
         return true

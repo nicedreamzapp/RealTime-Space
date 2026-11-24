@@ -138,11 +138,18 @@ class WebBridge(
                         val cr = ctx.contentResolver
                         val uri = cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                         if (uri != null) {
-                            cr.openOutputStream(uri)?.use { it.write(bytes) }
-                            values.clear()
-                            values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                            cr.update(uri, values, null, null)
-                            saved = true
+                            try {
+                                val out = cr.openOutputStream(uri) ?: throw java.io.IOException("no output stream")
+                                out.use { it.write(bytes) }
+                                values.clear()
+                                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                                cr.update(uri, values, null, null)
+                                saved = true
+                            } catch (e: Exception) {
+                                // Don't leave a half-written, pending entry in the gallery.
+                                try { cr.delete(uri, null, null) } catch (_: Exception) {}
+                                throw e
+                            }
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "PHOTO save to Pictures failed: ${e.message}")
