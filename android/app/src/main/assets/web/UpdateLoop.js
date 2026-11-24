@@ -27,6 +27,12 @@ class UpdateLoop {
         // State
         this.isRunning = false;
         this.isPaused = false;
+        // Reasons the loop is held (Android: 'chrome' while the native panel animates or
+        // scrolls, 'app' while the activity is paused). The loop runs again when none are left.
+        this._holds = new Set();
+        // Frames still to skip after a long frame on the low / safe GPU path.
+        this._skip = 0;
+        window.rtsHold = (reason, on) => this.hold(reason, on);
 
         // Performance monitoring
         this.performanceStats = {
@@ -44,9 +50,15 @@ class UpdateLoop {
         this.lastFrameTimes = [];
         this.maxFrameTimeHistory = 10;
 
-        // Adaptive quality
-        this.qualityLevel = 1.0;  // 0.5 to 1.0
+        // Adaptive quality: the tier itself lives in window.RTQuality (RTQuality.js), which
+        // every effect can read. qualityLevel mirrors it as a number for old callers.
         this.autoQuality = true;
+        if (window.RTQuality) {
+            window.RTQuality.attach(rendererCore);
+            this.qualityLevel = window.RTQuality.level();
+        } else {
+            this.qualityLevel = 1.0;
+        }
 
         console.log("✅ CINEMATIC UpdateLoop ready with", systems.length, "systems");
     }
@@ -58,7 +70,7 @@ class UpdateLoop {
         }
 
         this.isRunning = true;
-        this.isPaused = false;
+        this.isPaused = this._holds.size > 0;   // a hold placed before start() still holds
         this.lastTime = performance.now();
         this.frameCount = 0;
         this.totalTime = 0;
@@ -75,6 +87,24 @@ class UpdateLoop {
         };
 
         console.log("▶️ UpdateLoop started");
+        if (window.RTTexQueue) window.RTTexQueue.start();
+        // Tell native whether this page is on the low / safe GPU path (it drops the panel's
+        // slide and fade there), now and whenever the tier changes.
+        // Low / safe GPU also turns off every CSS backdrop-filter blur (html.rt-lowgpu): each
+        // one re-blurs whatever is under it on every composited frame, which cost the Cricket
+        // ~50 ms of WebView compositing per frame.
+        const post = () => { try { const Q = window.RTQuality;
+            const low = !!(Q && (Q.safeGPU || Q.tier === 'low'));
+            if (!document.getElementById('rt-lowgpu-css')) {
+                const st = document.createElement('style'); st.id = 'rt-lowgpu-css';
+                st.textContent = 'html.rt-lowgpu *, html.rt-lowgpu *::before, html.rt-lowgpu *::after' +
+                    ' { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }';
+                document.head.appendChild(st);
+            }
+            document.documentElement.classList.toggle('rt-lowgpu', low);
+            if (window.AndroidBridge && Q) window.AndroidBridge.postMessage(JSON.stringify({ type: 'QUALITY', low }));
+        } catch (_) {} };
+        post(); window.addEventListener('rtquality', post);
         requestAnimationFrame(this.loop);
     }
 
@@ -85,8 +115,17 @@ class UpdateLoop {
     }
 
     pause() {
+        if (this.isPaused) return;
         this.isPaused = true;
         console.log("⏸️ UpdateLoop paused");
+    }
+
+    // Hold or release the loop for one reason. While any hold is on, no system updates, no
+    // draws and no texture uploads run, so the GPU is idle while native views redraw (on
+    // PowerVR a busy WebGL queue made every native panel frame wait on the GPU).
+    hold(reason, on) {
+        if (on) this._holds.add(reason); else this._holds.delete(reason);
+        if (this._holds.size) this.pause(); else this.resume();
     }
 
     resume() {
@@ -100,11 +139,43 @@ class UpdateLoop {
     loop = (currentTime) => {
         if (!this.isRunning) return;
 
+        window.__rtLoopTicks = (window.__rtLoopTicks || 0) + 1;   // liveness for the render watchdog (main.js)
         try {
-            // Check for WebGL context loss
+            // WebGL context lost: idle (no updates, no draws) until RendererCore sees it
+            // restored, but keep the rAF chain alive so the loop resumes by itself. It used to
+            // return without re-arming rAF, which froze the app for good after any GPU reset.
             const gl = this.rendererCore?.renderer?.getContext?.();
-            if (gl && gl.isContextLost && gl.isContextLost()) {
-                console.error("❌ WebGL context lost!");
+            if (this.rendererCore?.contextLost || (gl && gl.isContextLost && gl.isContextLost())) {
+                this.lastTime = currentTime;
+                requestAnimationFrame(this.loop);
+                return;
+            }
+
+            // Safe-GPU path (PowerVR / entry Mali) and Android low tier: at most ~30 frames a
+            // second, so the GPU never has a queue of frames behind a slow one (the Cricket's stall).
+            const Q = window.RTQuality;
+            const lowGPU = !!(Q && (Q.safeGPU || Q.tier === 'low'));
+            if (lowGPU && (Q.safeGPU || window.AndroidBridge) && this.lastTime &&
+                currentTime - this.lastTime < 30) {
+                requestAnimationFrame(this.loop);
+                return;
+            }
+
+            // Low / safe GPU: a frame over 250 ms means the GPU is backed up. Draw nothing for
+            // the next 10 frames so the queue drains (no readbacks needed to see it), and drop
+            // a tier if there is one below.
+            if (this._skip > 0) {
+                this._skip--;
+                this.lastTime = currentTime;
+                requestAnimationFrame(this.loop);
+                return;
+            }
+            if (lowGPU && !this.isPaused && this.lastTime && currentTime - this.lastTime > 250) {
+                console.warn('🐢 long frame ' + Math.round(currentTime - this.lastTime) + ' ms: skipping 10 frames');
+                this._skip = 10;
+                this.lastTime = currentTime;
+                if (Q.dropTierForSession) Q.dropTierForSession('long frame');
+                requestAnimationFrame(this.loop);
                 return;
             }
 
@@ -124,6 +195,11 @@ class UpdateLoop {
 
             // Update performance stats
             this.updatePerformanceStats(rawDelta);
+            if (this.autoQuality && !this.isPaused && window.RTQuality) window.RTQuality.sample(rawDelta);
+
+            // one queued texture upload at most (Planet.js RTTexQueue: none while paused,
+            // none in the first 2 s, at most one every 3 frames)
+            if (window.RTTexQueue) window.RTTexQueue.pump(this.isPaused);
 
             if (!this.isPaused) {
                 this.totalTime += this.deltaTime;
@@ -138,10 +214,10 @@ class UpdateLoop {
                 // Update UI elements
                 this.updateUI();
 
-                // Adaptive quality adjustment
-                if (this.autoQuality && this.frameCount % 60 === 0) {
-                    this.adjustQuality();
-                }
+                // Flight haptics (iOS only; no-op elsewhere). Cheap: throttled inside.
+                if (window.RTHaptics) window.RTHaptics.update(this.deltaTime);
+
+                if (window.RTQuality) this.qualityLevel = window.RTQuality.level();
             }
         } catch (e) {
             console.error("❌ Loop error:", e.message || e);
@@ -268,7 +344,7 @@ class UpdateLoop {
             // Periodic FPS telemetry (~every 2s) for performance measurement
             if (this.frameCount % 120 === 0) {
                 const pr = this.rendererCore?.renderer?.getPixelRatio?.();
-                console.log(`📊 FPS: ${this.fps} | smoothness: ${this.performanceStats.smoothness}% | pixelRatio: ${pr ?? '?'}`);
+                console.log(`📊 FPS: ${this.fps} | smoothness: ${this.performanceStats.smoothness}% | pixelRatio: ${pr ?? '?'} | tier: ${window.RTQuality?.tier ?? '?'}`);
             }
 
             // Calculate smoothness
@@ -281,19 +357,9 @@ class UpdateLoop {
     }
 
     adjustQuality() {
-        if (!this.autoQuality) return;
-
-        const targetFrameTime = 1000 / this.targetFPS;
-
-        if (this.performanceStats.averageDelta > targetFrameTime * 1.5) {
-            // Performance is poor, reduce quality
-            this.qualityLevel = Math.max(0.5, this.qualityLevel - 0.1);
-            console.log(`📉 Quality reduced to ${(this.qualityLevel * 100).toFixed(0)}%`);
-        } else if (this.performanceStats.averageDelta < targetFrameTime * 0.8 && this.qualityLevel < 1.0) {
-            // Performance is good, increase quality
-            this.qualityLevel = Math.min(1.0, this.qualityLevel + 0.05);
-            console.log(`📈 Quality increased to ${(this.qualityLevel * 100).toFixed(0)}%`);
-        }
+        // Superseded by RTQuality's tiered governor (with hysteresis), sampled every frame
+        // in loop(). Kept so external callers don't break.
+        if (window.RTQuality) this.qualityLevel = window.RTQuality.level();
     }
 
     getNearestObject(position) {
@@ -406,11 +472,32 @@ class UpdateLoop {
 
     setAutoQuality(enabled) {
         this.autoQuality = enabled;
+        if (window.RTQuality) { if (enabled) window.RTQuality.unlock(); else window.RTQuality.locked = true; }
         console.log(`🔧 Auto quality ${enabled ? 'enabled' : 'disabled'}`);
     }
 
     setQualityLevel(level) {
         this.qualityLevel = Math.max(0.5, Math.min(1.0, level));
+        if (window.RTQuality) window.RTQuality.setTier(level >= 0.9 ? 'high' : level >= 0.7 ? 'medium' : 'low', { lock: true });
         console.log(`🎨 Quality level set to ${(this.qualityLevel * 100).toFixed(0)}%`);
     }
 }
+
+// Register a per-frame callback inside the engine's UpdateLoop tick, ahead of the render
+// system, so add-on layers (Visor, Spacecraft, ...) run on the main clock, pause with it and
+// land in the same frame they are drawn. Safe to call before main.js has built the loop.
+window.rtAddTick = function (name, fn) {
+    const sys = { name, update: fn };
+    const tryAdd = () => {
+        let lp = null;
+        try { lp = (typeof loop !== 'undefined') ? loop : null; } catch (e) {}
+        if (!lp || !lp.systems) return false;
+        const idx = lp.systems.findIndex(x => x && x.name === 'ComposerRender');
+        if (idx >= 0) lp.systems.splice(idx, 0, sys); else lp.systems.push(sys);
+        return true;
+    };
+    if (!tryAdd()) {
+        const t = setInterval(() => { if (tryAdd()) clearInterval(t); }, 250);
+    }
+    return sys;
+};

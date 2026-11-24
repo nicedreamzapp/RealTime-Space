@@ -20,6 +20,9 @@ class RendererCore {
         // ANDROID PORT: entry-level mobile GPUs (e.g. PowerVR GE8320) hang when pushing
         // the full cinematic pipeline at native DPR. Cap at 1x here.
         this.maxPixelRatio = 1;
+        // Native app (Android WebView via AndroidBridge, or WKWebView) vs plain desktop browser.
+        // main.js uses it to pick half-float HDR targets only where the GPU can render to them.
+        this.isNativeApp = !!(window.webkit?.messageHandlers?.iosHandler || window.AndroidBridge);
         this.pixelRatio = Math.min(window.devicePixelRatio, this.maxPixelRatio);
 
         this.initScene();
@@ -28,8 +31,88 @@ class RendererCore {
         this.initEnvironmentMap();
         this.initPostProcessing();
         this.setupResizeHandler();
+        this.setupContextLossHandler();
 
         console.log("✅ RendererCore initialized with HUBBLE-QUALITY settings");
+    }
+
+    // ---- WebGL context loss (GPU reset, driver kill, memory pressure on a phone) ----
+    // Lost: preventDefault (asks the browser to restore) and the UpdateLoop idles (main.js
+    // checks this.contextLost). Restored: three.js rebuilds its GL state from the scene graph;
+    // we drop one RTQuality tier for this page only (nothing is persisted), rebuild the post
+    // targets and IBL. Not restored within CONTEXT_RESTORE_MS: reload the page once per
+    // session at low tier (?rtq=low).
+    setupContextLossHandler() {
+        this.contextLost = false;
+        this.contextLossCount = 0;
+        const CONTEXT_RESTORE_MS = 3000;
+        this.canvas.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            this.contextLost = true;
+            this.contextLossCount++;
+            console.warn('⚠️ WebGL context lost — render loop paused, waiting for restore');
+            clearTimeout(this._restoreTimer);
+            this._restoreTimer = setTimeout(() => {
+                if (this.contextLost) RendererCore.reloadOnce('WebGL context was not restored', true);
+            }, CONTEXT_RESTORE_MS);
+            try { window.dispatchEvent(new CustomEvent('rtglcontext', { detail: { lost: true } })); } catch (_) {}
+        }, false);
+        // Registered after three.js's own listener (the renderer is built first), so three has
+        // already re-initialised its GL state by the time this runs.
+        this.canvas.addEventListener('webglcontextrestored', () => {
+            clearTimeout(this._restoreTimer);
+            try {
+                this.onContextRestored();
+                this.contextLost = false;
+                console.log('✅ WebGL context restored (tier ' + ((window.RTQuality && window.RTQuality.tier) || '?') + ')');
+                try { window.dispatchEvent(new CustomEvent('rtglcontext', { detail: { lost: false } })); } catch (_) {}
+            } catch (err) {
+                console.error('❌ WebGL restore failed:', err);
+                RendererCore.reloadOnce('WebGL restore failed', true);
+            }
+        }, false);
+    }
+
+    onContextRestored() {
+        const gl = this.renderer.getContext();
+        if (!gl || (gl.isContextLost && gl.isContextLost())) throw new Error('context still lost');
+        const Q = window.RTQuality;
+        if (Q) {
+            if (Q.dropTierForSession) Q.dropTierForSession('WebGL context restored');
+            Q._appliedPR = null;   // force the pixel ratio + composer resize below to run
+            Q.apply('context restored');
+        }
+        const w = window.innerWidth, h = window.innerHeight;
+        this.renderer.setSize(w, h);
+        if (this.composer) {
+            // fresh ping-pong targets (the old ones only existed in the lost context)
+            if (this.composer.reset) this.composer.reset();
+            this.composer.setSize(w, h);
+        }
+        if (window.cameraFX && window.cameraFX.onContextRestored) window.cameraFX.onContextRestored();
+        // the PMREM environment map was a render target in the lost context: rebuild it
+        this.initEnvironmentMap();
+        this._bloomChecked = false; this._bloomWarm = 0;
+    }
+
+    // Reload the page at most ONCE per session (sessionStorage flag, survives the reload
+    // itself). low = reload with ?rtq=low (GPU failures); otherwise the same URL. Nothing is
+    // persisted past the session. Returns true if it reloaded.
+    static reloadOnce(why, low) {
+        try {
+            const k = 'rt_gl_reloaded';
+            if (sessionStorage.getItem(k)) { console.error('❌ ' + why + ' (already reloaded once this session, staying put)'); return false; }
+            sessionStorage.setItem(k, String(Date.now()));
+        } catch (_) { console.error('❌ ' + why + ' (no session storage, not reloading)'); return false; }
+        console.error('❌ ' + why + ' — reloading the page once' + (low ? ' at low tier' : ''));
+        setTimeout(() => {
+            if (!low) { location.reload(); return; }
+            const u = new URL(location.href);
+            u.searchParams.delete('tier');
+            u.searchParams.set('rtq', 'low');
+            location.replace(u.toString());
+        }, 50);
+        return true;
     }
 
     initScene() {
@@ -69,11 +152,16 @@ class RendererCore {
             powerPreference: "high-performance",
             stencil: true,  // Enable for post-processing effects
             depth: true,
-            preserveDrawingBuffer: true,  // iOS WKWebView: needed so the drawing buffer
-                                          // actually composites to screen (otherwise the
-                                          // frame renders but the layer shows black)
+            // iOS WKWebView needed this so the drawing buffer composites to screen. On a
+            // tile-based GPU it costs a full-frame copy back into the tiles every frame, so the
+            // safe-GPU path (PowerVR / entry Mali, direct rendering, no canvas readbacks) drops it.
+            preserveDrawingBuffer: !(window.RTQuality && window.RTQuality.safeGPU),
             logarithmicDepthBuffer: true  // Better depth precision for vast scales
         });
+
+        // Safe-GPU path: no glGetShader/ProgramParameter round trips after each compile (each
+        // one waits for the driver); shader errors are caught by the headless test pass instead.
+        if (window.RTQuality && window.RTQuality.safeGPU) this.renderer.debug.checkShaderErrors = false;
 
         // Size and quality - push it higher
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -111,6 +199,18 @@ class RendererCore {
     }
 
     initEnvironmentMap() {
+        // Low tier and the safe GPU path (PowerVR / entry Mali): no PMREM. Building it is a
+        // chain of render-to-texture blur passes into a half-float cube target, one of the
+        // biggest single GPU jobs and GL allocations at boot on a 3-4 GB phone. The panorama
+        // is a dark sky (its mean linear radiance is ~0.0004), so the image-based light it
+        // gives the planets is far below what the tone map shows; nothing visible is lost.
+        const Q = window.RTQuality;
+        if (Q && (Q.safeGPU || Q.tier === 'low')) {
+            this.scene.environment = null;
+            this.scene.background = null;   // as the IBL path does: the sky is real stars only
+            console.log("✨ Milky Way IBL skipped (low tier / safe GPU)");
+            return;
+        }
         // Real 8K Milky Way panorama (Solar System Scope, CC BY 4.0) — now used ONLY for
         // PMREM image-based lighting. It is no longer the visible sky (see below).
         const loader = new THREE.TextureLoader();

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -36,6 +37,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,10 +57,12 @@ import android.content.res.Configuration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 private val Mono = FontFamily.Monospace
 
@@ -73,6 +78,23 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
     // Android Back / back-gesture closes the panel instead of quitting the app.
     BackHandler(enabled = showPanel) { showPanel = false }
 
+    // Low tier / safe GPU only: hold the web 3D loop while the panel opens, closes or scrolls,
+    // and release it ~300 ms after the last of those ends (medium / high keep rendering). On
+    // PowerVR every native frame waits on the WebView's GL work in the same RenderThread chain, so one long WebGL frame during a scroll used to
+    // freeze the UI thread into an ANR; with the loop held the GPU is idle while native draws.
+    val panelScroll = rememberScrollState()
+    var toggling by remember { mutableStateOf(false) }
+    LaunchedEffect(showPanel) { toggling = true; withFrameNanos { }; withFrameNanos { }; toggling = false }
+    val chromeBusy = state.lowGpu && (toggling || panelScroll.isScrollInProgress)
+    LaunchedEffect(chromeBusy) {
+        if (chromeBusy) bridge.holdLoop("chrome", true)
+        else { delay(300); bridge.holdLoop("chrome", false) }
+    }
+    // Low tier / safe GPU: the panel stays composed and is moved on and off screen, with no
+    // slide or fade. Composing it on each ⋯ tap took ~400 ms of UI thread plus ~250 ms of
+    // recording on the Cricket (two Davey frames on every open).
+    val lowGpu = state.lowGpu
+
     AnimatedVisibility(visible = !state.chromeHidden, enter = fadeIn(), exit = fadeOut()) {
         // safeDrawingPadding keeps every control clear of the status bar, nav bar AND display
         // cutout on all four edges — critical in landscape where the nav bar / notch is on a side.
@@ -86,7 +108,18 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
             }
 
             // ---------- NAVIGATE / SETTINGS PANEL (drawn BEFORE the rail so the rail stays on top) ----------
-            AnimatedVisibility(
+            if (lowGpu) {
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(
+                        top = 8.dp,
+                        end = (12 + radarDp + 8).dp,
+                        bottom = if (landscape) 100.dp else 150.dp
+                    )
+                        .offset { IntOffset(if (showPanel) 0 else 100_000, 0) }
+                        // closed and off screen: out of the accessibility tree too (TalkBack)
+                        .then(if (showPanel) Modifier else Modifier.clearAndSetSemantics { })
+                ) { NavigatePanel(state, bridge, store, panelScroll, onUnlock = { showPanel = false; onUnlock() }, onClose = { showPanel = false }) }
+            } else AnimatedVisibility(
                 visible = showPanel,
                 modifier = Modifier.align(Alignment.TopEnd).padding(
                     top = 8.dp,
@@ -95,7 +128,7 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
                 ),
                 enter = slideInHorizontally { it } + fadeIn(),
                 exit = slideOutHorizontally { it } + fadeOut()
-            ) { NavigatePanel(state, bridge, store, onUnlock = { showPanel = false; onUnlock() }) }
+            ) { NavigatePanel(state, bridge, store, rememberScrollState(), onUnlock = { showPanel = false; onUnlock() }, onClose = { showPanel = false }) }
 
             // ---------- TOP-RIGHT RAIL: radar, menu, view-mode ----------
             Column(
@@ -110,6 +143,10 @@ fun SpaceChrome(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnl
                 // (index.html .cx-controls top).
                 TourButton { showPanel = false; bridge.openTour(); bridge.haptic("light") }
             }
+
+            // ---------- FREE VOYAGE ENDING SOON ----------
+            TrialNotice(store, onUnlock = { showPanel = false; onUnlock() },
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = if (landscape) 10.dp else 56.dp))
 
             // ---------- BOTTOM CONSOLE ----------
             Row(
@@ -326,11 +363,11 @@ private fun SpeedPill(state: SpaceState, bridge: WebBridge) {
 }
 
 @Composable
-private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreManager, onUnlock: () -> Unit) {
+private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreManager, scroll: ScrollState, onUnlock: () -> Unit, onClose: () -> Unit) {
     Column(
         Modifier.width(210.dp).clip(RoundedCornerShape(14.dp)).background(PanelFill)
             .border(1.dp, CyanBorder, RoundedCornerShape(14.dp))
-            .verticalScroll(rememberScrollState())   // never taller than the space above the console
+            .verticalScroll(scroll)   // never taller than the space above the console
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
@@ -347,6 +384,10 @@ private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreMana
             )
         }
         Spacer(Modifier.height(2.dp))
+        SectionHeader("EXPLORE")
+        PanelAction("🏅  Missions & Badges") { onClose(); bridge.showMissions(); bridge.haptic("light") }
+        PanelAction("📷  Photo Mode") { onClose(); bridge.capturePhoto(); bridge.haptic("light") }
+        Spacer(Modifier.height(2.dp))
         SectionHeader("DISPLAY")
         ToggleRow("Orbit Lines", state.orbitLines) { state.orbitLines = it; bridge.setOrbitLinesVisible(it) }
         ToggleRow("Labels", state.planetLabels) { state.planetLabels = it; bridge.setPlanetLabelsVisible(it) }
@@ -361,6 +402,7 @@ private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreMana
         Spacer(Modifier.height(2.dp))
         SectionHeader("SOUND")
         ToggleRow("Ambient hum", state.ambientHum) { state.ambientHum = it; bridge.setAmbientHum(it) }
+        ToggleRow("Haptics", state.haptics) { state.haptics = it; bridge.setHaptics(it) }
         Spacer(Modifier.height(2.dp))
         SectionHeader("FLY TO")
         listOf("Sun", "Earth", "Mars", "Jupiter", "Saturn", "ISS", "Sirius").forEach { name ->
@@ -368,6 +410,46 @@ private fun NavigatePanel(state: SpaceState, bridge: WebBridge, store: StoreMana
                 "→  $name", color = Cyan.copy(alpha = 0.9f), fontSize = 11.sp, fontFamily = Mono, fontWeight = FontWeight.Medium,
                 modifier = Modifier.fillMaxWidth().clickable { bridge.flyToByName(name); bridge.haptic("light") }.padding(vertical = 4.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun PanelAction(label: String, onClick: () -> Unit) =
+    Text(
+        label, color = Cyan.copy(alpha = 0.9f), fontSize = 11.sp, fontFamily = Mono, fontWeight = FontWeight.Medium,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp)).background(Cyan.copy(alpha = 0.10f))
+            .border(1.dp, Cyan.copy(alpha = 0.45f), RoundedCornerShape(7.dp))
+            .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp)
+    )
+
+/** Last 10 days of the free voyage: a small pill under the top edge, once a day, gone after
+ *  7 s; tapping it opens the unlock screen. */
+@Composable
+private fun TrialNotice(store: StoreManager, onUnlock: () -> Unit, modifier: Modifier = Modifier) {
+    var show by remember { mutableStateOf(false) }
+    LaunchedEffect(store.daysRemaining, store.isUnlocked) {
+        if (show) return@LaunchedEffect
+        delay(2_500)
+        if (store.claimTrialNotice()) {
+            show = true
+            // try/finally: a restart of this effect (day rollover, unlock) cancels the delay,
+            // and the pill must still go away.
+            try { delay(7_000) } finally { show = false }
+        }
+    }
+    AnimatedVisibility(visible = show && store.trialEndingSoon, modifier = modifier, enter = fadeIn(), exit = fadeOut()) {
+        val d = store.daysRemaining
+        Row(
+            Modifier.clip(RoundedCornerShape(50)).background(PanelFill)
+                .border(1.dp, CyanBorder, RoundedCornerShape(50))
+                .clickable { show = false; onUnlock() }
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("$d day${if (d == 1) "" else "s"} left in your free voyage", color = Color.White.copy(alpha = 0.92f), fontSize = 12.sp)
+            Spacer(Modifier.width(6.dp))
+            Text("Unlock", color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

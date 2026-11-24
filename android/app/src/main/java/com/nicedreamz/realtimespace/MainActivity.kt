@@ -16,8 +16,19 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBars
@@ -45,6 +56,20 @@ class MainActivity : ComponentActivity() {
     private lateinit var bridge: WebBridge
     private lateinit var store: StoreManager
     private var webView: WebView? = null
+    private var webContainer: android.widget.FrameLayout? = null
+    private lateinit var assetLoader: WebViewAssetLoader
+    /** Real renderer crashes (didCrash() == true) in this app session. The first one rebuilds
+     *  the WebView at low tier (?rtq=low); the second shows the native retry message. Memory only. */
+    private var rendererCrashes = 0
+    /** Renderers the system reclaimed for memory (didCrash() == false) in this app session,
+     *  counted apart from crashes: the 1st rebuilds at the same tier, the 2nd at low tier, the
+     *  3rd shows the retry message (so a phone that keeps reclaiming never loops). */
+    private var rendererReclaims = 0
+    /** Set after the first real crash or the second reclaim: every WebView built after it loads ?rtq=low. */
+    private var forceLowTier = false
+    /** The retry message, drawn by Compose as the LAST child of the root Box so it sits above
+     *  SpaceChrome and the paywall and receives the taps. */
+    private var rendererStopped by mutableStateOf(false)
     /** Latest system-bar + cutout insets in dp (= CSS px): top, right, bottom, left. */
     private var webInsets = floatArrayOf(0f, 0f, 0f, 0f)
 
@@ -71,15 +96,24 @@ class MainActivity : ComponentActivity() {
 
         if (savedInstanceState == null) RatingPrompt.noteLaunch(this)
         if (savedInstanceState == null) handleDeepLink(intent)
-        bridge = WebBridge(vibrator(), state, onReady = { onEngineReady() }, onArrived = { onArrivedAtWorld() },
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        state.ambientHum = prefs.getBoolean("ambient_hum", false)
+        state.haptics = prefs.getBoolean("haptics", true)
+        state.lowGpu = lowRamTier()
+        val vib = vibrator()
+        val flight = FlightHaptics(this, vib).also { it.enabled = state.haptics }
+        bridge = WebBridge(vib, state, onReady = { onEngineReady() }, onArrived = { onArrivedAtWorld() },
             deviceInfoJson = deviceInfoJson(),
-            onAmbientHumChanged = { on -> getSharedPreferences("settings", MODE_PRIVATE).edit().putBoolean("ambient_hum", on).apply() })
-        state.ambientHum = getSharedPreferences("settings", MODE_PRIVATE).getBoolean("ambient_hum", false)
+            onAmbientHumChanged = { on -> prefs.edit().putBoolean("ambient_hum", on).apply() },
+            flight = flight,
+            onHapticsChanged = { on -> prefs.edit().putBoolean("haptics", on).apply() })
         store = StoreManager(this)
 
-        val assetLoader = WebViewAssetLoader.Builder()
+        assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
+
+        installBackHandler()
 
         setContent {
           // Unlock screen opened early from the ⋯ panel (dismissable); auto-closes on purchase.
@@ -102,53 +136,13 @@ class MainActivity : ComponentActivity() {
           androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
+                // A plain container holds the WebView so a dead renderer process can be
+                // swapped for a fresh WebView in place (onRenderProcessGone).
                 factory = { ctx ->
-                    WebView(ctx).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
+                    android.widget.FrameLayout(ctx).apply {
                         setBackgroundColor(0xFF000005.toInt())
-
-                        settings.apply {
-                            javaScriptEnabled = true
-                            domStorageEnabled = true
-                            @Suppress("DEPRECATION")
-                            databaseEnabled = true
-                            allowFileAccess = false
-                            allowContentAccess = false
-                            mediaPlaybackRequiresUserGesture = false
-                            loadWithOverviewMode = true
-                            useWideViewPort = true
-                            cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
-                        }
-                        WebView.setWebContentsDebuggingEnabled(true)
-
-                        // JS -> native bridge object (index.html shim forwards iosHandler here)
-                        addJavascriptInterface(bridge, "AndroidBridge")
-                        bridge.webView = this
-                        webView = this
-
-                        webViewClient = object : WebViewClient() {
-                            override fun shouldInterceptRequest(
-                                view: WebView,
-                                request: WebResourceRequest
-                            ): WebResourceResponse? =
-                                assetLoader.shouldInterceptRequest(request.url)
-
-                            override fun onPageFinished(view: WebView, url: String?) {
-                                pushInsets()
-                            }
-                        }
-
-                        webChromeClient = object : WebChromeClient() {
-                            override fun onConsoleMessage(cm: ConsoleMessage): Boolean {
-                                Log.d("RTSpaceJS", "${cm.messageLevel()} ${cm.message()} @${cm.sourceId()}:${cm.lineNumber()}")
-                                return true
-                            }
-                        }
-
-                        loadUrl(ASSET_BASE + "index.html")
+                        webContainer = this
+                        addView(createWebView(ctx))
                     }
                 }
             )
@@ -157,13 +151,173 @@ class MainActivity : ComponentActivity() {
             // Hard gate after the 60-day free voyage (mirrors iOS StoreManager), or the
             // same screen opened early + dismissable from "Unlock Forever" in the panel.
             PaywallOverlay(store, visible = showUnlock || store.locked, onClose = { showUnlock = false })
+            // Last child: above every native overlay, and it takes the taps.
+            if (rendererStopped) RendererStoppedMessage(onRetry = { retryAfterRendererStop() })
           }
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun createWebView(ctx: Context): WebView = WebView(ctx).apply {
+        layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        setBackgroundColor(0xFF000005.toInt())
+
+        settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            @Suppress("DEPRECATION")
+            databaseEnabled = true
+            allowFileAccess = false
+            allowContentAccess = false
+            mediaPlaybackRequiresUserGesture = false
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+        }
+        WebView.setWebContentsDebuggingEnabled(true)
+
+        // JS -> native bridge object (index.html shim forwards iosHandler here)
+        addJavascriptInterface(bridge, "AndroidBridge")
+        bridge.webView = this
+        webView = this
+
+        webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? =
+                assetLoader.shouldInterceptRequest(request.url)
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                pushInsets()
+            }
+
+            // The renderer process died (GPU driver crash, or the system killed it for memory).
+            // Without this override the whole app is killed with it; returning true keeps the
+            // app alive, and a fresh WebView reloads the engine in the same spot.
+            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+                onRendererGone(view, crashed = detail?.didCrash() == true)
+                return true
+            }
+        }
+
+        webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(cm: ConsoleMessage): Boolean {
+                Log.d("RTSpaceJS", "${cm.messageLevel()} ${cm.message()} @${cm.sourceId()}:${cm.lineNumber()}")
+                return true
+            }
+        }
+
+        loadUrl(ASSET_BASE + "index.html" + if (forceLowTier) "?rtq=low" else "")
+    }
+
+    /** The renderer process is gone. Reclaimed by the system (didCrash() == false): the first
+     *  rebuilds silently at the same tier, the second at low tier, the third shows the retry
+     *  message. A real crash: the first rebuilds at low tier, the second shows the message.
+     *  Every rebuild waits ~1 s, so nothing can spin in a tight loop. */
+    private fun onRendererGone(dead: WebView, crashed: Boolean) {
+        val container = webContainer ?: return
+        if (this::bridge.isInitialized) {
+            bridge.flight?.stop()
+            if (bridge.webView === dead) bridge.webView = null
+        }
+        if (webView === dead) webView = null
+        state.engineReady = false
+        container.removeView(dead)
+        try { dead.destroy() } catch (_: Exception) {}
+        if (!crashed) {
+            rendererReclaims++
+            Log.w(TAG, "WebView renderer reclaimed by the system ($rendererReclaims this session)")
+            if (rendererReclaims >= 3) { rendererStopped = true; return }
+            if (rendererReclaims == 2) forceLowTier = true
+        } else {
+            rendererCrashes++
+            Log.w(TAG, "WebView renderer crashed ($rendererCrashes this session)")
+            if (rendererCrashes >= 2) { rendererStopped = true; return }
+            forceLowTier = true
+        }
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (isFinishing || isDestroyed || webView != null || rendererStopped) return@postDelayed
+            container.addView(createWebView(this))
+        }, 1_000L)
+    }
+
+    /** Retry from the message: one more WebView at low tier. A further crash shows it again. */
+    private fun retryAfterRendererStop() {
+        Log.w(TAG, "retry tapped, rebuilding the WebView at low tier")
+        rendererStopped = false
+        forceLowTier = true
+        val container = webContainer ?: return
+        if (webView == null && !isFinishing && !isDestroyed) container.addView(createWebView(this))
+    }
+
+    /** Back / back gesture. Registered before setContent, so the Compose BackHandlers (⋯ panel,
+     *  dismissable unlock screen) are added later and get Back first. Otherwise the web layer
+     *  decides: window.rtsBack() closes its top-most overlay or ends a tour and returns true;
+     *  only when it returns false (plain flight view, nothing open) does Back leave the app the
+     *  normal way. No answer within 1.5 s (renderer gone or stuck) also leaves. */
+    private var backPending = false
+    private fun installBackHandler() {
+        val cb = object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val wv = webView
+                if (wv == null || !state.engineReady) { exitByBack(this); return }
+                if (backPending) return
+                backPending = true
+                val main = Handler(Looper.getMainLooper())
+                var answered = false
+                val timeout = Runnable {
+                    if (answered) return@Runnable
+                    answered = true; backPending = false
+                    Log.w(TAG, "Back: web layer did not answer, leaving")
+                    exitByBack(this)
+                }
+                main.postDelayed(timeout, 1_500L)
+                wv.evaluateJavascript("(function(){try{return !!(window.rtsBack&&window.rtsBack());}catch(e){return false;}})()") { r ->
+                    if (answered) return@evaluateJavascript
+                    answered = true; backPending = false
+                    main.removeCallbacks(timeout)
+                    if (r != "true") exitByBack(this)
+                }
+            }
+        }
+        onBackPressedDispatcher.addCallback(this, cb)
+    }
+
+    /** Hand Back to the system default (finish / move the task back), then re-arm. */
+    private fun exitByBack(cb: OnBackPressedCallback) {
+        if (isFinishing || isDestroyed) return
+        cb.isEnabled = false
+        onBackPressedDispatcher.onBackPressed()
+        cb.isEnabled = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (this::bridge.isInitialized) bridge.flight?.stop()
+        // Hold the 3D loop, then stop the WebView's rendering and JS timers while the activity
+        // is in the background (the JS call runs before the timers stop).
+        webView?.let { wv ->
+            wv.evaluateJavascript("window.rtsHold&&window.rtsHold('app',true)", null)
+            wv.onPause()
+            wv.pauseTimers()
         }
     }
 
     override fun onResume() {
         super.onResume()
-        if (this::store.isInitialized) store.refreshTrial()
+        // Rolls the trial day and re-queries Play (a pending purchase may have cleared).
+        if (this::store.isInitialized) store.onResume()
+        webView?.let { wv ->
+            wv.resumeTimers()
+            wv.onResume()
+            wv.evaluateJavascript("window.rtsHold&&window.rtsHold('app',false)", null)
+            // Remove animations may have changed in Settings while we were away.
+            wv.evaluateJavascript("window.RTMotion&&window.RTMotion.set(${reduceMotion()})", null)
+        }
     }
 
     /** index.html turns these into --sai-top/right/bottom/left, used wherever iOS uses env(). */
@@ -185,11 +339,29 @@ class MainActivity : ComponentActivity() {
         Handler(Looper.getMainLooper()).postDelayed({ RatingPrompt.launchReview(this) }, 1500)
     }
 
+    /** RTQuality.js's RAM rule for the Android low tier (low-RAM device or <= 4.2 GB). The web
+     *  engine corrects it (QUALITY message) once it knows the GPU. */
+    private fun lowRamTier(): Boolean {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val mi = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+        return am.isLowRamDevice || mi.totalMem / (1024.0 * 1024 * 1024) <= 4.2
+    }
+
+    /** System "Remove animations" (animator duration scale 0): RTMotion tones down shake,
+     *  warp, flare and grain, the same as iOS Reduce Motion. */
+    private fun reduceMotion(): Boolean = !android.animation.ValueAnimator.areAnimatorsEnabled()
+
     /** Memory facts for the web texture budget: low-RAM flag, per-app heap class, total RAM. */
     private fun deviceInfoJson(): String {
         val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val mi = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
-        val json = "{\"lowRam\":${am.isLowRamDevice},\"memClassMB\":${am.memoryClass},\"totalMB\":${mi.totalMem / (1024 * 1024)}}"
+        // model/manufacturer/haptics feed RTQuality.js (start tier) and RTHaptics.js through the
+        // index.html shim's window.__RT_DEVICE, the same object the iOS app injects.
+        val q = { t: String -> "\"" + t.replace("\\", "").replace("\"", "") + "\"" }
+        val haptics = getSharedPreferences("settings", MODE_PRIVATE).getBoolean("haptics", true)
+        val json = "{\"lowRam\":${am.isLowRamDevice},\"memClassMB\":${am.memoryClass},\"totalMB\":${mi.totalMem / (1024 * 1024)}," +
+            "\"model\":${q(Build.MODEL ?: "")},\"manufacturer\":${q(Build.MANUFACTURER ?: "")},\"sdk\":${Build.VERSION.SDK_INT}," +
+            "\"haptics\":$haptics,\"reduceMotion\":${reduceMotion()}}"
         Log.i(TAG, "device info: $json")
         return json
     }
@@ -222,5 +394,23 @@ class MainActivity : ComponentActivity() {
         pushInsets()
         bridge.sendNavUpdate() // resend current (held) input so boot-time state isn't lost
         Log.i(TAG, "engine ready — settings synced")
+    }
+}
+
+@Composable
+private fun RendererStoppedMessage(onRetry: () -> Unit) {
+    androidx.compose.foundation.layout.Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF000005))
+            .clickable(onClick = onRetry)
+            .safeDrawingPadding()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            "The 3D view stopped because this phone's graphics crashed.\n\nTap to try again with lighter graphics.",
+            color = Color(0xFFE6E9F0), fontSize = 17.sp, textAlign = TextAlign.Center
+        )
     }
 }

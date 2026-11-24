@@ -131,6 +131,99 @@ class HYGStarfield {
         // Kept for index → catalog-entry lookup (StarProximity shows the star's real
         // name/distance and registers it with the scanner when you fly up to it).
         this.stars = src;
+
+        this._buildSpikes(src, dpr);
+    }
+
+    // JWST-style diffraction spikes on the brightest stars only (camera optics — see
+    // CameraOptics.js for the PSF geometry). A separate small Points layer: each sprite
+    // draws only the spikes; the star's own dot above stays the core. Spike reach scales
+    // with apparent flux (flux^0.4), and flux grows as 1/d² when you fly toward a star.
+    _buildSpikes(src, dpr) {
+        const GLSL = (typeof CameraOptics !== 'undefined') && CameraOptics.SPIKE_GLSL;
+        if (!GLSL || !this.mesh) return;
+        const SPIKE_MAG = 1.6;   // ~25 brightest stars (Sirius … Regulus-class)
+        const SIRIUS = -1.46;
+        const sel = [];
+        for (let i = 0; i < src.length; i++) {
+            if (src[i][2] <= SPIKE_MAG && src[i][4] > 0) sel.push(i);   // ly > 0 skips Sol
+        }
+        if (!sel.length) return;
+        const p = this.mesh.geometry.attributes.position.array;
+        const c = this.mesh.geometry.attributes.color.array;
+        const dA = this.mesh.geometry.attributes.aDist.array;
+        const n = sel.length;
+        const pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+        const flx = new Float32Array(n), dst = new Float32Array(n);
+        sel.forEach((i, k) => {
+            for (let j = 0; j < 3; j++) { pos[k * 3 + j] = p[i * 3 + j]; }
+            // undo the magnitude fade (these are all bright) and use the true B–V colour
+            const rgb = this._bvColor(src[i][3]);
+            for (let j = 0; j < 3; j++) col[k * 3 + j] = rgb[j] * this.cfg.brightness;
+            flx[k] = Math.pow(10, -0.4 * (src[i][2] - SIRIUS));   // Sirius = 1
+            dst[k] = dA[i];
+        });
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        g.setAttribute('aFlux', new THREE.BufferAttribute(flx, 1));
+        g.setAttribute('aDist', new THREE.BufferAttribute(dst, 1));
+        let maxPt = 256;
+        try {
+            const r = (typeof rendererCore !== 'undefined') ? rendererCore : null;
+            const gl = r && r.renderer ? r.renderer.getContext() : null;
+            if (gl) maxPt = Math.min(512, gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1]);
+        } catch (e) {}
+        const m = new THREE.ShaderMaterial({
+            transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+            vertexColors: true,
+            uniforms: {
+                uScale: { value: 1.0 }, uDpr: { value: dpr },
+                uMaxSize: { value: maxPt }, uIntensity: { value: 0.6 }
+            },
+            vertexShader: `
+                uniform float uScale, uDpr, uMaxSize;
+                attribute float aFlux;
+                attribute float aDist;
+                varying vec3 vColor;
+                varying float vLen;
+                varying float vAmp;
+                void main() {
+                    vColor = color;
+                    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                    gl_Position = projectionMatrix * mv;
+                    float near = aDist / max(length(mv.xyz), 1.0);
+                    float flux = aFlux * near * near;            // inverse-square
+                    float len = (10.0 + 34.0 * pow(flux, 0.4)) * uDpr * uScale;
+                    gl_PointSize = min(2.0 * len, uMaxSize);
+                    vLen = gl_PointSize * 0.5;
+                    vAmp = clamp(0.3 + 0.7 * pow(flux, 0.25), 0.0, 1.5);
+                }`,
+            fragmentShader: `
+                uniform float uDpr, uIntensity;
+                varying vec3 vColor;
+                varying float vLen;
+                varying float vAmp;
+                ${GLSL}
+                void main() {
+                    vec2 d = (gl_PointCoord - 0.5) * 2.0 * vLen;
+                    vec3 s = jwstSpikes(d, 0.0, vLen, 0.75 * uDpr, 0.08);
+                    s *= smoothstep(1.0 * uDpr, 3.5 * uDpr, length(d));  // the dot is the core
+                    vec3 c = vColor * s * vAmp * uIntensity;
+                    if (max(c.r, max(c.g, c.b)) < 0.002) discard;
+                    gl_FragColor = vec4(c, 1.0);
+                }`
+        });
+        this.spikes = new THREE.Points(g, m);
+        this.spikes.renderOrder = -1;
+        this.spikes.frustumCulled = false;
+        this.mesh.add(this.spikes);
+    }
+
+    setSpikes(on, scale = 1) {
+        if (!this.spikes) return;
+        this.spikes.visible = !!on;
+        this.spikes.material.uniforms.uScale.value = scale;
     }
 
     getMesh() { return this.mesh; }

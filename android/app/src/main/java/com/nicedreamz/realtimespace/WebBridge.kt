@@ -1,6 +1,14 @@
 package com.nicedreamz.realtimespace
 
+import android.content.ClipData
+import android.content.ContentValues
+import android.content.Intent
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
+import androidx.core.content.FileProvider
+import java.io.File
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
@@ -32,7 +40,11 @@ class WebBridge(
     /** {"lowRam":bool,"memClassMB":n,"totalMB":n} for the web texture budget (Planet.js rtsTexBudget). */
     private val deviceInfoJson: String = "null",
     /** Persist the Ambient hum choice natively (MainActivity prefs). */
-    private val onAmbientHumChanged: (Boolean) -> Unit = {}
+    private val onAmbientHumChanged: (Boolean) -> Unit = {},
+    /** Flight rumble / gravity swell / warp ticks from RTHaptics.js; its .enabled is the Haptics toggle. */
+    val flight: FlightHaptics? = null,
+    /** Persist the Haptics choice natively (MainActivity prefs). */
+    private val onHapticsChanged: (Boolean) -> Unit = {}
 ) {
     @JavascriptInterface
     fun deviceInfo(): String = deviceInfoJson
@@ -57,7 +69,16 @@ class WebBridge(
                     Log.i(TAG, "READY handshake received from web engine")
                     main.post { onReady() }
                 }
-                "HAPTIC" -> haptic(o.optString("style"))
+                "HAPTIC" -> {
+                    val style = o.optString("style")
+                    if (style == "warpIn" || style == "warpOut") main.post { flight?.tick(style) }
+                    else haptic(style)
+                }
+                "HAPTIC_FLIGHT" -> {
+                    val r = o.optDouble("rumble", 0.0).toFloat()
+                    val sw = o.optDouble("swell", 0.0).toFloat()
+                    main.post { flight?.setFlight(r, sw) }
+                }
                 "ARRIVED" -> main.post { onArrived() }
                 "RADAR" -> parseRadar(o)
                 "POSITION_UPDATE" -> {
@@ -70,8 +91,12 @@ class WebBridge(
                     main.post { state.chromeHidden = hidden }
                     Log.d(TAG, "CHROME hidden=$hidden")
                 }
+                "QUALITY" -> {
+                    val low = o.optBoolean("low")
+                    main.post { state.lowGpu = low }
+                }
                 "FETCH" -> doFetch(o.optString("url"), o.optString("reqId"))
-                "PHOTO" -> Log.d(TAG, "PHOTO capture received (share TODO)")
+                "PHOTO" -> sharePhoto(o.optString("dataURL"))
                 "AUDIO" -> { /* Web Audio is procedural on the web side; native no-op */ }
                 else -> { /* logged/unknown */ }
             }
@@ -80,12 +105,88 @@ class WebBridge(
         }
     }
 
+    /** Photo Mode: the web layer sends the watermarked frame as a data URL. Decode it off the
+     *  main thread, keep a copy in the app cache (shared through FileProvider, no storage
+     *  permission), save it to Pictures/RealTime Space on Android 10+ (MediaStore needs no
+     *  permission there), then open the share sheet. */
+    private fun sharePhoto(dataURL: String) {
+        val ctx = webView?.context ?: return
+        val comma = dataURL.indexOf(',')
+        if (!dataURL.startsWith("data:image/") || comma < 0) return
+        val jpeg = dataURL.startsWith("data:image/jpeg")
+        val ext = if (jpeg) "jpg" else "png"
+        val mime = if (jpeg) "image/jpeg" else "image/png"
+        Thread {
+            try {
+                val bytes = Base64.decode(dataURL.substring(comma + 1), Base64.DEFAULT)
+                val dir = File(ctx.cacheDir, "photos").apply { mkdirs() }
+                // Keep the cache small: only the last few shots stay.
+                dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(4)?.forEach { it.delete() }
+                val name = "RealTimeSpace-${System.currentTimeMillis()}.$ext"
+                val file = File(dir, name)
+                file.writeBytes(bytes)
+
+                var saved = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        val values = ContentValues().apply {
+                            put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                            put(MediaStore.Images.Media.MIME_TYPE, mime)
+                            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/RealTime Space")
+                            put(MediaStore.Images.Media.IS_PENDING, 1)
+                        }
+                        val cr = ctx.contentResolver
+                        val uri = cr.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                        if (uri != null) {
+                            try {
+                                val out = cr.openOutputStream(uri) ?: throw java.io.IOException("no output stream")
+                                out.use { it.write(bytes) }
+                                values.clear()
+                                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                                cr.update(uri, values, null, null)
+                                saved = true
+                            } catch (e: Exception) {
+                                // Don't leave a half-written, pending entry in the gallery.
+                                try { cr.delete(uri, null, null) } catch (_: Exception) {}
+                                throw e
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "PHOTO save to Pictures failed: ${e.message}")
+                    }
+                }
+
+                val shareUri = FileProvider.getUriForFile(ctx, ctx.packageName + ".photos", file)
+                main.post {
+                    try {
+                        if (saved) Toast.makeText(ctx, "Saved to Pictures", Toast.LENGTH_SHORT).show()
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = mime
+                            putExtra(Intent.EXTRA_STREAM, shareUri)
+                            clipData = ClipData.newRawUri("", shareUri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        val chooser = Intent.createChooser(send, "Share your shot").apply {
+                            if (ctx !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        ctx.startActivity(chooser)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "PHOTO share failed: ${e.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "PHOTO decode failed: ${e.message}")
+            }
+        }.start()
+    }
+
     @JavascriptInterface
     fun log(msg: String) {
         Log.d("RTSpaceWeb", msg)
     }
 
     fun haptic(style: String) {
+        if (flight?.enabled == false) return   // Haptics toggle off: no taps either (same as iOS)
         val v = vibrator ?: return
         if (!v.hasVibrator()) return
         val pattern = when (style) {
@@ -94,13 +195,18 @@ class WebBridge(
             "warp"    -> longArrayOf(0, 14, 18, 14, 18, 45)
             else      -> longArrayOf(0, 14) // light
         }
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                v.vibrate(VibrationEffect.createWaveform(pattern, -1))
-            } else {
-                @Suppress("DEPRECATION") v.vibrate(pattern, -1)
-            }
-        } catch (_: Exception) {}
+        // On the main thread with the flight rumble: the one-shot cancels the running rumble
+        // waveform, so reset its level too or the rumble would never be re-issued.
+        main.post {
+            flight?.interrupted()
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createWaveform(pattern, -1))
+                } else {
+                    @Suppress("DEPRECATION") v.vibrate(pattern, -1)
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     private fun parseRadar(o: JSONObject) {
@@ -208,8 +314,14 @@ class WebBridge(
         call("window.galaxyExplorer&&window.galaxyExplorer.flyToNearestPlanet&&window.galaxyExplorer.flyToNearestPlanet()")
     fun setWarpDrive(b: Boolean) =
         call("window.galaxyExplorer&&window.galaxyExplorer.setWarpDrive&&window.galaxyExplorer.setWarpDrive($b)")
+    fun showMissions() =
+        call("window.galaxyExplorer&&window.galaxyExplorer.showMissions&&window.galaxyExplorer.showMissions()")
     fun capturePhoto(scale: Float = 1.5f) =
         call("window.galaxyExplorer&&window.galaxyExplorer.capturePhoto&&window.galaxyExplorer.capturePhoto($scale)")
+    /** Hold or release the web 3D loop for one reason (UpdateLoop.hold): no updates, draws or
+     *  texture uploads while any hold is on. Posted to the main thread like every call. */
+    fun holdLoop(reason: String, on: Boolean) =
+        call("window.rtsHold&&window.rtsHold('$reason',$on)")
     fun pauseExploration() = call("window.pauseExploration&&window.pauseExploration()")
     fun resumeExploration() = call("window.resumeExploration&&window.resumeExploration()")
 
@@ -222,6 +334,13 @@ class WebBridge(
         setLUTEnabled(state.lutEnabled)
         setLUTIntensity(state.lutIntensity)
         setAmbientHum(state.ambientHum)
+        setHaptics(state.haptics)
+    }
+
+    fun setHaptics(on: Boolean) {
+        onHapticsChanged(on)
+        flight?.enabled = on
+        call("window.RTHaptics&&window.RTHaptics.setEnabled&&window.RTHaptics.setEnabled($on)")
     }
 
     fun setAmbientHum(on: Boolean) {

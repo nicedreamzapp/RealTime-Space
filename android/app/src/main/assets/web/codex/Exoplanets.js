@@ -71,7 +71,7 @@
       mesh.position.copy(pos);
       this.group.add(mesh);
       loader.load('codex/cosmos/' + surf + '.jpg', (tex) => {
-        if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+        markSRGB(tex);
         mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
       }, undefined, () => {});
 

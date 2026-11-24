@@ -191,17 +191,19 @@ class Moons {
 
         (painters[style] || painters.ganymede)();
 
-        const texture = new THREE.CanvasTexture(canvas);
+        // low tier / safe GPU: a quarter-size copy (256x128), the full-size canvas is released
+        const src = window.rtsShrinkCanvas ? window.rtsShrinkCanvas(canvas, 0.25) : canvas;
+        const texture = new THREE.CanvasTexture(src);
         texture.wrapS = THREE.RepeatWrapping;
-        if (THREE.SRGBColorSpace !== undefined) texture.colorSpace = THREE.SRGBColorSpace;
+        markSRGB(texture);
         texture.anisotropy = window.rtsAniso ? window.rtsAniso(8) : 8;
 
         // Grey copy of the same canvas works as a cheap bump map
         const bumpCanvas = document.createElement('canvas');
-        bumpCanvas.width = W; bumpCanvas.height = H;
+        bumpCanvas.width = src.width; bumpCanvas.height = src.height;
         const bctx = bumpCanvas.getContext('2d');
         bctx.filter = 'grayscale(1) contrast(1.4)';
-        bctx.drawImage(canvas, 0, 0);
+        bctx.drawImage(src, 0, 0);
         const bumpTexture = new THREE.CanvasTexture(bumpCanvas);
         bumpTexture.wrapS = THREE.RepeatWrapping;
 

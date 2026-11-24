@@ -1,14 +1,17 @@
 // ISS.js — a real International Space Station orbiting Earth in the 3D scene.
-// A small glowing marker + label circles Earth at low-orbit altitude and ~51.6° real
-// inclination. Its starting longitude syncs to the REAL live ISS position (from
-// LiveData) when available, then it visibly orbits so you can watch it fly around.
+// A small glowing marker + label circles Earth at the real 51.6° inclination with the
+// real 92.9-minute period, played back TIME_SCALE times faster (labelled on the marker,
+// e.g. "ISS · 60× speed") so you can watch it go round. When LiveData has the real ISS
+// latitude, the orbit phase starts at that latitude (once; at 60× it would not stay synced).
 // Self-contained; reads Earth from the catalog and adds itself to the scene root.
 
 (function () {
   'use strict';
 
   const INCLINATION = 51.6 * Math.PI / 180; // real ISS orbital inclination
-  const ORBIT_SECONDS = 75;                 // visible orbit period (real is 92 min — too slow to see)
+  const REAL_PERIOD_S = 92.9 * 60;          // real ISS orbital period (~92.9 min at ~420 km)
+  const TIME_SCALE = 60;                    // played back 60x: one lap = 92.9 s on screen
+  const ORBIT_SECONDS = REAL_PERIOD_S / TIME_SCALE;
 
   class ISSTracker {
     constructor() {
@@ -64,9 +67,9 @@
 
       // label
       const label = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: this._labelTexture('🛰️ ISS'), transparent: true, depthTest: false, depthWrite: false
+        map: this._labelTexture('🛰️ ISS · ' + TIME_SCALE + '× speed'), transparent: true, depthTest: false, depthWrite: false
       }));
-      label.scale.set(this.earthRadius * 0.9, this.earthRadius * 0.225, 1);
+      label.scale.set(this.earthRadius * 1.2, this.earthRadius * 0.225, 1);
       label.position.y = this.earthRadius * 0.18;
       group.add(label);
       this._label = label;
@@ -90,21 +93,24 @@
       const t = new window.THREE.CanvasTexture(c); return t;
     }
     _labelTexture(text) {
-      const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+      const c = document.createElement('canvas'); c.width = 340; c.height = 64;
       const g = c.getContext('2d');
       g.font = '600 30px -apple-system, sans-serif';
       g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillText(text, 129, 33);
-      g.fillStyle = '#dff1ff'; g.fillText(text, 128, 32);
+      g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillText(text, 171, 33);
+      g.fillStyle = '#dff1ff'; g.fillText(text, 170, 32);
       return new window.THREE.CanvasTexture(c);
     }
 
-    // map a real ISS longitude (deg) to our orbit phase so the marker starts where it is
+    // Start the orbit phase at the REAL ISS latitude: on a circular orbit inclined i,
+    // latitude = asin(sin(i) * sin(u)), so u = asin(sin(lat) / sin(i)). (Whether it is
+    // heading north or south is not in the feed; we take the northbound solution.)
     _syncToLive() {
       const live = window.liveData && window.liveData.iss;
-      if (live && typeof live.lon === 'number') {
-        this.phase = (live.lon + 180) * Math.PI / 180;
-      }
+      if (this._synced || !live || typeof live.lat !== 'number') return;
+      const s = Math.max(-1, Math.min(1, Math.sin(live.lat * Math.PI / 180) / Math.sin(INCLINATION)));
+      this.phase = Math.asin(s);
+      this._synced = true;
     }
 
     _loop() {
@@ -113,13 +119,16 @@
         const dt = this._lastFrame ? Math.min(0.05, (ts - this._lastFrame) / 1000) : 0.016;
         this._lastFrame = ts;
         if (this.marker && this.earthMesh) {
-          // periodically re-sync starting point to the real ISS longitude
+          // pick up the real latitude once it arrives
           this._t += dt;
-          if (this._t > 5) { this._t = 0; this._syncToLive(); }
-          this.phase += (2 * Math.PI / ORBIT_SECONDS) * dt;
+          if (!this._synced && this._t > 2) { this._t = 0; this._syncToLive(); }
+          // holds still while orbital time is paused
+          const paused = window.Ephemeris && window.Ephemeris.clock.scale === 0;
+          if (!paused) this.phase += (2 * Math.PI / ORBIT_SECONDS) * dt;
 
           const r = this.earthRadius * 1.09; // low-Earth-orbit altitude, scaled up to read
-          // circular orbit in a plane tilted by the real inclination
+          // circular orbit in a plane tilted by the real inclination (Earth's own axial
+          // tilt is not added: the plane is tilted from the ecliptic, an approximation)
           const x = Math.cos(this.phase) * r;
           const yz = Math.sin(this.phase) * r;
           const y = yz * Math.sin(INCLINATION);
@@ -134,6 +143,16 @@
             const dEarth = this._tmp.distanceTo(cam.position);
             const vis = dEarth < this.earthRadius * 40;
             this.marker.visible = vis;
+            // Keep the label a label: world-sized, it grew to a ~60 px headline when flying
+            // near Earth. Cap its on-screen height at ~16 px (CSS), whatever the distance.
+            if (vis && this._label) {
+              const dL = this.marker.position.distanceTo(cam.position);
+              const tanH = Math.tan((cam.fov || 60) * Math.PI / 360);
+              const hMax = 16 * 2 * dL * tanH / Math.max(1, window.innerHeight);
+              const h = Math.min(this.earthRadius * 0.225, hMax);
+              this._label.scale.set(h * (1.2 / 0.225), h, 1);
+              this._label.position.y = Math.min(this.earthRadius * 0.18, h * 0.8);
+            }
           }
         }
         requestAnimationFrame(step);

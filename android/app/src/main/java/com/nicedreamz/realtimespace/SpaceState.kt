@@ -32,6 +32,10 @@ class SpaceState {
     var chromeHidden by mutableStateOf(false)
     var position: Triple<Double, Double, Double> = Triple(0.0, 0.0, 0.0)
     var engineReady by mutableStateOf(false)
+    /** Low tier or the safe GPU path (PowerVR / entry Mali), from the web engine's QUALITY
+     *  message; MainActivity seeds it from the same RAM rule RTQuality.js uses. The ⋯ panel
+     *  drops its slide and fade on it. */
+    var lowGpu by mutableStateOf(false)
 
     // ---- Native -> web (flight input, driven by Tier 3 UI) ----
     var rotX = 0f   // pitch  (-1..1)
@@ -47,4 +51,6 @@ class SpaceState {
     var lutEnabled by mutableStateOf(false)
     /** Constant ambient drone; off by default (persisted by the web engine and MainActivity prefs). */
     var ambientHum by mutableStateOf(false)
+    /** Flight haptics (speed rumble, gravity swell, warp ticks) and button taps; on by default like iOS. */
+    var haptics by mutableStateOf(true)
 }

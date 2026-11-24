@@ -36,6 +36,36 @@
       this.forceHidden = false;  // HELM default — the green-screen key made the cockpit exact
       window.addEventListener('resize', () => this._apply());
       this._apply();
+      // Light the art with the real Sun (Visor.js computes sunlight at the ship, eclipse
+      // included). A flat PNG at constant brightness is what read fake: now the cabin
+      // goes dim in shadow / deep space, the console brightens when the Sun is behind
+      // you (it shines onto the panel faces), and with the Sun ahead the interior falls
+      // into its own shadow and the struts read as silhouettes against the glare.
+      this._lastF = '';
+      setInterval(() => this._light(), 120);
+    }
+
+    _light() {
+      if (this.img.style.display === 'none') return;
+      const V = window.Visor, L = V && V.light;
+      // The live values only update while the visor pass runs. Low tier (and visor glass
+      // switched off) disables it, which froze them at sun 0 and left the art at 60%
+      // brightness. Without live light the art gets a fixed lighting: the average of the
+      // live model at Earth's distance with the Sun to the side (sun 1, behind 0.5), no
+      // contrast push, a touch of warmth.
+      if (!L || !V.pass || !V.pass.enabled) {
+        const f0 = 'brightness(0.92) sepia(0.05)';
+        if (f0 !== this._lastF) { this._lastF = f0; this.img.style.filter = f0; this.img.style.webkitFilter = f0; }
+        return;
+      }
+      const sun = Math.max(0, Math.min(1.2, L.sun || 0));
+      const behind = Math.max(0, Math.min(1, 0.5 - 0.5 * (L.facing || 0)));  // 1 = Sun at your back
+      const ahead = Math.max(0, L.facing || 0);
+      const b = 0.60 + sun * (0.12 + 0.40 * behind) - 0.10 * sun * ahead * ahead;
+      const con = 1 + 0.18 * sun * ahead * ahead;
+      const warm = 0.10 * sun * behind;   // direct sunlight is warmer than the cool cabin glow
+      const f = 'brightness(' + b.toFixed(2) + ') contrast(' + con.toFixed(2) + ') sepia(' + warm.toFixed(2) + ')';
+      if (f !== this._lastF) { this._lastF = f; this.img.style.filter = f; this.img.style.webkitFilter = f; }
     }
 
     setVisible(_) { /* no external off-switch — landscape cockpit is always on */ }

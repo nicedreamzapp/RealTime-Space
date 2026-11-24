@@ -35,6 +35,17 @@
                 <data android:scheme="rtspace" />
             </intent-filter>
         </activity>
+
+        <!-- Photo Mode share: hands the cached shot to the share sheet, no storage permission. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.photos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/photo_paths" />
+        </provider>
     </application>
 
 </manifest>

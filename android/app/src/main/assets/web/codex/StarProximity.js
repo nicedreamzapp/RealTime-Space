@@ -63,7 +63,7 @@
       // Class surfaces (already bundled for the discovery cards).
       const load = (f) => {
         const t = new THREE.TextureLoader().load('codex/cosmos/' + f);
-        if (THREE.SRGBColorSpace !== undefined) t.colorSpace = THREE.SRGBColorSpace;
+        markSRGB(t);
         return t;
       };
       // Real solar-observatory photography (Matt's SDO/EIT references) PLUS the

@@ -35,6 +35,17 @@
     ['M66', 11.338, 12.99, 36.0, 'spiral', 0.45, 'The largest of the Leo Triplet, its arms warped by gravitational tug-of-war with its neighbors.']
   ];
 
+  // Real apparent major-axis diameters (arcmin, NED/SEDS). Used so each galaxy spans its
+  // true angle on the sky as seen from the Solar System (most are a few arcmin: smudges).
+  const TRUE_ARCMIN = {
+    'Large Magellanic Cloud': 645, 'Small Magellanic Cloud': 320, 'Andromeda (M31)': 190,
+    'Triangulum (M33)': 73, "Bode's Galaxy (M81)": 27, 'Centaurus A': 26, 'Pinwheel (M101)': 29,
+    'Whirlpool (M51)': 11, 'Sombrero (M104)': 9, 'Cigar Galaxy (M82)': 11, 'Virgo A (M87)': 8,
+    'Sculptor Galaxy': 27, 'Black Eye (M64)': 10, 'Sunflower (M63)': 13, 'Phantom (M74)': 10,
+    'M77': 7, "Croc's Eye (M94)": 11, 'M106': 19, 'Needle (NGC 4565)': 16,
+    'Hidden Galaxy (IC 342)': 21, 'M66': 9
+  };
+
   function dir(raH, decDeg) {
     const ra = raH * 15 * Math.PI / 180, dec = decDeg * Math.PI / 180;
     return [Math.cos(dec) * Math.cos(ra), Math.sin(dec), -Math.cos(dec) * Math.sin(ra)];
@@ -73,14 +84,23 @@
 
     _add(THREE, [name, raH, decDeg, mly, kind, size, fact]) {
       const [dx, dy, dz] = dir(raH, decDeg);
-      const dist = 4000 + Math.sqrt(mly) * 650;
+      // True apparent size from home: the explorable structure keeps at least its old
+      // radius, and the galaxy is pushed out until that radius spans its real angle (never
+      // nearer than the old compressed distance, so the far ones sit beyond the Milky
+      // Way's stars and nebulae, in distance order). R then fills the real angle exactly.
+      const R0 = 130 * size;
+      const halfAng = ((TRUE_ARCMIN[name] || 10) / 60) * Math.PI / 360;
+      const dist = Math.max(4000 + Math.sqrt(mly) * 650, R0 / Math.tan(halfAng));
+      const R = Math.max(R0, dist * Math.tan(halfAng));
       const c = new THREE.Vector3(dx * dist, dy * dist, dz * dist);
-      const R = 130 * size;
 
       // Dense clouds — scale star count with apparent size (hero galaxies get far more).
       // Counts doubled 2026-07-06: flying INSIDE one felt sparse — the whole point of
       // approaching a galaxy is being surrounded by its stars.
-      const N = Math.round((kind === 'irregular' ? 30000 : kind === 'elliptical' ? 42000 : 62000) * size);
+      // Low tier / safe GPU: 25% of the stars, each drawn 1.6x wider so the cloud keeps
+      // about the same glow (a million points a frame was a large share of the PowerVR's frame).
+      const lowF = (window.rtsLowGPU && window.rtsLowGPU()) ? 0.25 : 1;
+      const N = Math.round((kind === 'irregular' ? 30000 : kind === 'elliptical' ? 42000 : 62000) * size * lowF);
       const pos = new Float32Array(N * 3), col = new Float32Array(N * 3), siz = new Float32Array(N);
 
       // Random orientation so galaxies don't all face the same way.
@@ -174,7 +194,7 @@
         const [rx, ry, rz] = rot(x, y, z);
         pos[i * 3] = rx; pos[i * 3 + 1] = ry; pos[i * 3 + 2] = rz;   // relative — mesh carries the center
         col[i * 3] = base[0] * bright; col[i * 3 + 1] = base[1] * bright; col[i * 3 + 2] = base[2] * bright;
-        siz[i] = psize;
+        siz[i] = lowF < 1 ? psize * 1.6 : psize;
       }
 
       const g = new THREE.BufferGeometry();
@@ -190,7 +210,9 @@
       const glowColor = kind === 'spiral' ? 0xfff0d0 : kind === 'elliptical' ? 0xffe6c0 : 0xdfe8ff;
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({
         map: this._glow, color: glowColor, transparent: true, depthWrite: false,
-        blending: THREE.AdditiveBlending, opacity: kind === 'irregular' ? 0.18 : 0.42
+        // faint: a real bulge is only a few times brighter than its disk, and from home
+        // the whole galaxy is a dim smudge (surface brightness doesn't grow with distance)
+        blending: THREE.AdditiveBlending, opacity: kind === 'irregular' ? 0.06 : 0.12
       }));
       glow.scale.setScalar(R * (kind === 'elliptical' ? 2.2 : 1.5));
       glow.position.copy(c);
@@ -218,11 +240,15 @@
           varying vec3 vColor;
           uniform float uPixel;
           void main() {
-            vColor = color;
             vec4 mv = modelViewMatrix * vec4(position, 1.0);
             gl_Position = projectionMatrix * mv;
-            // size grows as you approach; clamped so distant galaxies stay a soft glow.
-            gl_PointSize = clamp(aSize * uPixel * (2600.0 / max(40.0, -mv.z)), 0.6, 22.0);
+            // size grows as you approach. A point can't be drawn below ~1 px, so a far one is
+            // drawn at 1 px with its light scaled by the area it really covers: each star's
+            // flux is conserved, so a distant galaxy keeps the same (faint) surface
+            // brightness instead of piling sub-pixel stars into a bright blob.
+            float s = aSize * uPixel * (2600.0 / max(40.0, -mv.z));
+            gl_PointSize = clamp(s, 1.0, 22.0);
+            vColor = color * min(1.0, s * s);
           }`,
         fragmentShader: `
           varying vec3 vColor;

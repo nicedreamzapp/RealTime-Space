@@ -126,7 +126,9 @@
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
       const m = new THREE.LineBasicMaterial({ color: 0x4a86c8, transparent: true, opacity: 0.28, depthWrite: false });
-      this.group.add(new THREE.LineSegments(g, m));
+      const figure = new THREE.LineSegments(g, m);
+      figure.userData.annotation = true;   // overlay: hidden by the clean frame
+      this.group.add(figure);
     }
 
     // Real star positions + distances for one figure (null if unknown).
@@ -188,7 +190,7 @@
       const wid = g.measureText(name).width;   // long tour labels ("Alnilam · 2,000 ly") shrink to fit
       if (wid > 740) g.font = '600 ' + Math.floor(84 * 740 / wid) + 'px -apple-system, sans-serif';
       g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillText(name, 387, 99); g.fillStyle = '#dfeaff'; g.fillText(name, 384, 96);
-      const t = new THREE.CanvasTexture(c);
+      const t = new THREE.CanvasTexture(window.rtsShrinkCanvas ? window.rtsShrinkCanvas(c, 0.375) : c);   // 3/8 size on low tier
       t.anisotropy = 4;
       return t;
     }
