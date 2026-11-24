@@ -106,6 +106,8 @@ struct WorkingPortalWebView: UIViewRepresentable {
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             print("✅ WebView finished loading")
+            // Fresh page: no web panel is open, so the native controls must be showing.
+            parent.navigationController.hideChrome = false
             let parent = self.parent
             var data: [String: Any] = [
                 "rotation": [
@@ -129,22 +131,58 @@ struct WorkingPortalWebView: UIViewRepresentable {
         /// time in the background). WKWebView then shows a blank black view with no further
         /// callbacks, so reload the page: the scene rebuilds and everything the player keeps
         /// (missions, explored places, Field Guide, settings) lives in localStorage and survives.
-        /// didFinish then re-sends the current nav state. Two kills within 10 s back off for 3 s
-        /// so a page that dies on load can't spin.
-        private var lastTerminate: Date?
+        /// didFinish then re-sends the current nav state. A second kill within 10 s waits 3 s;
+        /// a third kill within 60 s stops reloading and shows "Tap to reload" instead, so a page
+        /// that keeps dying can't spin.
+        private var terminateTimes: [Date] = []
+        private weak var reloadOverlay: UIView?
+
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            print("⚠️ WebView content process terminated; reloading")
+            print("⚠️ WebView content process terminated")
+            // A Missions / Codex panel open at the kill had hidden the native controls; the
+            // panel is gone with the page, so bring the joystick and ⋯ back.
+            parent.navigationController.hideChrome = false
             let now = Date()
-            let quick = lastTerminate.map { now.timeIntervalSince($0) < 10 } ?? false
-            lastTerminate = now
-            DispatchQueue.main.asyncAfter(deadline: .now() + (quick ? 3.0 : 0.1)) { [weak webView] in
-                guard let webView else { return }
-                if webView.url != nil {
-                    webView.reload()
-                } else if let url = URL(string: "\(AppAssetSchemeHandler.scheme)://app/index.html") {
-                    webView.load(URLRequest(url: url))
-                }
+            terminateTimes = terminateTimes.filter { now.timeIntervalSince($0) < 60 } + [now]
+            if terminateTimes.count >= 3 {
+                showReloadOverlay(on: webView)
+                return
             }
+            let quick = terminateTimes.count == 2 && now.timeIntervalSince(terminateTimes[0]) < 10
+            DispatchQueue.main.asyncAfter(deadline: .now() + (quick ? 3.0 : 0.1)) { [weak self, weak webView] in
+                guard let webView else { return }
+                self?.reloadPage(webView)
+            }
+        }
+
+        private func reloadPage(_ webView: WKWebView) {
+            if webView.url != nil {
+                webView.reload()
+            } else if let url = URL(string: "\(AppAssetSchemeHandler.scheme)://app/index.html") {
+                webView.load(URLRequest(url: url))
+            }
+        }
+
+        private func showReloadOverlay(on webView: WKWebView) {
+            guard reloadOverlay == nil else { return }
+            let button = UIButton(type: .system)
+            button.frame = webView.bounds
+            button.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            button.backgroundColor = .black
+            button.setTitle("The 3D view stopped.\nTap to reload.", for: .normal)
+            button.setTitleColor(UIColor(white: 0.9, alpha: 1), for: .normal)
+            button.titleLabel?.font = .systemFont(ofSize: 17, weight: .medium)
+            button.titleLabel?.numberOfLines = 0
+            button.titleLabel?.textAlignment = .center
+            button.accessibilityLabel = "The 3D view stopped. Tap to reload."
+            button.addAction(UIAction { [weak self, weak webView, weak button] _ in
+                button?.removeFromSuperview()
+                guard let self, let webView else { return }
+                self.terminateTimes.removeAll()
+                self.reloadPage(webView)
+            }, for: .touchUpInside)
+            webView.addSubview(button)
+            reloadOverlay = button
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
