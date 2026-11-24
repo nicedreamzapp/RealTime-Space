@@ -33,7 +33,7 @@ final class DuoLayoutUITests: XCTestCase {
 
     private func walk(start: UIDeviceOrientation, then other: UIDeviceOrientation, _ p: String) {
         XCUIDevice.shared.orientation = start
-        let app = XCUIApplication()
+        let app = XCUIApplication(); app.launchArguments += ["-silent", "-noRating"]
         app.launch()
         let begin = app.buttons["Begin Exploring"]
         _ = begin.waitForExistence(timeout: 20); sleep(2); snap("\(p)01-welcome")

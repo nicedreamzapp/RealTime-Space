@@ -29,7 +29,7 @@ final class NewScreensUITests: XCTestCase {
         let missions = btnContaining(app, "Missions & Badges")
         XCTAssertTrue(missions.waitForExistence(timeout: 5), "Missions & Badges not in the menu")
         missions.tap(); sleep(4); snap("n01-missions")
-        let rank = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'Cadet'")).firstMatch
+        let rank = app.staticTexts.matching(NSPredicate(format: "label MATCHES '(Cadet|Ensign|Lieutenant|Commander|Captain)'")).firstMatch
         XCTAssertTrue(rank.waitForExistence(timeout: 8), "no rank shown on the Missions screen")
         app.swipeUp(); sleep(1); snap("n02-missions-scrolled")
         XCTAssertEqual(app.state, .runningForeground)
