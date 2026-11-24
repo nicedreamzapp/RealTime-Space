@@ -1,5 +1,5 @@
 // Exoplanets.js — real, confirmed exoplanets placed at their host stars' true sky
-// directions & distances, skinned with the AI-generated surface library. Additive and
+// directions & distances, skinned with the custom surface texture library. Additive and
 // self-contained (no catalog/Space-Map changes). Unlit materials so the worlds are
 // visible far from the Sun's light.
 //
