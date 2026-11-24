@@ -14,6 +14,7 @@ struct WorkingPortalWebView: UIViewRepresentable {
         var parent: WorkingPortalWebView
         var bridge: GalaxyBridge?
         var cancellables = Set<AnyCancellable>()
+        var reduceMotionObserver: NSObjectProtocol?
         
         init(_ parent: WorkingPortalWebView) {
             self.parent = parent
@@ -80,6 +81,7 @@ struct WorkingPortalWebView: UIViewRepresentable {
         
         deinit {
             NotificationCenter.default.removeObserver(self)
+            if let o = reduceMotionObserver { NotificationCenter.default.removeObserver(o) }
         }
         
         func sendImmediateUpdate() {
@@ -123,6 +125,28 @@ struct WorkingPortalWebView: UIViewRepresentable {
             NotificationCenter.default.post(name: .workingPortalNavUpdate, object: nil, userInfo: ["data": data])
         }
         
+        /// iOS killed the page's web content process (memory pressure, a GPU reset, or a long
+        /// time in the background). WKWebView then shows a blank black view with no further
+        /// callbacks, so reload the page: the scene rebuilds and everything the player keeps
+        /// (missions, explored places, Field Guide, settings) lives in localStorage and survives.
+        /// didFinish then re-sends the current nav state. Two kills within 10 s back off for 3 s
+        /// so a page that dies on load can't spin.
+        private var lastTerminate: Date?
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            print("⚠️ WebView content process terminated; reloading")
+            let now = Date()
+            let quick = lastTerminate.map { now.timeIntervalSince($0) < 10 } ?? false
+            lastTerminate = now
+            DispatchQueue.main.asyncAfter(deadline: .now() + (quick ? 3.0 : 0.1)) { [weak webView] in
+                guard let webView else { return }
+                if webView.url != nil {
+                    webView.reload()
+                } else if let url = URL(string: "\(AppAssetSchemeHandler.scheme)://app/index.html") {
+                    webView.load(URLRequest(url: url))
+                }
+            }
+        }
+
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             if message.name == "logging" {
                 if let dict = message.body as? [String: Any],
@@ -238,6 +262,14 @@ struct WorkingPortalWebView: UIViewRepresentable {
         loadHTML(webView, fileName: htmlFileName)
         
         navigationController.attachWebView(webView)
+
+        // Reduce Motion changed while the app runs: tell RTMotion (RTQuality.js) right away.
+        context.coordinator.reduceMotionObserver = NotificationCenter.default.addObserver(
+            forName: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil, queue: .main
+        ) { [weak webView] _ in
+            let on = UIAccessibility.isReduceMotionEnabled
+            webView?.evaluateJavaScript("window.RTMotion && window.RTMotion.set(\(on))", completionHandler: nil)
+        }
         
         return webView
     }
@@ -303,6 +335,7 @@ extension WorkingPortalWebView {
         model = model.filter { $0.isLetter || $0.isNumber || $0 == "," || $0 == "_" }
         let memGB = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
         let haptics = GalaxyBridge.hapticsEnabled
-        return "window.__RT_DEVICE = { model: '\(model)', memGB: \(String(format: "%.1f", memGB)), haptics: \(haptics) };"
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        return "window.__RT_DEVICE = { model: '\(model)', memGB: \(String(format: "%.1f", memGB)), haptics: \(haptics), reduceMotion: \(reduceMotion) };"
     }
 }

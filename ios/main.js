@@ -2612,6 +2612,39 @@ function setPlanetLabelsVisible(visible) {
 }
 
 // Capture high-res screenshot helper
+// Photo Mode watermark: a small "RealTime Space" mark in the bottom-right corner of the
+// saved photo (drawn on a 2D canvas over the captured frame). Any failure returns the
+// unmarked photo, so a capture is never lost to the watermark.
+function rtsWatermark(dataURL, mime = 'image/png') {
+    return new Promise((resolve) => {
+        try {
+            const img = new Image();
+            img.onload = () => {
+                try {
+                    const w = img.naturalWidth, h = img.naturalHeight;
+                    const c = document.createElement('canvas');
+                    c.width = w; c.height = h;
+                    const g = c.getContext('2d');
+                    g.drawImage(img, 0, 0);
+                    const fs = Math.max(13, Math.round(Math.min(w, h) * 0.026));
+                    const pad = Math.round(fs * 0.9);
+                    g.font = `600 ${fs}px -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Roboto, sans-serif`;
+                    g.textAlign = 'right';
+                    g.textBaseline = 'alphabetic';
+                    g.shadowColor = 'rgba(0, 0, 0, 0.6)';
+                    g.shadowBlur = Math.round(fs * 0.35);
+                    g.fillStyle = 'rgba(255, 255, 255, 0.72)';
+                    if ('letterSpacing' in g) g.letterSpacing = `${Math.round(fs * 0.06)}px`;
+                    g.fillText('\u2726 RealTime Space', w - pad, h - pad);
+                    resolve(mime === 'image/jpeg' ? c.toDataURL('image/jpeg', 0.92) : c.toDataURL('image/png'));
+                } catch (e) { resolve(dataURL); }
+            };
+            img.onerror = () => resolve(dataURL);
+            img.src = dataURL;
+        } catch (e) { resolve(dataURL); }
+    });
+}
+
 async function captureHighResScreenshot(scale = 1.5) {
     if (!rendererCore || !rendererCore.renderer) return null;
 
@@ -2785,6 +2818,10 @@ function exposeFlyToAPI() {
     window.galaxyExplorer.getMissions = function() {
         return missionSystem ? missionSystem.getMissions() : [];
     };
+    // Missions & Badges screen (opened from the native ⋯ menu)
+    window.galaxyExplorer.showMissions = function() {
+        if (missionSystem) missionSystem.openPanel();
+    };
 
     // LUT control methods
     window.galaxyExplorer.setLUTEnabled = function(on) {
@@ -2810,7 +2847,8 @@ function exposeFlyToAPI() {
 
     // Capture photo and post to iOS via webkit message handler
     window.galaxyExplorer.capturePhoto = async function(scale = 1.5) {
-        const dataURL = await captureHighResScreenshot(scale);
+        const raw = await captureHighResScreenshot(scale);
+        const dataURL = raw ? await rtsWatermark(raw, 'image/png') : raw;
         if (dataURL && window.webkit?.messageHandlers?.iosHandler) {
             try {
                 window.webkit.messageHandlers.iosHandler.postMessage({

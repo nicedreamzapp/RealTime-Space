@@ -235,7 +235,7 @@ class NavigationPhysics {
             }
 
             // Add subtle camera shake at high speed
-            if (speed > this.maxSpeed * 0.8) {
+            if (speed > this.maxSpeed * 0.8 && !(window.RTMotion && window.RTMotion.reduced)) {
                 this.cameraShake = Math.min(0.003, (speed / this.maxSpeed - 0.8) * 0.01);
             }
 
@@ -261,6 +261,7 @@ class NavigationPhysics {
         }
 
         // Apply camera shake (decays over time)
+        if (window.RTMotion && window.RTMotion.reduced) this.cameraShake = 0;   // Reduce Motion: no shake
         if (this.cameraShake > 0.0001) {
             const shakeX = (Math.random() - 0.5) * this.cameraShake;
             const shakeY = (Math.random() - 0.5) * this.cameraShake;

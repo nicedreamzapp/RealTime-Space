@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>RealTime Space saves your Photo Mode shots of the planets and stars to your photo library.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

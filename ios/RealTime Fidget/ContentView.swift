@@ -35,6 +35,8 @@ struct ContentView: View {
     // (used to capture the App Review screenshot of the purchase screen).
     @State private var showUnlock = ProcessInfo.processInfo.arguments.contains("-showUnlock")
     @State private var viewMode = "helm"   // helm (cockpit, default) | visor (clean) | chase
+    // "N days left" pill in the last 10 days of the free voyage (StoreManager.trialNoticeDue).
+    @State private var showTrialNotice = false
 
     let joystickRadius: CGFloat = 60
 
@@ -225,6 +227,10 @@ struct ContentView: View {
                                     showNavigateMenu = false
                                     showPlanetPicker = true
                                 }
+                                navButton("🏅  Missions & Badges") {
+                                    showNavigateMenu = false
+                                    navigationController.evaluateJavaScript("window.galaxyExplorer?.showMissions?.()")
+                                }
                                 navButton("❓  How to Play") {
                                     showNavigateMenu = false
                                     withAnimation(.easeInOut(duration: 0.3)) { showSplash = true }
@@ -379,6 +385,37 @@ struct ContentView: View {
                         .zIndex(101)
                 }
 
+                // Free voyage ending soon: a small pill under the top bar, tap to unlock.
+                if showTrialNotice && !chromeHidden {
+                    VStack {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            withAnimation(.easeOut(duration: 0.2)) { showTrialNotice = false }
+                            withAnimation(.easeInOut(duration: 0.3)) { showUnlock = true }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("\(store.daysRemaining) day\(store.daysRemaining == 1 ? "" : "s") left in your free voyage")
+                                    .foregroundColor(.white.opacity(0.92))
+                                Text("Unlock")
+                                    .foregroundColor(.cyan)
+                                    .fontWeight(.bold)
+                            }
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(Color(red: 0.03, green: 0.06, blue: 0.11).opacity(0.92)))
+                            .overlay(Capsule().stroke(Color.cyan.opacity(0.55), lineWidth: 1))
+                        }
+                        .accessibilityLabel("\(store.daysRemaining) days left in your free voyage. Unlock forever.")
+                        .padding(.top, isLandscape ? 10 : 56)
+                        Spacer()
+                    }
+                    .transition(.opacity)
+                    .zIndex(50)
+                }
+
                 // Unlock Forever — opened early from the ⋯ menu (dismissable), or forced
                 // as a hard gate once the 60-day free voyage ends (no close button).
                 if showUnlock || store.locked {
@@ -391,7 +428,13 @@ struct ContentView: View {
                 }
             }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { store.refreshTrial() }
+                if phase == .active {
+                    store.refreshTrial()
+                    maybeShowTrialNotice()
+                }
+            }
+            .onChange(of: showSplash) { _, splash in
+                if !splash { maybeShowTrialNotice() }
             }
             .onChange(of: store.isUnlocked) { _, unlocked in
                 if unlocked { showUnlock = false }
@@ -894,6 +937,20 @@ struct ContentView: View {
             .shadow(color: .cyan.opacity(0.35), radius: 8, y: 2)
         }
         .accessibilityLabel("Unlock Forever, \(title.replacingOccurrences(of: "Unlock Forever \u{00B7} ", with: ""))")
+    }
+
+    /// Shows the "N days left" pill once a day in the last 10 days of the free voyage, after
+    /// the splash is gone; it fades away by itself after 7 s.
+    private func maybeShowTrialNotice() {
+        guard !showSplash, !showTrialNotice, store.trialNoticeDue else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            guard !showSplash, !chromeHidden, store.trialNoticeDue else { return }
+            store.markTrialNoticeShown()
+            withAnimation(.easeOut(duration: 0.3)) { showTrialNotice = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
+                withAnimation(.easeIn(duration: 0.4)) { showTrialNotice = false }
+            }
+        }
     }
 
     private func navButton(_ title: String, action: @escaping () -> Void) -> some View {

@@ -53,6 +53,25 @@ final class StoreManager: ObservableObject {
         locked = !isUnlocked && daysRemaining <= 0
     }
 
+    // Gentle heads-up in the last 10 days of the free voyage (day 50 on): at most once a
+    // calendar day, never for owners, never once the gate is up.
+    static let trialNoticeDays = 10
+    private static let trialNoticeKey = "trialNoticeLastShownDay"
+
+    var trialNoticeDue: Bool {
+        guard !isUnlocked, !locked, daysRemaining > 0, daysRemaining <= Self.trialNoticeDays else { return false }
+        return UserDefaults.standard.string(forKey: Self.trialNoticeKey) != Self.todayKey()
+    }
+
+    func markTrialNoticeShown() {
+        UserDefaults.standard.set(Self.todayKey(), forKey: Self.trialNoticeKey)
+    }
+
+    private static func todayKey() -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
+    }
+
     // MARK: StoreKit 2
 
     func loadProduct() async {

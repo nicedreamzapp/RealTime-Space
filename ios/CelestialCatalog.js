@@ -53,6 +53,12 @@ class CelestialCatalog {
             parentBody: obj.parentPlanet?.name || null
         };
 
+        // Places explored in earlier sessions stay explored (saved in localStorage).
+        if (CelestialCatalog.exploredNames().has(catalogEntry.name.toLowerCase())) {
+            catalogEntry.explored = true;
+            catalogEntry.discovered = true;
+        }
+
         this.objects.push(catalogEntry);
         this.objectsByName.set(catalogEntry.name.toLowerCase(), catalogEntry);
 
@@ -170,6 +176,7 @@ class CelestialCatalog {
             obj.lastVisit = Date.now();
             if (!obj.firstVisit) obj.firstVisit = Date.now();
             if (!obj.discovered) obj.discovered = true;
+            if (!wasExplored) CelestialCatalog.saveExplored(obj.name);
             return { firstExploration: !wasExplored, object: obj };
         }
         return null;
@@ -271,3 +278,24 @@ class CelestialCatalog {
 
 // Export for use
 if (typeof module !== 'undefined') module.exports = CelestialCatalog;
+
+// ---------- Persisted exploration (survives app launches) ----------
+// One list of lower-cased names under 'rts_explored_v1'. Missions.js reads the count for
+// the player's rank; a new entry fires 'rtsexplored' on window with the new total.
+CelestialCatalog._explored = null;
+CelestialCatalog.exploredNames = function () {
+    if (!CelestialCatalog._explored) {
+        let list = [];
+        try { list = JSON.parse(localStorage.getItem('rts_explored_v1') || '[]'); } catch (e) {}
+        CelestialCatalog._explored = new Set(Array.isArray(list) ? list : []);
+    }
+    return CelestialCatalog._explored;
+};
+CelestialCatalog.saveExplored = function (name) {
+    const set = CelestialCatalog.exploredNames();
+    const key = String(name || '').toLowerCase();
+    if (!key || set.has(key)) return;
+    set.add(key);
+    try { localStorage.setItem('rts_explored_v1', JSON.stringify([...set])); } catch (e) {}
+    try { window.dispatchEvent(new CustomEvent('rtsexplored', { detail: { count: set.size, name } })); } catch (e) {}
+};
